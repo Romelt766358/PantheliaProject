@@ -54,6 +54,11 @@ public:
 	// Afecta la tabla de afinidades en ExecCalc_Damage.
 	virtual EPantheliaElement GetDefensiveElement() const override { return DefensiveElement; }
 
+	// Setter público para sistemas data-driven como el Boss Profile.
+	// Evita que un componente externo tenga que tocar el miembro protected directamente.
+	UFUNCTION(BlueprintCallable, Category = "Panthelia|Combat")
+	void SetDefensiveElement(EPantheliaElement InDefensiveElement) { DefensiveElement = InDefensiveElement; }
+
 	// --- Getters de XP (usados por UPantheliaAttributeSet::SendXPEvent) ---
 	// Necesarios para que el AttributeSet lea BaseXPReward y EnemyID sin acceder
 	// a miembros protected directamente desde una clase no relacionada.
