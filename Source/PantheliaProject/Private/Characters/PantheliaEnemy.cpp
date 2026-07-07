@@ -42,6 +42,20 @@ void APantheliaEnemy::UnHighlightActor_Implementation()
 {
 }
 
+bool APantheliaEnemy::IsLockonTargetable_Implementation() const
+{
+	// Mientras el actor sigue vivo físicamente por Lifespan/dissolve, ya no debe
+	// poder ser seleccionado por lock-on ni por auto-retarget.
+	return !bDead;
+}
+
+FVector APantheliaEnemy::GetLockonLocation_Implementation() const
+{
+	// Gancho futuro: reemplazar por un componente/socket dedicado en enemigos grandes
+	// sin tocar el algoritmo de búsqueda del LockonComponent.
+	return GetActorLocation();
+}
+
 int32 APantheliaEnemy::GetPlayerLevel_Implementation() const
 {
 	return Level;

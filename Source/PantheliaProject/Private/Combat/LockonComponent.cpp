@@ -5,6 +5,7 @@
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "Interfaces/CombatInterface.h"
 #include "Interfaces/Enemy.h"
 #include "Kismet/KismetMathLibrary.h"
 
@@ -212,7 +213,7 @@ void ULockonComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActo
 	}
 
 	FVector CurrentLocation{ OwnerRef->GetActorLocation() };
-	FVector TargetLocation{ CurrentTargetActor->GetActorLocation() };
+	FVector TargetLocation{ GetLockonLocation(CurrentTargetActor.Get()) };
 
 	double TargetDistance{ FVector::Distance(CurrentLocation, TargetLocation) };
 
@@ -270,12 +271,12 @@ TArray<AActor*> ULockonComponent::FindLockonCandidates(float Radius, AActor* Act
 	for (const FHitResult& OutResult : OutResults)
 	{
 		AActor* HitActor = OutResult.GetActor();
-		if (!IsValidLockonCandidate(HitActor))
+		if (HitActor == ActorToIgnore)
 		{
 			continue;
 		}
 
-		if (HitActor == ActorToIgnore)
+		if (!IsSelectableSearchCandidate(HitActor))
 		{
 			continue;
 		}
@@ -311,10 +312,10 @@ AActor* ULockonComponent::FindBestInitialTarget(float Radius)
 			continue;
 		}
 
-		const FVector DirectionToCandidate = (Candidate->GetActorLocation() - CameraLocation).GetSafeNormal();
+		const FVector DirectionToCandidate = (GetLockonLocation(Candidate) - CameraLocation).GetSafeNormal();
 		const float ForwardDot = FVector::DotProduct(CameraForward, DirectionToCandidate);
 
-		const float Distance = FVector::Distance(OwnerRef->GetActorLocation(), Candidate->GetActorLocation());
+		const float Distance = FVector::Distance(OwnerRef->GetActorLocation(), GetLockonLocation(Candidate));
 		const float DistanceScore = 1.0f - FMath::Clamp(Distance / Radius, 0.0f, 1.0f);
 
 		// Primer lock-on: priorizamos que esté centrado en cámara, y luego cercanía.
@@ -350,7 +351,7 @@ AActor* ULockonComponent::FindBestAutoRetargetTarget(AActor* LostTarget)
 
 	for (AActor* Candidate : Candidates)
 	{
-		const FVector DirectionToCandidate = (Candidate->GetActorLocation() - CameraLocation).GetSafeNormal();
+		const FVector DirectionToCandidate = (GetLockonLocation(Candidate) - CameraLocation).GetSafeNormal();
 		const float ForwardDot = FVector::DotProduct(CameraForward, DirectionToCandidate);
 
 		// No saltar automáticamente a enemigos claramente detrás de la cámara.
@@ -359,7 +360,7 @@ AActor* ULockonComponent::FindBestAutoRetargetTarget(AActor* LostTarget)
 			continue;
 		}
 
-		const float Distance = FVector::Distance(OwnerRef->GetActorLocation(), Candidate->GetActorLocation());
+		const float Distance = FVector::Distance(OwnerRef->GetActorLocation(), GetLockonLocation(Candidate));
 		const float DistanceScore = 1.0f - FMath::Clamp(Distance / AutoRetargetRadius, 0.0f, 1.0f);
 
 		// Auto-retarget: priorizamos cercanía, pero evitamos snaps raros detrás o muy fuera de cámara.
@@ -396,7 +397,7 @@ AActor* ULockonComponent::FindBestDirectionalTarget(float Direction)
 
 	for (AActor* Candidate : Candidates)
 	{
-		const FVector DirectionToCandidate = (Candidate->GetActorLocation() - CameraLocation).GetSafeNormal();
+		const FVector DirectionToCandidate = (GetLockonLocation(Candidate) - CameraLocation).GetSafeNormal();
 
 		const float ForwardDot = FVector::DotProduct(CameraForward, DirectionToCandidate);
 		if (ForwardDot < SwitchForwardThreshold)
@@ -412,7 +413,7 @@ AActor* ULockonComponent::FindBestDirectionalTarget(float Direction)
 			continue;
 		}
 
-		const float Distance = FVector::Distance(OwnerRef->GetActorLocation(), Candidate->GetActorLocation());
+		const float Distance = FVector::Distance(OwnerRef->GetActorLocation(), GetLockonLocation(Candidate));
 		const float DistanceScore = 1.0f - FMath::Clamp(Distance / SwitchTargetRadius, 0.0f, 1.0f);
 
 		// Cambio manual: priorizamos el lado solicitado, luego que siga delante,
@@ -446,7 +447,96 @@ bool ULockonComponent::IsValidLockonCandidate(AActor* Candidate) const
 		return false;
 	}
 
+	// Un enemigo muerto puede seguir existiendo varios segundos por Lifespan/dissolve.
+	// No debe poder entrar en la lista de candidatos durante ese intervalo.
+	if (Candidate->Implements<UCombatInterface>() && ICombatInterface::Execute_IsDead(Candidate))
+	{
+		return false;
+	}
+
+	// Gancho de targeteabilidad: permite que un enemigo vivo sea temporalmente
+	// no seleccionable (cinemática, spawn protegido, invisible, etc.) sin acoplar
+	// LockonComponent a una clase concreta.
+	if (!IEnemy::Execute_IsLockonTargetable(Candidate))
+	{
+		return false;
+	}
+
 	return true;
+}
+
+bool ULockonComponent::HasLineOfSightToCandidate(AActor* Candidate)
+{
+	if (!bRequireLineOfSightToAcquireLockon)
+	{
+		return true;
+	}
+
+	RefreshCachedReferences();
+
+	if (!Controller || !Candidate || !GetWorld())
+	{
+		return false;
+	}
+
+	FVector CameraLocation;
+	FRotator CameraRotation;
+	Controller->GetPlayerViewPoint(CameraLocation, CameraRotation);
+
+	const FVector TargetLocation = GetLockonLocation(Candidate);
+
+	FCollisionQueryParams QueryParams{ FName{ TEXT("Lockon Line Of Sight") }, false, OwnerRef };
+	QueryParams.AddIgnoredActor(OwnerRef);
+
+	FHitResult HitResult;
+	const bool bHit = GetWorld()->LineTraceSingleByChannel(
+		HitResult,
+		CameraLocation,
+		TargetLocation,
+		LineOfSightTraceChannel,
+		QueryParams
+	);
+
+	if (!bHit)
+	{
+		// Si el enemigo no bloquea Visibility, no hay obstáculo entre cámara y target.
+		return true;
+	}
+
+	AActor* HitActor = HitResult.GetActor();
+	if (HitActor == Candidate)
+	{
+		return true;
+	}
+
+	// Algunos componentes/actores auxiliares pueden estar owned por el enemigo.
+	// En ese caso también consideramos que la línea de visión llegó al target.
+	if (HitActor && HitActor->GetOwner() == Candidate)
+	{
+		return true;
+	}
+
+	return false;
+}
+
+bool ULockonComponent::IsSelectableSearchCandidate(AActor* Candidate)
+{
+	return IsValidLockonCandidate(Candidate) && HasLineOfSightToCandidate(Candidate);
+}
+
+FVector ULockonComponent::GetLockonLocation(AActor* TargetActor) const
+{
+	if (!IsValid(TargetActor))
+	{
+		return FVector::ZeroVector;
+	}
+
+	if (TargetActor->Implements<UEnemy>())
+	{
+		return IEnemy::Execute_GetLockonLocation(TargetActor);
+	}
+
+	return TargetActor->GetActorLocation();
 }
 
 bool ULockonComponent::PassesCameraAngleCheck(AActor* Candidate, float MinDot)
@@ -463,7 +553,7 @@ bool ULockonComponent::PassesCameraAngleCheck(AActor* Candidate, float MinDot)
 	Controller->GetPlayerViewPoint(CameraLocation, CameraRotation);
 
 	const FVector CameraForward = CameraRotation.Vector();
-	const FVector DirectionToCandidate = (Candidate->GetActorLocation() - CameraLocation).GetSafeNormal();
+	const FVector DirectionToCandidate = (GetLockonLocation(Candidate) - CameraLocation).GetSafeNormal();
 
 	const float DotProduct = FVector::DotProduct(CameraForward, DirectionToCandidate);
 	return DotProduct >= MinDot;

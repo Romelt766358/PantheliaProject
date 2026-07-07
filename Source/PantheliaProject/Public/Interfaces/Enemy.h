@@ -47,4 +47,16 @@ public:
 
 	UFUNCTION(BlueprintCallable, BlueprintNativeEvent)
 	AActor* GetCombatTarget() const;
+
+	// Devuelve si este enemigo puede ser seleccionado por el lock-on en este momento.
+	// Gancho para enemigos ocultos, invulnerables, en cinemática, muertos, etc.
+	// Default: true. Los enemigos C++ pueden sobrescribirlo y los Blueprints también.
+	UFUNCTION(BlueprintCallable, BlueprintNativeEvent)
+	bool IsLockonTargetable() const;
+
+	// Punto lógico al que apunta el lock-on. Por ahora suele ser la ubicación del actor,
+	// pero más adelante puede devolver un socket/componente dedicado (pecho/cabeza)
+	// para bosses grandes o enemigos con siluetas raras.
+	UFUNCTION(BlueprintCallable, BlueprintNativeEvent)
+	FVector GetLockonLocation() const;
 };

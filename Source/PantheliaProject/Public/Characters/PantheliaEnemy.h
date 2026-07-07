@@ -27,6 +27,8 @@ public:
 	/** IEnemy Interface */
 	virtual void HighlightActor_Implementation() override;
 	virtual void UnHighlightActor_Implementation() override;
+	virtual bool IsLockonTargetable_Implementation() const override;
+	virtual FVector GetLockonLocation_Implementation() const override;
 
 	// CombatTarget: el actor que este enemigo está atacando ahora mismo.
 	// Seteado desde BTT_Attack antes de activar la ability, usado en GA_MeleeAttack

@@ -98,6 +98,18 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lockon Settings")
 	double LockonAngleThreshold{ 0.5f };
 
+	// Si está activo, el lock-on solo puede adquirir/cambiar a objetivos con línea
+	// de visión clara desde la cámara. No rompe aún el lock-on si una pared se interpone
+	// después de haber seleccionado el target; eso queda para la siguiente iteración
+	// con temporizador de oclusión.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lockon Settings")
+	bool bRequireLineOfSightToAcquireLockon = true;
+
+	// Canal usado para comprobar paredes/obstáculos entre la cámara y el target.
+	// Visibility es el default esperado para objetos de mundo que bloquean visión.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lockon Settings")
+	TEnumAsByte<ECollisionChannel> LineOfSightTraceChannel = ECC_Visibility;
+
 	// Radio usado cuando el target muere y buscamos otro enemigo cercano.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lockon Settings")
 	float AutoRetargetRadius{ 950.0f };
@@ -146,7 +158,10 @@ private:
 	AActor* FindBestDirectionalTarget(float Direction);
 
 	bool IsValidLockonCandidate(AActor* Candidate) const;
+	bool HasLineOfSightToCandidate(AActor* Candidate);
+	bool IsSelectableSearchCandidate(AActor* Candidate);
 	bool PassesCameraAngleCheck(AActor* Candidate, float MinDot);
+	FVector GetLockonLocation(AActor* TargetActor) const;
 
 	void SetCurrentTarget(AActor* NewTarget, bool bCallDeselectOnOldTarget = true);
 	void ApplyLockonState();
