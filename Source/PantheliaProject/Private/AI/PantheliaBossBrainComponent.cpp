@@ -3,6 +3,7 @@
 #include "AI/PantheliaBossBrainComponent.h"
 
 #include "AbilitySystemComponent.h"
+#include "AbilitySystem/PantheliaAbilitySystemComponent.h"
 #include "AbilitySystem/PantheliaAttributeSet.h"
 #include "Characters/PantheliaEnemy.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -14,6 +15,8 @@ UPantheliaBossBrainComponent::UPantheliaBossBrainComponent()
 {
 	PrimaryComponentTick.bCanEverTick = false;
 }
+
+// Initialization
 
 void UPantheliaBossBrainComponent::BeginPlay()
 {
@@ -69,6 +72,7 @@ bool UPantheliaBossBrainComponent::InitializeBossFromProfile()
 	ApplyStatsPreset(*StatsPreset);
 	UpdatePhaseFromHealth();
 	ResetAllActionCooldowns();
+	ClearCurrentAction();
 	return true;
 }
 
@@ -103,6 +107,64 @@ bool UPantheliaBossBrainComponent::ApplyStatsPreset(const FPantheliaBossStatsPre
 
 	return true;
 }
+
+// Target Context
+
+bool UPantheliaBossBrainComponent::HasValidTargetContext(AActor* TargetActor) const
+{
+	return OwnerEnemy && OwnerASC && TargetActor;
+}
+
+void UPantheliaBossBrainComponent::SetCombatTarget(AActor* TargetActor) const
+{
+	if (OwnerEnemy)
+	{
+		OwnerEnemy->SetCombatTarget_Implementation(TargetActor);
+	}
+}
+
+bool UPantheliaBossBrainComponent::HasLineOfSightToTarget(AActor* TargetActor) const
+{
+	if (!OwnerEnemy || !TargetActor || !GetWorld())
+	{
+		return false;
+	}
+
+	FHitResult HitResult;
+	const FVector Start = OwnerEnemy->GetActorLocation();
+	const FVector End = TargetActor->GetActorLocation();
+
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(BossActionLineOfSight), false, OwnerEnemy);
+	Params.AddIgnoredActor(TargetActor);
+
+	const bool bHit = GetWorld()->LineTraceSingleByChannel(HitResult, Start, End, ECC_Visibility, Params);
+	return !bHit;
+}
+
+float UPantheliaBossBrainComponent::GetDistanceToTarget(AActor* TargetActor) const
+{
+	if (!OwnerEnemy || !TargetActor)
+	{
+		return TNumericLimits<float>::Max();
+	}
+
+	return FVector::Dist2D(OwnerEnemy->GetActorLocation(), TargetActor->GetActorLocation());
+}
+
+float UPantheliaBossBrainComponent::GetAngleToTarget(AActor* TargetActor) const
+{
+	if (!OwnerEnemy || !TargetActor)
+	{
+		return 180.f;
+	}
+
+	const FVector ToTarget = (TargetActor->GetActorLocation() - OwnerEnemy->GetActorLocation()).GetSafeNormal2D();
+	const FVector Forward = OwnerEnemy->GetActorForwardVector().GetSafeNormal2D();
+	const float Dot = FMath::Clamp(FVector::DotProduct(Forward, ToTarget), -1.f, 1.f);
+	return FMath::RadiansToDegrees(FMath::Acos(Dot));
+}
+
+// Phase Runtime
 
 bool UPantheliaBossBrainComponent::UpdatePhaseFromHealth()
 {
@@ -155,10 +217,67 @@ float UPantheliaBossBrainComponent::GetHealthPercent() const
 	return FMath::Clamp(OwnerAttributeSet->GetHealth() / MaxHealth, 0.f, 1.f);
 }
 
-bool UPantheliaBossBrainComponent::SelectAction(AActor* TargetActor, FPantheliaBossActionDefinition& OutAction) const
+bool UPantheliaBossBrainComponent::IsActionInActivePhase(const FPantheliaBossActionDefinition& Action) const
 {
-	if (!BossProfile || !TargetActor)
+	if (ActivePhaseID.IsNone())
 	{
+		return true;
+	}
+
+	if (const FPantheliaBossPhaseDefinition* Phase = BossProfile ? BossProfile->FindPhase(ActivePhaseID) : nullptr)
+	{
+		if (Phase->ExplicitActionPool.Num() > 0 && !Phase->ExplicitActionPool.Contains(Action.ActionTag))
+		{
+			return false;
+		}
+	}
+
+	return Action.ValidPhases.Num() == 0 || Action.ValidPhases.Contains(ActivePhaseID);
+}
+
+// Decision Cooldowns
+
+void UPantheliaBossBrainComponent::ResetActionCooldown(const FGameplayTag& ActionTag)
+{
+	ActionCooldownEndTimes.Remove(ActionTag);
+}
+
+void UPantheliaBossBrainComponent::ResetAllActionCooldowns()
+{
+	ActionCooldownEndTimes.Empty();
+}
+
+bool UPantheliaBossBrainComponent::IsActionOnCooldown(const FGameplayTag& ActionTag) const
+{
+	if (const float* CooldownEndTime = ActionCooldownEndTimes.Find(ActionTag))
+	{
+		return GetCurrentTimeSeconds() < *CooldownEndTime;
+	}
+
+	return false;
+}
+
+void UPantheliaBossBrainComponent::StartActionCooldown(const FPantheliaBossActionDefinition& Action)
+{
+	if (Action.ActionTag.IsValid() && Action.Cooldown > 0.f)
+	{
+		ActionCooldownEndTimes.Add(Action.ActionTag, GetCurrentTimeSeconds() + Action.Cooldown);
+	}
+}
+
+// Action Selection
+
+bool UPantheliaBossBrainComponent::SelectAction(AActor* TargetActor, FPantheliaBossActionDefinition& OutAction)
+{
+	if (!BossProfile)
+	{
+		SetActionFailure(EPantheliaBossActionFailureReason::NoProfile, true);
+		return false;
+	}
+
+	if (!TargetActor)
+	{
+		SetActionFailure(EPantheliaBossActionFailureReason::NoTarget, true);
 		return false;
 	}
 
@@ -179,8 +298,18 @@ bool UPantheliaBossBrainComponent::SelectAction(AActor* TargetActor, FPantheliaB
 		TotalWeight += ActionWeight;
 	}
 
-	if (Candidates.Num() <= 0 || TotalWeight <= 0.f)
+	if (Candidates.Num() <= 0)
 	{
+		SetActionFailure(BossProfile->Actions.Num() <= 0
+			? EPantheliaBossActionFailureReason::NoAction
+			: EPantheliaBossActionFailureReason::ActionUnavailable,
+			true);
+		return false;
+	}
+
+	if (TotalWeight <= 0.f)
+	{
+		SetActionFailure(EPantheliaBossActionFailureReason::ActionUnavailable, true);
 		return false;
 	}
 
@@ -191,11 +320,13 @@ bool UPantheliaBossBrainComponent::SelectAction(AActor* TargetActor, FPantheliaB
 		if (Roll <= 0.f)
 		{
 			OutAction = *Candidates[Index];
+			SetSelectedAction(TargetActor, OutAction);
 			return true;
 		}
 	}
 
 	OutAction = *Candidates.Last();
+	SetSelectedAction(TargetActor, OutAction);
 	return true;
 }
 
@@ -203,7 +334,7 @@ bool UPantheliaBossBrainComponent::IsActionAvailable(const FPantheliaBossActionD
 {
 	OutWeight = 0.f;
 
-	if (!OwnerEnemy || !OwnerASC || !TargetActor || !Action.ActionTag.IsValid() || !Action.AbilityTag.IsValid())
+	if (!HasValidTargetContext(TargetActor) || !Action.ActionTag.IsValid() || !Action.AbilityTag.IsValid())
 	{
 		return false;
 	}
@@ -213,23 +344,12 @@ bool UPantheliaBossBrainComponent::IsActionAvailable(const FPantheliaBossActionD
 		return false;
 	}
 
-	const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
-	if (const float* CooldownEndTime = ActionCooldownEndTimes.Find(Action.ActionTag))
-	{
-		if (Now < *CooldownEndTime)
-		{
-			return false;
-		}
-	}
-
-	const float Distance = GetDistanceToTarget(TargetActor);
-	if (Distance < Action.MinDistance || Distance > Action.MaxDistance)
+	if (IsActionOnCooldown(Action.ActionTag))
 	{
 		return false;
 	}
 
-	const float Angle = GetAngleToTarget(TargetActor);
-	if (Angle > Action.MaxAngle)
+	if (!PassesActionRangeChecks(Action, TargetActor))
 	{
 		return false;
 	}
@@ -239,128 +359,250 @@ bool UPantheliaBossBrainComponent::IsActionAvailable(const FPantheliaBossActionD
 		return false;
 	}
 
-	FGameplayTagContainer OwnedTags;
-	OwnerASC->GetOwnedGameplayTags(OwnedTags);
-
-	if (!OwnedTags.HasAll(Action.RequiredOwnerTags))
-	{
-		return false;
-	}
-
-	if (OwnedTags.HasAny(Action.BlockedOwnerTags))
+	if (!PassesActionTagChecks(Action))
 	{
 		return false;
 	}
 
 	OutWeight = FMath::Max(0.f, Action.Weight);
-
-	if (const FPantheliaBossPhaseDefinition* Phase = BossProfile->FindPhase(ActivePhaseID))
-	{
-		OutWeight *= FMath::Max(0.f, Phase->WeightMultiplier);
-	}
+	OutWeight *= GetActionPhaseWeightMultiplier();
 
 	return OutWeight > 0.f;
 }
 
-bool UPantheliaBossBrainComponent::IsActionInActivePhase(const FPantheliaBossActionDefinition& Action) const
+bool UPantheliaBossBrainComponent::PassesActionRangeChecks(const FPantheliaBossActionDefinition& Action, AActor* TargetActor) const
 {
-	if (ActivePhaseID.IsNone())
+	const float Distance = GetDistanceToTarget(TargetActor);
+	if (Distance < Action.MinDistance || Distance > Action.MaxDistance)
 	{
-		return true;
+		return false;
 	}
 
+	const float Angle = GetAngleToTarget(TargetActor);
+	return Angle <= Action.MaxAngle;
+}
+
+bool UPantheliaBossBrainComponent::PassesActionTagChecks(const FPantheliaBossActionDefinition& Action) const
+{
+	if (!OwnerASC)
+	{
+		return false;
+	}
+
+	FGameplayTagContainer OwnedTags;
+	OwnerASC->GetOwnedGameplayTags(OwnedTags);
+
+	return OwnedTags.HasAll(Action.RequiredOwnerTags) && !OwnedTags.HasAny(Action.BlockedOwnerTags);
+}
+
+float UPantheliaBossBrainComponent::GetActionPhaseWeightMultiplier() const
+{
 	if (const FPantheliaBossPhaseDefinition* Phase = BossProfile ? BossProfile->FindPhase(ActivePhaseID) : nullptr)
 	{
-		if (Phase->ExplicitActionPool.Num() > 0 && !Phase->ExplicitActionPool.Contains(Action.ActionTag))
-		{
-			return false;
-		}
+		return FMath::Max(0.f, Phase->WeightMultiplier);
 	}
 
-	return Action.ValidPhases.Num() == 0 || Action.ValidPhases.Contains(ActivePhaseID);
+	return 1.f;
 }
+
+// Action Execution
 
 bool UPantheliaBossBrainComponent::TryExecuteAction(AActor* TargetActor, const FGameplayTag& ActionTag)
 {
-	if (!OwnerEnemy || !OwnerASC || !BossProfile || !ActionTag.IsValid())
+	if (!OwnerEnemy)
 	{
+		SetActionFailure(EPantheliaBossActionFailureReason::InvalidAction, true);
+		return false;
+	}
+
+	if (!OwnerASC)
+	{
+		SetActionFailure(EPantheliaBossActionFailureReason::MissingASC, true);
+		return false;
+	}
+
+	if (!BossProfile)
+	{
+		SetActionFailure(EPantheliaBossActionFailureReason::NoProfile, true);
+		return false;
+	}
+
+	if (!ActionTag.IsValid())
+	{
+		SetActionFailure(EPantheliaBossActionFailureReason::InvalidAction, true);
 		return false;
 	}
 
 	const FPantheliaBossActionDefinition* Action = BossProfile->FindAction(ActionTag);
 	if (!Action)
 	{
+		SetActionFailure(EPantheliaBossActionFailureReason::NoAction, true);
 		return false;
 	}
+
+	SetSelectedAction(TargetActor, *Action);
 
 	float ActionWeight = 0.f;
 	if (!IsActionAvailable(*Action, TargetActor, ActionWeight))
 	{
+		SetActionFailure(!TargetActor
+			? EPantheliaBossActionFailureReason::NoTarget
+			: EPantheliaBossActionFailureReason::ActionUnavailable,
+			false);
 		return false;
 	}
 
-	OwnerEnemy->SetCombatTarget_Implementation(TargetActor);
+	CurrentActionState = EPantheliaBossActionRuntimeState::Starting;
+	bActionActivationRequested = false;
+
+	SetCombatTarget(TargetActor);
+	const bool bActivated = ActivateActionAbility(*Action);
+
+	if (!bActivated)
+	{
+		SetActionFailure(EPantheliaBossActionFailureReason::AbilityActivationFailed, false);
+		return false;
+	}
+
+	CurrentActionState = EPantheliaBossActionRuntimeState::Running;
+	LastFailureReason = EPantheliaBossActionFailureReason::None;
+	bActionActivationRequested = true;
+
+	if (Action->Cooldown > 0.f)
+	{
+		StartActionCooldown(*Action);
+	}
+
+	return true;
+}
+
+void UPantheliaBossBrainComponent::RefreshActionRuntimeState()
+{
+	if (CurrentActionState != EPantheliaBossActionRuntimeState::Running)
+	{
+		return;
+	}
+
+	if (!CurrentAbilityTag.IsValid())
+	{
+		SetActionFailure(EPantheliaBossActionFailureReason::InvalidAction, false);
+		return;
+	}
+
+	if (!OwnerEnemy)
+	{
+		SetActionFailure(EPantheliaBossActionFailureReason::InvalidAction, false);
+		return;
+	}
+
+	UPantheliaAbilitySystemComponent* PantheliaASC =
+		Cast<UPantheliaAbilitySystemComponent>(OwnerEnemy->GetAbilitySystemComponent());
+	if (!PantheliaASC)
+	{
+		SetActionFailure(EPantheliaBossActionFailureReason::MissingASC, false);
+		return;
+	}
+
+	const FGameplayAbilitySpec* AbilitySpec = PantheliaASC->GetSpecFromAbilityTag(CurrentAbilityTag);
+	if (!AbilitySpec)
+	{
+		SetActionFailure(EPantheliaBossActionFailureReason::InvalidAction, false);
+		return;
+	}
+
+	if (AbilitySpec->IsActive())
+	{
+		return;
+	}
+
+	CurrentActionState = EPantheliaBossActionRuntimeState::Finished;
+	LastFailureReason = EPantheliaBossActionFailureReason::AbilityEnded;
+	bActionActivationRequested = false;
+}
+
+void UPantheliaBossBrainComponent::MarkActionInterrupted()
+{
+	if (CurrentActionState != EPantheliaBossActionRuntimeState::Selected
+		&& CurrentActionState != EPantheliaBossActionRuntimeState::Starting
+		&& CurrentActionState != EPantheliaBossActionRuntimeState::Running)
+	{
+		return;
+	}
+
+	CurrentActionState = EPantheliaBossActionRuntimeState::Interrupted;
+	LastFailureReason = EPantheliaBossActionFailureReason::Interrupted;
+	bActionActivationRequested = false;
+}
+
+bool UPantheliaBossBrainComponent::HasSelectedAction() const
+{
+	return CurrentActionTag.IsValid();
+}
+
+bool UPantheliaBossBrainComponent::IsActionRunning() const
+{
+	return CurrentActionState == EPantheliaBossActionRuntimeState::Running;
+}
+
+bool UPantheliaBossBrainComponent::HasActionFinished() const
+{
+	return CurrentActionState == EPantheliaBossActionRuntimeState::Finished;
+}
+
+bool UPantheliaBossBrainComponent::HasActionFailed() const
+{
+	return CurrentActionState == EPantheliaBossActionRuntimeState::Failed;
+}
+
+void UPantheliaBossBrainComponent::ClearCurrentAction()
+{
+	CurrentActionTag = FGameplayTag();
+	CurrentAbilityTag = FGameplayTag();
+	CurrentActionState = EPantheliaBossActionRuntimeState::None;
+	LastFailureReason = EPantheliaBossActionFailureReason::None;
+	CurrentTargetActor.Reset();
+	bActionActivationRequested = false;
+}
+
+bool UPantheliaBossBrainComponent::ActivateActionAbility(const FPantheliaBossActionDefinition& Action) const
+{
+	if (!OwnerASC || !Action.AbilityTag.IsValid())
+	{
+		return false;
+	}
 
 	FGameplayTagContainer AbilityTags;
-	AbilityTags.AddTag(Action->AbilityTag);
-	const bool bActivated = OwnerASC->TryActivateAbilitiesByTag(AbilityTags);
+	AbilityTags.AddTag(Action.AbilityTag);
+	return OwnerASC->TryActivateAbilitiesByTag(AbilityTags);
+}
 
-	if (bActivated && Action->Cooldown > 0.f)
+void UPantheliaBossBrainComponent::SetSelectedAction(AActor* TargetActor, const FPantheliaBossActionDefinition& Action)
+{
+	CurrentActionTag = Action.ActionTag;
+	CurrentAbilityTag = Action.AbilityTag;
+	CurrentTargetActor = TargetActor;
+	CurrentActionState = EPantheliaBossActionRuntimeState::Selected;
+	LastFailureReason = EPantheliaBossActionFailureReason::None;
+	bActionActivationRequested = false;
+}
+
+void UPantheliaBossBrainComponent::SetActionFailure(EPantheliaBossActionFailureReason FailureReason, bool bClearAction)
+{
+	if (bClearAction)
 	{
-		const float Now = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
-		ActionCooldownEndTimes.Add(Action->ActionTag, Now + Action->Cooldown);
+		CurrentActionTag = FGameplayTag();
+		CurrentAbilityTag = FGameplayTag();
+		CurrentTargetActor.Reset();
 	}
 
-	return bActivated;
+	CurrentActionState = EPantheliaBossActionRuntimeState::Failed;
+	LastFailureReason = FailureReason;
+	bActionActivationRequested = false;
 }
 
-void UPantheliaBossBrainComponent::ResetActionCooldown(const FGameplayTag& ActionTag)
+// Utility / Queries
+
+float UPantheliaBossBrainComponent::GetCurrentTimeSeconds() const
 {
-	ActionCooldownEndTimes.Remove(ActionTag);
-}
-
-void UPantheliaBossBrainComponent::ResetAllActionCooldowns()
-{
-	ActionCooldownEndTimes.Empty();
-}
-
-bool UPantheliaBossBrainComponent::HasLineOfSightToTarget(AActor* TargetActor) const
-{
-	if (!OwnerEnemy || !TargetActor || !GetWorld())
-	{
-		return false;
-	}
-
-	FHitResult HitResult;
-	const FVector Start = OwnerEnemy->GetActorLocation();
-	const FVector End = TargetActor->GetActorLocation();
-
-	FCollisionQueryParams Params(SCENE_QUERY_STAT(BossActionLineOfSight), false, OwnerEnemy);
-	Params.AddIgnoredActor(TargetActor);
-
-	const bool bHit = GetWorld()->LineTraceSingleByChannel(HitResult, Start, End, ECC_Visibility, Params);
-	return !bHit;
-}
-
-float UPantheliaBossBrainComponent::GetDistanceToTarget(AActor* TargetActor) const
-{
-	if (!OwnerEnemy || !TargetActor)
-	{
-		return TNumericLimits<float>::Max();
-	}
-
-	return FVector::Dist2D(OwnerEnemy->GetActorLocation(), TargetActor->GetActorLocation());
-}
-
-float UPantheliaBossBrainComponent::GetAngleToTarget(AActor* TargetActor) const
-{
-	if (!OwnerEnemy || !TargetActor)
-	{
-		return 180.f;
-	}
-
-	const FVector ToTarget = (TargetActor->GetActorLocation() - OwnerEnemy->GetActorLocation()).GetSafeNormal2D();
-	const FVector Forward = OwnerEnemy->GetActorForwardVector().GetSafeNormal2D();
-	const float Dot = FMath::Clamp(FVector::DotProduct(Forward, ToTarget), -1.f, 1.f);
-	return FMath::RadiansToDegrees(FMath::Acos(Dot));
+	return GetWorld() ? GetWorld()->GetTimeSeconds() : 0.f;
 }

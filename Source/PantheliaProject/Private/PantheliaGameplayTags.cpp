@@ -132,6 +132,89 @@ void FPantheliaGameplayTags::InitializeNativeGameplayTags()
 	// active melee y ranged a la vez cuando el enemigo tiene ambas abilities.
 	GameplayTags.Abilities_Attack_Ranged = Manager.AddNativeGameplayTag(FName("Abilities.Attack.Ranged"), FString("Activa la ability de ataque a distancia/mágico del enemigo."));
 
+	// --- TAGS DE BOSS AI ---
+	// Boss.Phase.* identifica fases del boss.
+	GameplayTags.Boss_Phase = Manager.AddNativeGameplayTag(
+		FName("Boss.Phase"),
+		FString("Raiz de tags de fase de boss."));
+	GameplayTags.Boss_Phase_1 = Manager.AddNativeGameplayTag(
+		FName("Boss.Phase.1"),
+		FString("Fase 1 del boss."));
+	GameplayTags.Boss_Phase_2 = Manager.AddNativeGameplayTag(
+		FName("Boss.Phase.2"),
+		FString("Fase 2 del boss."));
+
+	// Boss.Action.* identifica acciones data-driven de UPantheliaBossProfile.
+	// GameplayAbilities debe seguir usando Abilities.Attack.* salvo decision explicita futura.
+	GameplayTags.Boss_Action = Manager.AddNativeGameplayTag(
+		FName("Boss.Action"),
+		FString("Raiz de acciones data-driven de BossProfile."));
+	GameplayTags.Boss_Action_Melee = Manager.AddNativeGameplayTag(
+		FName("Boss.Action.Melee"),
+		FString("Acciones melee de boss."));
+	GameplayTags.Boss_Action_Melee_Basic = Manager.AddNativeGameplayTag(
+		FName("Boss.Action.Melee.Basic"),
+		FString("Accion melee basica de boss."));
+	GameplayTags.Boss_Action_Melee_Heavy = Manager.AddNativeGameplayTag(
+		FName("Boss.Action.Melee.Heavy"),
+		FString("Accion melee pesada de boss."));
+	GameplayTags.Boss_Action_Ranged = Manager.AddNativeGameplayTag(
+		FName("Boss.Action.Ranged"),
+		FString("Accion ranged de boss."));
+	GameplayTags.Boss_Action_GapCloser = Manager.AddNativeGameplayTag(
+		FName("Boss.Action.GapCloser"),
+		FString("Accion de acercamiento de boss."));
+	GameplayTags.Boss_Action_Reposition = Manager.AddNativeGameplayTag(
+		FName("Boss.Action.Reposition"),
+		FString("Accion de reposicionamiento de boss."));
+	GameplayTags.Boss_Action_Retreat = Manager.AddNativeGameplayTag(
+		FName("Boss.Action.Retreat"),
+		FString("Accion de retirada de boss."));
+	GameplayTags.Boss_Action_Punish = Manager.AddNativeGameplayTag(
+		FName("Boss.Action.Punish"),
+		FString("Accion de castigo de boss."));
+	GameplayTags.Boss_Action_Punish_Heal = Manager.AddNativeGameplayTag(
+		FName("Boss.Action.Punish.Heal"),
+		FString("Accion de castigo contra curacion."));
+	GameplayTags.Boss_Action_Combo = Manager.AddNativeGameplayTag(
+		FName("Boss.Action.Combo"),
+		FString("Acciones de combo de boss."));
+	GameplayTags.Boss_Action_Combo_Starter = Manager.AddNativeGameplayTag(
+		FName("Boss.Action.Combo.Starter"),
+		FString("Accion que inicia combo de boss."));
+	GameplayTags.Boss_Action_Combo_Extender = Manager.AddNativeGameplayTag(
+		FName("Boss.Action.Combo.Extender"),
+		FString("Accion que extiende combo de boss."));
+
+	// Boss.State.* representa estado runtime de BossBrain y futuro StateTree.
+	GameplayTags.Boss_State = Manager.AddNativeGameplayTag(
+		FName("Boss.State"),
+		FString("Raiz de estados runtime de Boss AI."));
+	GameplayTags.Boss_State_Neutral = Manager.AddNativeGameplayTag(
+		FName("Boss.State.Neutral"),
+		FString("Boss en estado neutral."));
+	GameplayTags.Boss_State_SelectingAction = Manager.AddNativeGameplayTag(
+		FName("Boss.State.SelectingAction"),
+		FString("BossBrain seleccionando accion."));
+	GameplayTags.Boss_State_StartingAction = Manager.AddNativeGameplayTag(
+		FName("Boss.State.StartingAction"),
+		FString("Boss iniciando accion seleccionada."));
+	GameplayTags.Boss_State_ActionRunning = Manager.AddNativeGameplayTag(
+		FName("Boss.State.ActionRunning"),
+		FString("Boss ejecutando accion."));
+	GameplayTags.Boss_State_Recovering = Manager.AddNativeGameplayTag(
+		FName("Boss.State.Recovering"),
+		FString("Boss en recuperacion tras accion."));
+	GameplayTags.Boss_State_Staggered = Manager.AddNativeGameplayTag(
+		FName("Boss.State.Staggered"),
+		FString("Boss staggered."));
+	GameplayTags.Boss_State_PhaseTransition = Manager.AddNativeGameplayTag(
+		FName("Boss.State.PhaseTransition"),
+		FString("Boss en transicion de fase."));
+	GameplayTags.Boss_State_Dead = Manager.AddNativeGameplayTag(
+		FName("Boss.State.Dead"),
+		FString("Boss muerto."));
+
 	// --- TAGS DE ABILITIES: HECHIZOS DEL JUGADOR ---
 	// Jerarquía coherente con Cooldown.Spell.*: mismos niveles, mismo propósito.
 	// ASIGNAR en cada ability Blueprint → Class Defaults → "Ability Tags":

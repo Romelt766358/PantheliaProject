@@ -146,6 +146,39 @@ public:
 	// activaría TODAS las abilities de ataque a la vez.
 	FGameplayTag Abilities_Attack_Ranged;
 
+	// --- TAGS DE BOSS AI ---
+	// Boss.Phase.* identifica fases del boss.
+	FGameplayTag Boss_Phase;
+	FGameplayTag Boss_Phase_1;
+	FGameplayTag Boss_Phase_2;
+
+	// Boss.Action.* identifica acciones data-driven de UPantheliaBossProfile.
+	// GameplayAbilities debe seguir usando Abilities.Attack.* salvo decision explicita futura.
+	FGameplayTag Boss_Action;
+	FGameplayTag Boss_Action_Melee;
+	FGameplayTag Boss_Action_Melee_Basic;
+	FGameplayTag Boss_Action_Melee_Heavy;
+	FGameplayTag Boss_Action_Ranged;
+	FGameplayTag Boss_Action_GapCloser;
+	FGameplayTag Boss_Action_Reposition;
+	FGameplayTag Boss_Action_Retreat;
+	FGameplayTag Boss_Action_Punish;
+	FGameplayTag Boss_Action_Punish_Heal;
+	FGameplayTag Boss_Action_Combo;
+	FGameplayTag Boss_Action_Combo_Starter;
+	FGameplayTag Boss_Action_Combo_Extender;
+
+	// Boss.State.* representa estado runtime de BossBrain y futuro StateTree.
+	FGameplayTag Boss_State;
+	FGameplayTag Boss_State_Neutral;
+	FGameplayTag Boss_State_SelectingAction;
+	FGameplayTag Boss_State_StartingAction;
+	FGameplayTag Boss_State_ActionRunning;
+	FGameplayTag Boss_State_Recovering;
+	FGameplayTag Boss_State_Staggered;
+	FGameplayTag Boss_State_PhaseTransition;
+	FGameplayTag Boss_State_Dead;
+
 	// --- TAGS DE ABILITIES: HECHIZOS DEL JUGADOR ---
 	// Jerarquía coherente con Cooldown.Spell.*: mismos niveles, mismo propósito.
 	//   Abilities.Spell              → padre de todos los hechizos del jugador.

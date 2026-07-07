@@ -23,7 +23,9 @@ public class PantheliaProject : ModuleRules
         });
 
         PrivateDependencyModuleNames.AddRange(new string[] {
-        "AIModule"          // Requerido para APantheliaAIController, UBehaviorTreeComponent, UBlackboardComponent
+        "AIModule",         // Requerido para APantheliaAIController, UBehaviorTreeComponent, UBlackboardComponent
+        "StateTreeModule",
+        "GameplayStateTreeModule"
 		});
 
         // Uncomment if you are using Slate UI

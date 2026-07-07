@@ -88,7 +88,7 @@ struct FPantheliaBossActionDefinition
 {
 	GENERATED_BODY()
 
-	// Identidad interna de la acción. Ej: BossAction.WarriorBoss.ShortSlash.
+	// Identidad interna de la acción. Ej: BossAction.Melee.ShortSlash.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Action")
 	FGameplayTag ActionTag;
 

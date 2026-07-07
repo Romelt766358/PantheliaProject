@@ -27,6 +27,10 @@
 			"Name": "AndroidDeviceProfileSelector",
 			"Enabled": false
 		},
+		{ 	
+			"Name": "StateTree", 
+			"Enabled": true 
+		},
 		{
 			"Name": "AndroidMedia",
 			"Enabled": false
