@@ -39,6 +39,10 @@ class PANTHELIAPROJECT_API ULockonComponent : public UActorComponent
 public:
 	ULockonComponent();
 
+	// =========================
+	// API pública de gameplay
+	// =========================
+
 	// Target actual del lock-on. Otros sistemas lo leen directamente, por ejemplo
 	// los proyectiles para apuntar al enemigo fijado.
 	UPROPERTY(BlueprintReadOnly, Category = "Lockon")
@@ -107,6 +111,10 @@ public:
 protected:
 	virtual void BeginPlay() override;
 
+	// =========================
+	// Configuración de búsqueda
+	// =========================
+
 	UFUNCTION(BlueprintCallable, Category = "Lockon")
 	void StartLockon(float Radius = 850.0f);
 
@@ -117,9 +125,8 @@ protected:
 	double LockonAngleThreshold{ 0.5f };
 
 	// Si está activo, el lock-on solo puede adquirir/cambiar a objetivos con línea
-	// de visión clara desde la cámara. No rompe aún el lock-on si una pared se interpone
-	// después de haber seleccionado el target; eso queda para la siguiente iteración
-	// con temporizador de oclusión.
+	// de visión clara desde la cámara. La ruptura posterior por pared se controla
+	// por separado con bBreakLockonWhenLineOfSightBlocked.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lockon Settings")
 	bool bRequireLineOfSightToAcquireLockon = true;
 
@@ -127,6 +134,10 @@ protected:
 	// Visibility es el default esperado para objetos de mundo que bloquean visión.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lockon Settings")
 	TEnumAsByte<ECollisionChannel> LineOfSightTraceChannel = ECC_Visibility;
+
+	// =========================
+	// Configuración de oclusión
+	// =========================
 
 	// Si está activo, el lock-on se rompe cuando el target permanece oculto por una
 	// pared/obstáculo durante LineOfSightBreakDelay segundos. No se rompe instantáneo:
@@ -138,6 +149,10 @@ protected:
 	// Valores recomendados: 0.5 a 1.0. Menos que eso se siente nervioso.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lockon Settings|Occlusion", meta = (ClampMin = "0.0"))
 	float LineOfSightBreakDelay = 0.75f;
+
+	// =========================
+	// Configuración de cámara
+	// =========================
 
 	// Si está activo, la cámara interpola hacia el target en vez de hacer snap directo.
 	// Mantenerlo configurable permite desactivarlo si una pelea específica necesita
@@ -155,6 +170,10 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lockon Settings|Camera")
 	float LockonCameraTargetVerticalOffset = -125.0f;
 
+	// =========================
+	// Configuración de retarget / switch
+	// =========================
+
 	// Radio usado cuando el target muere y buscamos otro enemigo cercano.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lockon Settings")
 	float AutoRetargetRadius{ 950.0f };
@@ -170,6 +189,10 @@ protected:
 	// Cuánto debe estar el candidato hacia el lado solicitado para considerarlo.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lockon Settings")
 	float SwitchSideThreshold{ 0.1f };
+
+	// =========================
+	// Opciones de asistencia
+	// =========================
 
 	// Opción de gameplay: si está activa, un ataque básico que golpea a un enemigo
 	// fija lock-on automáticamente SOLO cuando no hay lock-on activo.
@@ -195,9 +218,17 @@ protected:
 	float SoftLockForwardThreshold = 0.25f;
 
 public:
+	// =========================
+	// Tick
+	// =========================
+
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
 private:
+	// =========================
+	// Estado runtime
+	// =========================
+
 	bool bLockonStateApplied = false;
 
 	// Acumula cuánto tiempo lleva bloqueada la línea de visión del target actual.
@@ -212,21 +243,39 @@ private:
 	UPROPERTY(EditAnywhere, Category = "Lockon Settings")
 	float ToggleDebounceSeconds = 0.12f;
 
+	// =========================
+	// Referencias cacheadas
+	// =========================
+
 	// Refresca referencias que pueden no existir en BeginPlay todavía. En especial,
 	// el Controller puede llegar después por PossessedBy, y si queda null el lock-on
 	// no puede leer la cámara para elegir target.
 	void RefreshCachedReferences();
+
+	// =========================
+	// Búsqueda y scoring
+	// =========================
 
 	TArray<AActor*> FindLockonCandidates(float Radius, AActor* ActorToIgnore = nullptr);
 	AActor* FindBestInitialTarget(float Radius);
 	AActor* FindBestAutoRetargetTarget(AActor* LostTarget);
 	AActor* FindBestDirectionalTarget(float Direction);
 
+	// =========================
+	// Validación y línea de visión
+	// =========================
+
 	bool IsValidLockonCandidate(AActor* Candidate) const;
-	bool HasLineOfSightToCandidate(AActor* Candidate);
+	bool HasRequiredLineOfSightToCandidate(AActor* Candidate);
+	bool HasClearLineOfSightToTarget(AActor* TargetActor);
 	bool IsSelectableSearchCandidate(AActor* Candidate);
 	bool PassesCameraAngleCheck(AActor* Candidate, float MinDot);
 	bool ShouldBreakLockonFromBlockedLineOfSight(float DeltaTime);
+	bool GetCameraViewPoint(FVector& OutLocation, FRotator& OutRotation);
+
+	// =========================
+	// Aplicación / limpieza de estado
+	// =========================
 
 	void SetCurrentTarget(AActor* NewTarget, bool bCallDeselectOnOldTarget = true);
 	void ApplyLockonState();

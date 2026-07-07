@@ -55,6 +55,10 @@ void ULockonComponent::RefreshCachedReferences()
 	}
 }
 
+// =========================
+// API pública / flujo principal
+// =========================
+
 void ULockonComponent::StartLockon(float Radius)
 {
 	RefreshCachedReferences();
@@ -181,6 +185,10 @@ bool ULockonComponent::IsSoftLockOnMeleeAttacksEnabled() const
 	return bSoftLockOnMeleeAttacks;
 }
 
+// =========================
+// Soft-lock melee
+// =========================
+
 AActor* ULockonComponent::FindBestSoftLockTarget(float RadiusOverride)
 {
 	if (!bSoftLockOnMeleeAttacks)
@@ -247,6 +255,10 @@ AActor* ULockonComponent::FindBestSoftLockTarget(float RadiusOverride)
 
 	return BestTarget;
 }
+
+// =========================
+// Tick / cámara
+// =========================
 
 void ULockonComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
@@ -321,6 +333,10 @@ void ULockonComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActo
 	Controller->SetControlRotation(DesiredRotation);
 }
 
+// =========================
+// Búsqueda y scoring de targets
+// =========================
+
 TArray<AActor*> ULockonComponent::FindLockonCandidates(float Radius, AActor* ActorToIgnore)
 {
 	RefreshCachedReferences();
@@ -383,14 +399,17 @@ AActor* ULockonComponent::FindBestInitialTarget(float Radius)
 	AActor* BestTarget = nullptr;
 	float BestScore = -FLT_MAX;
 
-	if (!Controller || !OwnerRef)
+	if (!OwnerRef)
 	{
 		return nullptr;
 	}
 
 	FVector CameraLocation;
 	FRotator CameraRotation;
-	Controller->GetPlayerViewPoint(CameraLocation, CameraRotation);
+	if (!GetCameraViewPoint(CameraLocation, CameraRotation))
+	{
+		return nullptr;
+	}
 
 	const FVector CameraForward = CameraRotation.Vector();
 
@@ -427,14 +446,17 @@ AActor* ULockonComponent::FindBestAutoRetargetTarget(AActor* LostTarget)
 	AActor* BestTarget = nullptr;
 	float BestScore = -FLT_MAX;
 
-	if (!Controller || !OwnerRef)
+	if (!OwnerRef)
 	{
 		return nullptr;
 	}
 
 	FVector CameraLocation;
 	FRotator CameraRotation;
-	Controller->GetPlayerViewPoint(CameraLocation, CameraRotation);
+	if (!GetCameraViewPoint(CameraLocation, CameraRotation))
+	{
+		return nullptr;
+	}
 
 	const FVector CameraForward = CameraRotation.Vector();
 
@@ -472,14 +494,17 @@ AActor* ULockonComponent::FindBestDirectionalTarget(float Direction)
 	AActor* BestTarget = nullptr;
 	float BestScore = -FLT_MAX;
 
-	if (!Controller || !OwnerRef)
+	if (!OwnerRef)
 	{
 		return nullptr;
 	}
 
 	FVector CameraLocation;
 	FRotator CameraRotation;
-	Controller->GetPlayerViewPoint(CameraLocation, CameraRotation);
+	if (!GetCameraViewPoint(CameraLocation, CameraRotation))
+	{
+		return nullptr;
+	}
 
 	const FVector CameraForward = CameraRotation.Vector();
 	const FVector CameraRight = FRotationMatrix(CameraRotation).GetUnitAxis(EAxis::Y);
@@ -519,6 +544,10 @@ AActor* ULockonComponent::FindBestDirectionalTarget(float Direction)
 	return BestTarget;
 }
 
+// =========================
+// Validación / línea de visión
+// =========================
+
 bool ULockonComponent::IsValidLockonCandidate(AActor* Candidate) const
 {
 	if (!IsValid(Candidate))
@@ -554,25 +583,33 @@ bool ULockonComponent::IsValidLockonCandidate(AActor* Candidate) const
 	return true;
 }
 
-bool ULockonComponent::HasLineOfSightToCandidate(AActor* Candidate)
+bool ULockonComponent::HasRequiredLineOfSightToCandidate(AActor* Candidate)
 {
 	if (!bRequireLineOfSightToAcquireLockon)
 	{
 		return true;
 	}
 
+	return HasClearLineOfSightToTarget(Candidate);
+}
+
+bool ULockonComponent::HasClearLineOfSightToTarget(AActor* TargetActor)
+{
 	RefreshCachedReferences();
 
-	if (!Controller || !Candidate || !GetWorld())
+	if (!TargetActor || !GetWorld())
 	{
 		return false;
 	}
 
 	FVector CameraLocation;
 	FRotator CameraRotation;
-	Controller->GetPlayerViewPoint(CameraLocation, CameraRotation);
+	if (!GetCameraViewPoint(CameraLocation, CameraRotation))
+	{
+		return false;
+	}
 
-	const FVector TargetLocation = GetLockonLocation(Candidate);
+	const FVector TargetLocation = GetLockonLocation(TargetActor);
 
 	FCollisionQueryParams QueryParams{ FName{ TEXT("Lockon Line Of Sight") }, false, OwnerRef };
 	QueryParams.AddIgnoredActor(OwnerRef);
@@ -593,14 +630,14 @@ bool ULockonComponent::HasLineOfSightToCandidate(AActor* Candidate)
 	}
 
 	AActor* HitActor = HitResult.GetActor();
-	if (HitActor == Candidate)
+	if (HitActor == TargetActor)
 	{
 		return true;
 	}
 
 	// Algunos componentes/actores auxiliares pueden estar owned por el enemigo.
 	// En ese caso también consideramos que la línea de visión llegó al target.
-	if (HitActor && HitActor->GetOwner() == Candidate)
+	if (HitActor && HitActor->GetOwner() == TargetActor)
 	{
 		return true;
 	}
@@ -610,7 +647,7 @@ bool ULockonComponent::HasLineOfSightToCandidate(AActor* Candidate)
 
 bool ULockonComponent::IsSelectableSearchCandidate(AActor* Candidate)
 {
-	return IsValidLockonCandidate(Candidate) && HasLineOfSightToCandidate(Candidate);
+	return IsValidLockonCandidate(Candidate) && HasRequiredLineOfSightToCandidate(Candidate);
 }
 
 FVector ULockonComponent::GetLockonLocation(AActor* TargetActor) const
@@ -630,22 +667,36 @@ FVector ULockonComponent::GetLockonLocation(AActor* TargetActor) const
 
 bool ULockonComponent::PassesCameraAngleCheck(AActor* Candidate, float MinDot)
 {
-	RefreshCachedReferences();
-
-	if (!Controller || !Candidate)
+	if (!Candidate)
 	{
 		return false;
 	}
 
 	FVector CameraLocation;
 	FRotator CameraRotation;
-	Controller->GetPlayerViewPoint(CameraLocation, CameraRotation);
+	if (!GetCameraViewPoint(CameraLocation, CameraRotation))
+	{
+		return false;
+	}
 
 	const FVector CameraForward = CameraRotation.Vector();
 	const FVector DirectionToCandidate = (GetLockonLocation(Candidate) - CameraLocation).GetSafeNormal();
 
 	const float DotProduct = FVector::DotProduct(CameraForward, DirectionToCandidate);
 	return DotProduct >= MinDot;
+}
+
+bool ULockonComponent::GetCameraViewPoint(FVector& OutLocation, FRotator& OutRotation)
+{
+	RefreshCachedReferences();
+
+	if (!Controller)
+	{
+		return false;
+	}
+
+	Controller->GetPlayerViewPoint(OutLocation, OutRotation);
+	return true;
 }
 
 bool ULockonComponent::ShouldBreakLockonFromBlockedLineOfSight(float DeltaTime)
@@ -662,7 +713,7 @@ bool ULockonComponent::ShouldBreakLockonFromBlockedLineOfSight(float DeltaTime)
 		return false;
 	}
 
-	if (HasLineOfSightToCandidate(CurrentTargetActor.Get()))
+	if (HasClearLineOfSightToTarget(CurrentTargetActor.Get()))
 	{
 		CurrentLineOfSightBlockedTime = 0.0f;
 		return false;
@@ -671,6 +722,10 @@ bool ULockonComponent::ShouldBreakLockonFromBlockedLineOfSight(float DeltaTime)
 	CurrentLineOfSightBlockedTime += DeltaTime;
 	return CurrentLineOfSightBlockedTime >= LineOfSightBreakDelay;
 }
+
+// =========================
+// Estado aplicado al jugador / target
+// =========================
 
 void ULockonComponent::SetCurrentTarget(AActor* NewTarget, bool bCallDeselectOnOldTarget)
 {
