@@ -135,6 +135,41 @@ void ULockonComponent::HandleCurrentTargetLost(AActor* LostTarget)
 	EndLockon();
 }
 
+bool ULockonComponent::TryAutoLockOnFromBasicAttackHit(AActor* HitActor)
+{
+	if (!bAutoLockOnFromBasicAttackHit)
+	{
+		return false;
+	}
+
+	// Si ya hay lock-on activo, no tocamos nada. Esta es la regla clave:
+	// golpear a B mientras el jugador está fijado a A NO debe cambiar el target.
+	if (IsValid(CurrentTargetActor))
+	{
+		return false;
+	}
+
+	RefreshCachedReferences();
+
+	if (!IsValidLockonCandidate(HitActor))
+	{
+		return false;
+	}
+
+	SetCurrentTarget(HitActor);
+	return true;
+}
+
+void ULockonComponent::SetAutoLockOnFromBasicAttackHitEnabled(bool bEnabled)
+{
+	bAutoLockOnFromBasicAttackHit = bEnabled;
+}
+
+bool ULockonComponent::IsAutoLockOnFromBasicAttackHitEnabled() const
+{
+	return bAutoLockOnFromBasicAttackHit;
+}
+
 void ULockonComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);

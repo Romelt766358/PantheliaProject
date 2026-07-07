@@ -1,9 +1,11 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Combat/WeaponTraceComponent.h"
+
 #include "AbilitySystem/PantheliaAbilitySystemLibrary.h"
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
+#include "Combat/LockonComponent.h"
 #include "Components/PrimitiveComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Kismet/KismetSystemLibrary.h"
@@ -82,6 +84,11 @@ void UWeaponTraceComponent::SetActiveImpactSound(USoundBase* InImpactSound)
 	ActiveImpactSound = InImpactSound;
 }
 
+void UWeaponTraceComponent::SetAutoLockOnFromBasicAttackHitAllowed(bool bInAllowed)
+{
+	bAutoLockOnFromBasicAttackHitAllowed = bInAllowed;
+}
+
 void UWeaponTraceComponent::SetWeaponMeshComponent(UPrimitiveComponent* InWeaponMesh,
 	FName InBaseSocketName, FName InTipSocketName)
 {
@@ -97,6 +104,7 @@ void UWeaponTraceComponent::SetWeaponMeshComponent(UPrimitiveComponent* InWeapon
 	{
 		WeaponBaseSocketName = InBaseSocketName;
 	}
+
 	if (!InTipSocketName.IsNone())
 	{
 		WeaponTipSocketName = InTipSocketName;
@@ -119,6 +127,10 @@ void UWeaponTraceComponent::DeactivateTrace()
 	// Limpiamos la lista para que el próximo swing pueda volver a golpear
 	// a los mismos actores.
 	IgnoredActors.Empty();
+
+	// El permiso de auto lock-on es por swing. La ability lo volverá a configurar
+	// en el siguiente ataque si corresponde.
+	bAutoLockOnFromBasicAttackHitAllowed = false;
 }
 
 void UWeaponTraceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
@@ -208,6 +220,7 @@ void UWeaponTraceComponent::PerformTrace()
 		// Aplicar el daño vía GAS: buscamos el ASC del objetivo y le aplicamos el spec.
 		UAbilitySystemComponent* TargetASC =
 			UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(HitActor);
+
 		if (!TargetASC) continue;
 
 		// --- KNOCKBACK (clase 315) ---
@@ -225,6 +238,7 @@ void UWeaponTraceComponent::PerformTrace()
 				FPantheliaGameplayTags::Get().CombatTricks_KnockbackChance, false, 0.f);
 
 			const bool bKnockback = FMath::RandRange(1, 100) <= KnockbackChance;
+
 			if (bKnockback)
 			{
 				// Dirección atacante -> objetivo (normalizada), con el mismo pitch override
@@ -233,6 +247,7 @@ void UWeaponTraceComponent::PerformTrace()
 				const FVector ToTarget = (HitActor->GetActorLocation() - Owner->GetActorLocation()).GetSafeNormal();
 				const FVector KnockbackDirection = UPantheliaAbilitySystemLibrary::GetDirectionWithPitchOverride(
 					ToTarget, 45.f);
+
 				const FVector KnockbackForce = KnockbackDirection * KnockbackForceMagnitude;
 
 				FGameplayEffectContextHandle ContextHandle = DamageSpecHandle.Data->GetContext();
@@ -253,6 +268,7 @@ void UWeaponTraceComponent::PerformTrace()
 				FPantheliaGameplayTags::Get().CombatTricks_LaunchChance, false, 0.f);
 
 			const bool bLaunch = FMath::RandRange(1, 100) <= LaunchChance;
+
 			if (bLaunch)
 			{
 				const float LaunchPitchOverride = DamageSpecHandle.Data->GetSetByCallerMagnitude(
@@ -261,10 +277,22 @@ void UWeaponTraceComponent::PerformTrace()
 				const FVector ToTargetLaunch = (HitActor->GetActorLocation() - Owner->GetActorLocation()).GetSafeNormal();
 				const FVector LaunchDirection = UPantheliaAbilitySystemLibrary::GetDirectionWithPitchOverride(
 					ToTargetLaunch, LaunchPitchOverride);
+
 				const FVector LaunchForce = LaunchDirection * LaunchForceMagnitude;
 
 				FGameplayEffectContextHandle LaunchContextHandle = DamageSpecHandle.Data->GetContext();
 				UPantheliaAbilitySystemLibrary::SetLaunchForce(LaunchContextHandle, LaunchForce);
+			}
+		}
+
+		// Si este swing es un ataque básico del jugador, permite que el lock-on se fije
+		// automáticamente al enemigo golpeado. La propia función del LockonComponent protege
+		// la regla principal: si ya hay lock-on activo, no cambia de target.
+		if (bAutoLockOnFromBasicAttackHitAllowed)
+		{
+			if (ULockonComponent* LockonComponent = Owner->FindComponentByClass<ULockonComponent>())
+			{
+				LockonComponent->TryAutoLockOnFromBasicAttackHit(HitActor);
 			}
 		}
 
@@ -274,25 +302,28 @@ void UWeaponTraceComponent::PerformTrace()
 		// Usamos el ASC del ATACANTE (Owner) para el dispatch, que garantiza replicacion
 		// correcta incluso para enemigos IA (cuyo ASC no pertenece a ningun player).
 		// Parametros del Cue:
-		//   Location          = punto de impacto real en la superficie del actor golpeado.
-		//   SourceObject      = la victima (HitActor): GC_MeleeImpact llama GetBloodEffect
-		//                       sobre este para obtener las particulas propias del personaje.
-		//   EffectCauser      = el atacante (Owner): GC_MeleeImpact busca en su array de
-		//                       TaggedMontages el ImpactSound del montage activo.
-		//   AggregatedSourceTags = contiene el ActiveMontageTag para que el GC identifique
-		//                          que sonido usar sin necesidad de un cast.
+		// Location = punto de impacto real en la superficie del actor golpeado.
+		// SourceObject = la victima (HitActor): GC_MeleeImpact llama GetBloodEffect
+		// sobre este para obtener las particulas propias del personaje.
+		// EffectCauser = el atacante (Owner): GC_MeleeImpact busca en su array de
+		// TaggedMontages el ImpactSound del montage activo.
+		// AggregatedSourceTags = contiene el ActiveMontageTag para que el GC identifique
+		// que sonido usar sin necesidad de un cast.
 		UAbilitySystemComponent* OwnerASC =
 			UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Owner);
+
 		if (OwnerASC)
 		{
 			FGameplayCueParameters CueParams;
 			CueParams.Location = Hit.ImpactPoint;
 			CueParams.SourceObject = HitActor;
 			CueParams.EffectCauser = Owner;
+
 			if (ActiveMontageTag.IsValid())
 			{
 				CueParams.AggregatedSourceTags.AddTag(ActiveMontageTag);
 			}
+
 			OwnerASC->ExecuteGameplayCue(
 				FPantheliaGameplayTags::Get().GameplayCue_Melee_Impact,
 				CueParams);

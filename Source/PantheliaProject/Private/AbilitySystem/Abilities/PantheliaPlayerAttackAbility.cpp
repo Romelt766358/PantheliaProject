@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "AbilitySystem/Abilities/PantheliaPlayerAttackAbility.h"
+
 #include "Combat/PantheliaEquipmentComponent.h"
 #include "Combat/PantheliaWeaponDefinition.h"
 #include "Combat/PantheliaWeapon.h"
@@ -13,7 +14,8 @@
 #include "TimerManager.h"
 #include "Engine/World.h"
 
-bool UPantheliaPlayerAttackAbility::CanActivateAbility(const FGameplayAbilitySpecHandle Handle,
+bool UPantheliaPlayerAttackAbility::CanActivateAbility(
+	const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,
 	const FGameplayTagContainer* SourceTags,
 	const FGameplayTagContainer* TargetTags,
@@ -30,7 +32,8 @@ bool UPantheliaPlayerAttackAbility::CanActivateAbility(const FGameplayAbilitySpe
 	return Super::CanActivateAbility(Handle, ActorInfo, SourceTags, TargetTags, OptionalRelevantTags);
 }
 
-void UPantheliaPlayerAttackAbility::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
+void UPantheliaPlayerAttackAbility::ActivateAbility(
+	const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,
 	const FGameplayAbilityActivationInfo ActivationInfo,
 	const FGameplayEventData* TriggerEventData)
@@ -63,10 +66,12 @@ void UPantheliaPlayerAttackAbility::StartComboFromActivation()
 	PlayCurrentComboMontage();
 }
 
-void UPantheliaPlayerAttackAbility::EndAbility(const FGameplayAbilitySpecHandle Handle,
+void UPantheliaPlayerAttackAbility::EndAbility(
+	const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,
 	const FGameplayAbilityActivationInfo ActivationInfo,
-	bool bReplicateEndAbility, bool bWasCancelled)
+	bool bReplicateEndAbility,
+	bool bWasCancelled)
 {
 	// Resetear el estado del combo al terminar (sea por completar, romper o cancelar
 	// por dash). Asi la proxima activacion empieza limpia en el golpe 0.
@@ -94,7 +99,8 @@ void UPantheliaPlayerAttackAbility::ResetCombo()
 {
 	// Fallback de seguridad: resetea el estado del combo desde fuera
 	// (p.ej. ABP via MainCharacter::ResetPlayerCombo). El flujo normal
-	// resetea en EndAbility, pero este método cubre casos extremos.
+	// resetea en EndAbility, pero este método existe como fallback de seguridad para casos donde el notify de ventana no se dispara
+	// (p.ej. si se interrumpe el montage antes de que abra la ventana).
 	ComboIndex = 0;
 	bComboWindowOpen = false;
 	bComboInputBuffered = false;
@@ -109,7 +115,6 @@ void UPantheliaPlayerAttackAbility::CloseComboWindow()
 {
 	bComboWindowOpen = false;
 
-
 	// Al cerrar la ventana decidimos: si el jugador buffereo un input, encadenamos
 	// el siguiente golpe; si no, dejamos que el montage termine y la ability acabe.
 	if (bComboInputBuffered)
@@ -117,6 +122,7 @@ void UPantheliaPlayerAttackAbility::CloseComboWindow()
 		bComboInputBuffered = false;
 		AdvanceAndPlayNext();
 	}
+
 	// Si no hay buffer, no hacemos nada: el montage actual seguira hasta su fin y
 	// OnMontageCompleted terminara la ability. Eso resetea el combo (en EndAbility).
 }
@@ -157,7 +163,12 @@ void UPantheliaPlayerAttackAbility::PlayCurrentComboMontage()
 	// Crear y lanzar la task de montage. Esta task mantiene la ability viva mientras
 	// el montage se reproduce y nos avisa por sus delegates cuando termina.
 	CurrentMontageTask = UAbilityTask_PlayMontageAndWait::CreatePlayMontageAndWaitProxy(
-		this, NAME_None, Montage, 1.f, NAME_None, /*bStopWhenAbilityEnds=*/true);
+		this,
+		NAME_None,
+		Montage,
+		1.f,
+		NAME_None,
+		/*bStopWhenAbilityEnds=*/true);
 
 	if (!CurrentMontageTask)
 	{
@@ -174,7 +185,6 @@ void UPantheliaPlayerAttackAbility::PlayCurrentComboMontage()
 	CurrentMontageTask->OnCompleted.AddDynamic(this, &UPantheliaPlayerAttackAbility::OnMontageCompleted);
 	CurrentMontageTask->OnInterrupted.AddDynamic(this, &UPantheliaPlayerAttackAbility::OnMontageInterruptedOrCancelled);
 	CurrentMontageTask->OnCancelled.AddDynamic(this, &UPantheliaPlayerAttackAbility::OnMontageInterruptedOrCancelled);
-
 	CurrentMontageTask->ReadyForActivation();
 }
 
@@ -188,9 +198,7 @@ void UPantheliaPlayerAttackAbility::AdvanceAndPlayNext()
 	}
 
 	const TArray<TObjectPtr<UAnimMontage>>& Montages =
-		(AttackType == EPlayerAttackType::Heavy)
-		? WeaponDef->HeavyAttackMontages
-		: WeaponDef->LightAttackMontages;
+		(AttackType == EPlayerAttackType::Heavy) ? WeaponDef->HeavyAttackMontages : WeaponDef->LightAttackMontages;
 
 	// Avanzar el indice. Si llegamos al final del combo, ciclamos a 0.
 	ComboIndex = (Montages.Num() > 0) ? (ComboIndex + 1) % Montages.Num() : 0;
@@ -208,6 +216,7 @@ void UPantheliaPlayerAttackAbility::SetupWeaponTraceForCurrentAttack(float Damag
 
 	UWeaponTraceComponent* TraceComp = AvatarActor->FindComponentByClass<UWeaponTraceComponent>();
 	UPantheliaEquipmentComponent* EquipComp = AvatarActor->FindComponentByClass<UPantheliaEquipmentComponent>();
+
 	if (!TraceComp || !EquipComp) return;
 
 	// Pasar al trace el mesh del arma equipada (su componente activo) para que lea
@@ -219,6 +228,11 @@ void UPantheliaPlayerAttackAbility::SetupWeaponTraceForCurrentAttack(float Damag
 			TraceComp->SetWeaponMeshComponent(WeaponMesh);
 		}
 	}
+
+	// El auto lock-on por golpe solo se permite para el ataque básico (Light).
+	// La opción global sigue viviendo en LockonComponent, de modo que el futuro menú
+	// de opciones puede desactivarlo sin tocar esta ability ni el WeaponTrace.
+	TraceComp->SetAutoLockOnFromBasicAttackHitAllowed(AttackType == EPlayerAttackType::Light);
 
 	// Pasar el spec de dano del arma. El WeaponTraceNotifyState del montage abrira/
 	// cerrara la ventana de dano y aplicara este spec a quien golpee.
@@ -252,14 +266,15 @@ FGameplayEffectSpecHandle UPantheliaPlayerAttackAbility::MakeWeaponDamageSpec(fl
 	ContextHandle.AddSourceObject(GetAvatarActorFromActorInfo());
 
 	FGameplayEffectSpecHandle SpecHandle = SourceASC->MakeOutgoingSpec(
-		DamageEffectClass, GetAbilityLevel(), ContextHandle);
+		DamageEffectClass,
+		GetAbilityLevel(),
+		ContextHandle);
 
 	if (!SpecHandle.IsValid()) return SpecHandle;
 
 	// Escalado completo: dano base + escalado por atributos + poise.
 	// DamageMultiplier (1.0 por defecto) escala el dano final; el pesado cargado lo usa >1.
 	ApplyDamageScalingToSpec(SpecHandle, SourceASC, DamageMultiplier);
-
 	return SpecHandle;
 }
 
@@ -269,9 +284,7 @@ UAnimMontage* UPantheliaPlayerAttackAbility::GetCurrentComboMontage() const
 	if (!WeaponDef) return nullptr;
 
 	const TArray<TObjectPtr<UAnimMontage>>& Montages =
-		(AttackType == EPlayerAttackType::Heavy)
-		? WeaponDef->HeavyAttackMontages
-		: WeaponDef->LightAttackMontages;
+		(AttackType == EPlayerAttackType::Heavy) ? WeaponDef->HeavyAttackMontages : WeaponDef->LightAttackMontages;
 
 	if (Montages.Num() == 0) return nullptr;
 
@@ -321,6 +334,7 @@ FRotator UPantheliaPlayerAttackAbility::GetDesiredAttackRotation() const
 		{
 			FVector ToTarget = LockonComp->CurrentTargetActor->GetActorLocation() - ActorLocation;
 			ToTarget.Z = 0.f; // Solo yaw, no inclinar el personaje.
+
 			if (!ToTarget.IsNearlyZero())
 			{
 				return ToTarget.Rotation();
@@ -330,11 +344,11 @@ FRotator UPantheliaPlayerAttackAbility::GetDesiredAttackRotation() const
 
 	// 2) Sin lock-on: mirar hacia la direccion del input de movimiento del jugador.
 	// GetLastMovementInputVector devuelve la direccion del ultimo AddMovementInput.
-	if (const UCharacterMovementComponent* MoveComp =
-		AvatarActor->FindComponentByClass<UCharacterMovementComponent>())
+	if (const UCharacterMovementComponent* MoveComp = AvatarActor->FindComponentByClass<UCharacterMovementComponent>())
 	{
 		FVector InputDir = MoveComp->GetLastInputVector();
 		InputDir.Z = 0.f;
+
 		if (!InputDir.IsNearlyZero())
 		{
 			return InputDir.Rotation();
@@ -360,9 +374,11 @@ void UPantheliaPlayerAttackAbility::StartReorientToDesiredDirection()
 	{
 		ReorientElapsed = 0.f;
 		World->GetTimerManager().SetTimer(
-			ReorientTimerHandle, this,
+			ReorientTimerHandle,
+			this,
 			&UPantheliaPlayerAttackAbility::TickReorient,
-			ReorientTickInterval, /*bLoop=*/true);
+			ReorientTickInterval,
+			/*bLoop=*/true);
 	}
 }
 

@@ -17,17 +17,17 @@ class USoundBase;
  * puntual del curso (overlap esférico de radio fijo en un solo socket).
  *
  * FUNCIONAMIENTO (ver State_Combat.md §9):
- *   1. La ability de ataque (GA_MeleeAttack) construye un FGameplayEffectSpecHandle
- *      con todo el escalado de daño ya aplicado y se lo entrega a este componente
- *      vía SetDamageSpec() — mismo patrón que usan los proyectiles.
- *   2. Un UWeaponTraceNotifyState en el montage abre la ventana de daño:
- *      NotifyBegin -> ActivateTrace(), NotifyEnd -> DeactivateTrace().
- *   3. Mientras la ventana está activa, cada tick hace un SweepMultiByChannel
- *      con forma de cápsula entre los sockets WeaponBaseSocketName y
- *      WeaponTipSocketName del mesh del arma.
- *   4. Por cada actor golpeado: si no está en IgnoredActors de este swing y
- *      IsNotFriend devuelve true, se le aplica el spec de daño guardado y se
- *      añade a la lista de ignorados (un hit por swing, multi-objetivo permitido).
+ * 1. La ability de ataque (GA_MeleeAttack) construye un FGameplayEffectSpecHandle
+ * con todo el escalado de daño ya aplicado y se lo entrega a este componente
+ * vía SetDamageSpec() — mismo patrón que usan los proyectiles.
+ * 2. Un UWeaponTraceNotifyState en el montage abre la ventana de daño:
+ * NotifyBegin -> ActivateTrace(), NotifyEnd -> DeactivateTrace().
+ * 3. Mientras la ventana está activa, cada tick hace un SweepMultiByChannel
+ * con forma de cápsula entre los sockets WeaponBaseSocketName y
+ * WeaponTipSocketName del mesh del arma.
+ * 4. Por cada actor golpeado: si no está en IgnoredActors de este swing y
+ * IsNotFriend devuelve true, se le aplica el spec de daño guardado y se
+ * añade a la lista de ignorados (un hit por swing, multi-objetivo permitido).
  *
  * DISEÑO: componente reutilizable. Pensado primero para enemigos melee, pero
  * cualquier actor (incluido el jugador a futuro) puede usarlo. El daño se aplica
@@ -66,6 +66,12 @@ public:
 	// Reproducir aqui directamente (no por Cue) es suficiente porque el juego es single-player.
 	UFUNCTION(BlueprintCallable, Category = "WeaponTrace")
 	void SetActiveImpactSound(USoundBase* InImpactSound);
+
+	// Define si este swing puede activar auto lock-on al conectar.
+	// No es una opción global: lo setea la ability antes de cada ataque.
+	// La opción global vive en ULockonComponent para que el futuro menú pueda activarla/desactivarla.
+	UFUNCTION(BlueprintCallable, Category = "WeaponTrace")
+	void SetAutoLockOnFromBasicAttackHitAllowed(bool bInAllowed);
 
 	// Abre la ventana de daño: a partir de aquí el Tick hace sweeps cada frame.
 	// Lo llama UWeaponTraceNotifyState::NotifyBegin.
@@ -138,6 +144,10 @@ private:
 	// Null = sin sonido para ese ataque (no se reproduce nada).
 	UPROPERTY()
 	TObjectPtr<USoundBase> ActiveImpactSound = nullptr;
+
+	// True solo para swings que deben activar auto lock-on al conectar.
+	// La ability del jugador lo pone en true para ataque básico y false para otros ataques.
+	bool bAutoLockOnFromBasicAttackHitAllowed = false;
 
 	// Actores ya golpeados en el swing actual. Evita multi-hit del mismo swing.
 	// Se limpia en DeactivateTrace().

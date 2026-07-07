@@ -71,6 +71,21 @@ public:
 	// termina el lock-on.
 	void HandleCurrentTargetLost(AActor* LostTarget);
 
+	// Intenta fijar lock-on al enemigo golpeado por un ataque básico del jugador.
+	// Solo hace algo si NO hay lock-on activo; si CurrentTargetActor ya existe,
+	// no cambia de objetivo. Esto evita que golpear al enemigo B cambie el lock-on
+	// cuando el jugador ya estaba fijado al enemigo A.
+	UFUNCTION(BlueprintCallable, Category = "Lockon")
+	bool TryAutoLockOnFromBasicAttackHit(AActor* HitActor);
+
+	// Gancho para el futuro menú de opciones: permite activar/desactivar el auto lock-on
+	// al conectar un ataque básico sin tocar WeaponTrace ni las abilities.
+	UFUNCTION(BlueprintCallable, Category = "Lockon|Options")
+	void SetAutoLockOnFromBasicAttackHitEnabled(bool bEnabled);
+
+	UFUNCTION(BlueprintPure, Category = "Lockon|Options")
+	bool IsAutoLockOnFromBasicAttackHitEnabled() const;
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -98,6 +113,13 @@ protected:
 	// Cuánto debe estar el candidato hacia el lado solicitado para considerarlo.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lockon Settings")
 	float SwitchSideThreshold{ 0.1f };
+
+	// Opción de gameplay: si está activa, un ataque básico que golpea a un enemigo
+	// fija lock-on automáticamente SOLO cuando no hay lock-on activo.
+	// Vive aquí como gancho del futuro menú de opciones. El menú solo tendrá que llamar
+	// SetAutoLockOnFromBasicAttackHitEnabled() o escribir esta propiedad desde Blueprint.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lockon Settings|Options")
+	bool bAutoLockOnFromBasicAttackHit = true;
 
 public:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
