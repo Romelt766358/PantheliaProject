@@ -17,24 +17,47 @@ void ULockonComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
-	OwnerRef = GetOwner<ACharacter>();
+	RefreshCachedReferences();
+}
+
+void ULockonComponent::RefreshCachedReferences()
+{
+	if (!OwnerRef)
+	{
+		OwnerRef = Cast<ACharacter>(GetOwner());
+	}
+
 	if (!OwnerRef)
 	{
 		return;
 	}
 
-	Controller = Cast<APlayerController>(OwnerRef->GetController());
+	AController* OwnerController = OwnerRef->GetController();
+	if (!Controller || Controller.Get() != OwnerController)
+	{
+		Controller = Cast<APlayerController>(OwnerController);
+	}
+
 	if (!Controller && GetWorld())
 	{
 		Controller = GetWorld()->GetFirstPlayerController();
 	}
 
-	MovementComp = OwnerRef->GetCharacterMovement();
-	SpringArmComp = OwnerRef->FindComponentByClass<USpringArmComponent>();
+	if (!MovementComp)
+	{
+		MovementComp = OwnerRef->GetCharacterMovement();
+	}
+
+	if (!SpringArmComp)
+	{
+		SpringArmComp = OwnerRef->FindComponentByClass<USpringArmComponent>();
+	}
 }
 
 void ULockonComponent::StartLockon(float Radius)
 {
+	RefreshCachedReferences();
+
 	AActor* BestTarget = FindBestInitialTarget(Radius);
 	if (!BestTarget)
 	{
@@ -46,6 +69,15 @@ void ULockonComponent::StartLockon(float Radius)
 
 void ULockonComponent::ToggleLockon(float Radius)
 {
+	const float CurrentTimeSeconds = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
+	if ((CurrentTimeSeconds - LastToggleTimeSeconds) < ToggleDebounceSeconds)
+	{
+		UE_LOG(LogPanthelia, Warning, TEXT("[LOCKON] Toggle ignored by debounce. Delta=%.3f"), CurrentTimeSeconds - LastToggleTimeSeconds);
+		return;
+	}
+
+	LastToggleTimeSeconds = CurrentTimeSeconds;
+
 	if (IsValid(CurrentTargetActor))
 	{
 		EndLockon();
@@ -58,6 +90,8 @@ void ULockonComponent::ToggleLockon(float Radius)
 
 void ULockonComponent::SwitchTarget(float Direction)
 {
+	RefreshCachedReferences();
+
 	if (!IsValid(CurrentTargetActor))
 	{
 		return;
@@ -84,6 +118,8 @@ void ULockonComponent::EndLockon()
 
 void ULockonComponent::HandleCurrentTargetLost(AActor* LostTarget)
 {
+	RefreshCachedReferences();
+
 	if (CurrentTargetActor.Get() != LostTarget)
 	{
 		return;
@@ -102,6 +138,8 @@ void ULockonComponent::HandleCurrentTargetLost(AActor* LostTarget)
 void ULockonComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
+
+	RefreshCachedReferences();
 
 	// Si el puntero es null no hay target activo — nada que hacer.
 	if (CurrentTargetActor == nullptr)
@@ -158,8 +196,10 @@ void ULockonComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActo
 	Controller->SetControlRotation(NewRotation);
 }
 
-TArray<AActor*> ULockonComponent::FindLockonCandidates(float Radius, AActor* ActorToIgnore) const
+TArray<AActor*> ULockonComponent::FindLockonCandidates(float Radius, AActor* ActorToIgnore)
 {
+	RefreshCachedReferences();
+
 	TArray<AActor*> Candidates;
 
 	if (!GetWorld() || !OwnerRef)
@@ -211,7 +251,7 @@ TArray<AActor*> ULockonComponent::FindLockonCandidates(float Radius, AActor* Act
 	return Candidates;
 }
 
-AActor* ULockonComponent::FindBestInitialTarget(float Radius) const
+AActor* ULockonComponent::FindBestInitialTarget(float Radius)
 {
 	const TArray<AActor*> Candidates = FindLockonCandidates(Radius);
 
@@ -255,7 +295,7 @@ AActor* ULockonComponent::FindBestInitialTarget(float Radius) const
 	return BestTarget;
 }
 
-AActor* ULockonComponent::FindBestAutoRetargetTarget(AActor* LostTarget) const
+AActor* ULockonComponent::FindBestAutoRetargetTarget(AActor* LostTarget)
 {
 	const TArray<AActor*> Candidates = FindLockonCandidates(AutoRetargetRadius, LostTarget);
 
@@ -300,7 +340,7 @@ AActor* ULockonComponent::FindBestAutoRetargetTarget(AActor* LostTarget) const
 	return BestTarget;
 }
 
-AActor* ULockonComponent::FindBestDirectionalTarget(float Direction) const
+AActor* ULockonComponent::FindBestDirectionalTarget(float Direction)
 {
 	const TArray<AActor*> Candidates = FindLockonCandidates(SwitchTargetRadius, CurrentTargetActor.Get());
 
@@ -374,8 +414,10 @@ bool ULockonComponent::IsValidLockonCandidate(AActor* Candidate) const
 	return true;
 }
 
-bool ULockonComponent::PassesCameraAngleCheck(AActor* Candidate, float MinDot) const
+bool ULockonComponent::PassesCameraAngleCheck(AActor* Candidate, float MinDot)
 {
+	RefreshCachedReferences();
+
 	if (!Controller || !Candidate)
 	{
 		return false;

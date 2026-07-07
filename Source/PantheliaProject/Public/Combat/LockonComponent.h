@@ -105,13 +105,26 @@ public:
 private:
 	bool bLockonStateApplied = false;
 
-	TArray<AActor*> FindLockonCandidates(float Radius, AActor* ActorToIgnore = nullptr) const;
-	AActor* FindBestInitialTarget(float Radius) const;
-	AActor* FindBestAutoRetargetTarget(AActor* LostTarget) const;
-	AActor* FindBestDirectionalTarget(float Direction) const;
+	// Protege contra doble llamada al mismo input en el mismo frame.
+	// Esto cubre el caso típico en UE donde queda una llamada vieja en Blueprint
+	// y otra nueva en C++ sobre el mismo IA_Lockon.
+	float LastToggleTimeSeconds = -1000.0f;
+
+	UPROPERTY(EditAnywhere, Category = "Lockon Settings")
+	float ToggleDebounceSeconds = 0.12f;
+
+	// Refresca referencias que pueden no existir en BeginPlay todavía. En especial,
+	// el Controller puede llegar después por PossessedBy, y si queda null el lock-on
+	// no puede leer la cámara para elegir target.
+	void RefreshCachedReferences();
+
+	TArray<AActor*> FindLockonCandidates(float Radius, AActor* ActorToIgnore = nullptr);
+	AActor* FindBestInitialTarget(float Radius);
+	AActor* FindBestAutoRetargetTarget(AActor* LostTarget);
+	AActor* FindBestDirectionalTarget(float Direction);
 
 	bool IsValidLockonCandidate(AActor* Candidate) const;
-	bool PassesCameraAngleCheck(AActor* Candidate, float MinDot) const;
+	bool PassesCameraAngleCheck(AActor* Candidate, float MinDot);
 
 	void SetCurrentTarget(AActor* NewTarget, bool bCallDeselectOnOldTarget = true);
 	void ApplyLockonState();
