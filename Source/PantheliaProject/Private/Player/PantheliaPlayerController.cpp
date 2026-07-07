@@ -1,13 +1,15 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Player/PantheliaPlayerController.h"
+
+#include "AbilitySystemBlueprintLibrary.h"
+#include "AbilitySystem/PantheliaAbilitySystemComponent.h"
+#include "Blueprint/UserWidget.h"
+#include "Combat/LockonComponent.h"
 #include "EnhancedInputSubsystems.h"
 #include "Input/PantheliaInputComponent.h"
 #include "Interfaces/Enemy.h"
 #include "UI/Widgets/PantheliaUserWidget.h"
-#include "Blueprint/UserWidget.h"
-#include "AbilitySystemBlueprintLibrary.h"
-#include "AbilitySystem/PantheliaAbilitySystemComponent.h"
 
 APantheliaPlayerController::APantheliaPlayerController()
 {
@@ -46,6 +48,17 @@ void APantheliaPlayerController::SetupInputComponent()
 	PantheliaInputComponent->BindAction(LookAction, ETriggerEvent::Triggered, this, &APantheliaPlayerController::Look);
 	PantheliaInputComponent->BindAction(OpenAttributeMenuAction, ETriggerEvent::Started, this, &APantheliaPlayerController::ToggleAttributeMenu);
 
+	// Bindings de lock-on. No pasan por GAS porque son control/cámara, no habilidades.
+	if (ToggleLockonAction)
+	{
+		PantheliaInputComponent->BindAction(ToggleLockonAction, ETriggerEvent::Started, this, &APantheliaPlayerController::ToggleLockonInput);
+	}
+
+	if (SwitchLockonTargetAction)
+	{
+		PantheliaInputComponent->BindAction(SwitchLockonTargetAction, ETriggerEvent::Triggered, this, &APantheliaPlayerController::SwitchLockonTargetInput);
+	}
+
 	// Bindings de habilidades. BindAbilityActions itera el InputConfig y bindea
 	// los tres callbacks a cada InputAction con su tag correspondiente.
 	PantheliaInputComponent->BindAbilityActions(InputConfig, this,
@@ -69,6 +82,7 @@ UPantheliaAbilitySystemComponent* APantheliaPlayerController::GetASC()
 			UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(GetPawn<APawn>())
 		);
 	}
+
 	return PantheliaASC;
 }
 
@@ -79,6 +93,7 @@ void APantheliaPlayerController::AbilityInputTagPressed(FGameplayTag InputTag)
 	// de combo de un ataque en curso, se guarda para encadenar el siguiente golpe.
 	// El ASC busca la ability de ataque activa y le marca el buffer.
 	if (GetASC() == nullptr) return;
+
 	GetASC()->NotifyComboInputPressed(InputTag);
 }
 
@@ -86,6 +101,7 @@ void APantheliaPlayerController::AbilityInputTagReleased(FGameplayTag InputTag)
 {
 	// Si el ASC aún no está disponible (muy temprano en el juego), salimos sin hacer nada.
 	if (GetASC() == nullptr) return;
+
 	GetASC()->AbilityInputTagReleased(InputTag);
 
 	// Ademas, notificar a la ability de ataque pesado para la deteccion tap-vs-hold.
@@ -101,6 +117,7 @@ void APantheliaPlayerController::AbilityInputTagHeld(FGameplayTag InputTag)
 	// Si el ASC aún no está disponible (muy temprano en el juego), salimos sin hacer nada.
 	// No usamos check() porque es normal que al primer frame aún no esté listo.
 	if (GetASC() == nullptr) return;
+
 	GetASC()->AbilityInputTagHeld(InputTag);
 }
 
@@ -144,12 +161,53 @@ void APantheliaPlayerController::ToggleAttributeMenu()
 	}
 }
 
+void APantheliaPlayerController::ToggleLockonInput()
+{
+	APawn* ControlledPawn = GetPawn();
+	if (!ControlledPawn)
+	{
+		return;
+	}
+
+	ULockonComponent* LockonComponent = ControlledPawn->FindComponentByClass<ULockonComponent>();
+	if (!LockonComponent)
+	{
+		return;
+	}
+
+	LockonComponent->ToggleLockon();
+}
+
+void APantheliaPlayerController::SwitchLockonTargetInput(const FInputActionValue& InputActionValue)
+{
+	const float Direction = InputActionValue.Get<float>();
+	if (FMath::IsNearlyZero(Direction))
+	{
+		return;
+	}
+
+	APawn* ControlledPawn = GetPawn();
+	if (!ControlledPawn)
+	{
+		return;
+	}
+
+	ULockonComponent* LockonComponent = ControlledPawn->FindComponentByClass<ULockonComponent>();
+	if (!LockonComponent)
+	{
+		return;
+	}
+
+	LockonComponent->SwitchTarget(Direction);
+}
+
 void APantheliaPlayerController::OpenAttributeMenu()
 {
 	if (!AttributeMenuClass) { return; }
 
 	// Creamos el widget y lo añadimos a la pantalla
 	AttributeMenuWidget = CreateWidget<UPantheliaUserWidget>(this, AttributeMenuClass);
+
 	if (!AttributeMenuWidget) { return; }
 
 	AttributeMenuWidget->AddToViewport();
@@ -170,9 +228,11 @@ void APantheliaPlayerController::OpenAttributeMenu()
 	FInputModeGameAndUI InputModeData;
 	InputModeData.SetWidgetToFocus(AttributeMenuWidget->TakeWidget());
 	InputModeData.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
+
 	// Evita que un clic fuera del menú devuelva el control solo al juego y
 	// desincronice el estado del cursor/pausa; el cierre se gestiona con O.
 	InputModeData.SetHideCursorDuringCapture(false);
+
 	SetInputMode(InputModeData);
 
 	bAttributeMenuOpen = true;

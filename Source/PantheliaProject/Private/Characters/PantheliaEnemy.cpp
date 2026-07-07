@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "Characters/PantheliaEnemy.h"
+
 #include "AbilitySystem/PantheliaAbilitySystemComponent.h"
 #include "AbilitySystem/PantheliaAttributeSet.h"
 #include "AbilitySystem/PantheliaAbilitySystemLibrary.h"
@@ -14,22 +15,23 @@
 
 APantheliaEnemy::APantheliaEnemy()
 {
-    // --- Fix de rotación ---
-    // Desactivamos el control de rotación por controller (que causaba snapping brusco).
-    // En su lugar, usamos bUseControllerDesiredRotation en el CharacterMovement,
-    // que rota suavemente hacia la dirección del controller usando RotationRate.
-    // La RotationRate (Z = Yaw) se ajusta desde el Blueprint del enemigo (~360°/s).
-    bUseControllerRotationPitch = false;
-    bUseControllerRotationRoll = false;
-    bUseControllerRotationYaw = false;
-    GetCharacterMovement()->bUseControllerDesiredRotation = true;
+	// --- Fix de rotación ---
+	// Desactivamos el control de rotación por controller (que causaba snapping brusco).
+	// En su lugar, usamos bUseControllerDesiredRotation en el CharacterMovement,
+	// que rota suavemente hacia la dirección del controller usando RotationRate.
+	// La RotationRate (Z = Yaw) se ajusta desde el Blueprint del enemigo (~360°/s).
+	bUseControllerRotationPitch = false;
+	bUseControllerRotationRoll = false;
+	bUseControllerRotationYaw = false;
 
-    AbilitySystemComponent = CreateDefaultSubobject<UPantheliaAbilitySystemComponent>("AbilitySystemComponent");
-    AbilitySystemComponent->SetIsReplicated(true);
+	GetCharacterMovement()->bUseControllerDesiredRotation = true;
 
-    AttributeSet = CreateDefaultSubobject<UPantheliaAttributeSet>("AttributeSet");
+	AbilitySystemComponent = CreateDefaultSubobject<UPantheliaAbilitySystemComponent>("AbilitySystemComponent");
+	AbilitySystemComponent->SetIsReplicated(true);
 
-    AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Minimal);
+	AttributeSet = CreateDefaultSubobject<UPantheliaAttributeSet>("AttributeSet");
+
+	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Minimal);
 }
 
 void APantheliaEnemy::HighlightActor_Implementation()
@@ -42,183 +44,185 @@ void APantheliaEnemy::UnHighlightActor_Implementation()
 
 int32 APantheliaEnemy::GetPlayerLevel_Implementation() const
 {
-    return Level;
+	return Level;
 }
 
 void APantheliaEnemy::Die(const FVector& DeathImpulse)
 {
-    // Notificar al Behavior Tree que el enemigo ha muerto.
-    // El decorator "Am I Alive?" comprueba Dead=false — al ponerlo a true,
-    // el árbol aborta inmediatamente (Observer Aborts = Both) y el enemigo
-    // deja de atacar, moverse y procesar lógica de IA aunque el actor
-    // todavía no se haya destruido (Lifespan lo destruye unos segundos después).
-    if (PantheliaAIController)
-    {
-        if (UBlackboardComponent* BlackboardComp = PantheliaAIController->GetBlackboardComponent())
-        {
-            BlackboardComp->SetValueAsBool(FName("Dead"), true);
-        }
-    }
+	// Notificar al Behavior Tree que el enemigo ha muerto.
+	// El decorator "Am I Alive?" comprueba Dead=false — al ponerlo a true,
+	// el árbol aborta inmediatamente (Observer Aborts = Both) y el enemigo
+	// deja de atacar, moverse y procesar lógica de IA aunque el actor
+	// todavía no se haya destruido (Lifespan lo destruye unos segundos después).
+	if (PantheliaAIController)
+	{
+		if (UBlackboardComponent* BlackboardComp = PantheliaAIController->GetBlackboardComponent())
+		{
+			BlackboardComp->SetValueAsBool(FName("Dead"), true);
+		}
+	}
 
-    // Cancelar lockon si este enemigo era el target
-    if (ACharacter* PlayerCharacter = Cast<ACharacter>(UGameplayStatics::GetPlayerCharacter(this, 0)))
-    {
-        if (ULockonComponent* LockonComp = PlayerCharacter->FindComponentByClass<ULockonComponent>())
-        {
-            if (LockonComp->CurrentTargetActor == this)
-            {
-                LockonComp->EndLockon();
-            }
-        }
-    }
+	// Retarget automático si este enemigo era el target del lockon.
+	// Si hay otro enemigo cercano y razonable, el LockonComponent saltará a él.
+	// Si no hay ninguno, limpiará el lock-on como antes.
+	if (ACharacter* PlayerCharacter = Cast<ACharacter>(UGameplayStatics::GetPlayerCharacter(this, 0)))
+	{
+		if (ULockonComponent* LockonComp = PlayerCharacter->FindComponentByClass<ULockonComponent>())
+		{
+			if (LockonComp->CurrentTargetActor == this)
+			{
+				LockonComp->HandleCurrentTargetLost(this);
+			}
+		}
+	}
 
-    SetLifeSpan(Lifespan);
-    Super::Die(DeathImpulse);
+	SetLifeSpan(Lifespan);
+	Super::Die(DeathImpulse);
 }
 
 void APantheliaEnemy::BeginPlay()
 {
-    Super::BeginPlay();
+	Super::BeginPlay();
 
-    GetCharacterMovement()->MaxWalkSpeed = BaseWalkSpeed;
+	GetCharacterMovement()->MaxWalkSpeed = BaseWalkSpeed;
+	InitAbilityActorInfo();
 
-    InitAbilityActorInfo();
+	// Abilities universales (HitReact) + abilities de clase (GA_MeleeAttack para Warrior, etc.)
+	// Ambas vienen de DA_CharacterClassInfo según el CharacterClass de este enemigo.
+	UPantheliaAbilitySystemLibrary::GiveStartupAbilities(this, AbilitySystemComponent, CharacterClass);
 
-    // Abilities universales (HitReact) + abilities de clase (GA_MeleeAttack para Warrior, etc.)
-    // Ambas vienen de DA_CharacterClassInfo según el CharacterClass de este enemigo.
-    UPantheliaAbilitySystemLibrary::GiveStartupAbilities(this, AbilitySystemComponent, CharacterClass);
+	// Abilities de combate extra, específicas de este enemigo individual.
+	// Configuradas en el Blueprint del enemigo (Details → Panthelia|Abilities → CombatAbilities).
+	// Se conceden al nivel del personaje para que escalen igual que las de clase.
+	// Ejemplo: un Warrior con bCanRangedAttack=true tiene GA_RangedAttack aquí.
+	for (TSubclassOf<UGameplayAbility> AbilityClass : CombatAbilities)
+	{
+		if (!AbilityClass) continue;
 
-    // Abilities de combate extra, específicas de este enemigo individual.
-    // Configuradas en el Blueprint del enemigo (Details → Panthelia|Abilities → CombatAbilities).
-    // Se conceden al nivel del personaje para que escalen igual que las de clase.
-    // Ejemplo: un Warrior con bCanRangedAttack=true tiene GA_RangedAttack aquí.
-    for (TSubclassOf<UGameplayAbility> AbilityClass : CombatAbilities)
-    {
-        if (!AbilityClass) continue;
-        FGameplayAbilitySpec AbilitySpec(AbilityClass, Level);
-        AbilitySystemComponent->GiveAbility(AbilitySpec);
-    }
+		FGameplayAbilitySpec AbilitySpec(AbilityClass, Level);
+		AbilitySystemComponent->GiveAbility(AbilitySpec);
+	}
 
-    // Suscribirse al tag Effects.HitReact
-    AbilitySystemComponent->RegisterGameplayTagEvent(
-        FPantheliaGameplayTags::Get().Effects_HitReact,
-        EGameplayTagEventType::NewOrRemoved
-    ).AddUObject(this, &APantheliaEnemy::HitReactTagChanged);
+	// Suscribirse al tag Effects.HitReact
+	AbilitySystemComponent->RegisterGameplayTagEvent(
+		FPantheliaGameplayTags::Get().Effects_HitReact,
+		EGameplayTagEventType::NewOrRemoved
+	).AddUObject(this, &APantheliaEnemy::HitReactTagChanged);
 
-    // Suscribirse al tag Effects.Stagger
-    AbilitySystemComponent->RegisterGameplayTagEvent(
-        FPantheliaGameplayTags::Get().Effects_Stagger,
-        EGameplayTagEventType::NewOrRemoved
-    ).AddUObject(this, &APantheliaEnemy::StaggerTagChanged);
+	// Suscribirse al tag Effects.Stagger
+	AbilitySystemComponent->RegisterGameplayTagEvent(
+		FPantheliaGameplayTags::Get().Effects_Stagger,
+		EGameplayTagEventType::NewOrRemoved
+	).AddUObject(this, &APantheliaEnemy::StaggerTagChanged);
 }
 
 void APantheliaEnemy::PossessedBy(AController* NewController)
 {
-    Super::PossessedBy(NewController);
+	Super::PossessedBy(NewController);
 
-    // Sin multiplayer, HasAuthority() siempre será true en Panthelia.
-    // Lo mantenemos como código defensivo y buena práctica de arquitectura GAS/AI.
-    // Si en el futuro se añadiese multiplayer, esto protegería la lógica de IA
-    // para que solo corra en el servidor.
-    if (!HasAuthority()) return;
+	// Sin multiplayer, HasAuthority() siempre será true en Panthelia.
+	// Lo mantenemos como código defensivo y buena práctica de arquitectura GAS/AI.
+	// Si en el futuro se añadiese multiplayer, esto protegería la lógica de IA
+	// para que solo corra en el servidor.
+	if (!HasAuthority()) return;
 
-    // Guardamos referencia al AIController. Si el cast falla (por ejemplo,
-    // si asignamos un AIController equivocado en el Blueprint del enemigo),
-    // simplemente no se arranca la IA en lugar de crashear.
-    PantheliaAIController = Cast<APantheliaAIController>(NewController);
-    if (!PantheliaAIController) return;
+	// Guardamos referencia al AIController. Si el cast falla (por ejemplo,
+	// si asignamos un AIController equivocado en el Blueprint del enemigo),
+	// simplemente no se arranca la IA en lugar de crashear.
+	PantheliaAIController = Cast<APantheliaAIController>(NewController);
+	if (!PantheliaAIController) return;
 
-    // Solo arrancamos la IA si este enemigo tiene un Behavior Tree asignado.
-    // Esto permite tener enemigos "mudos" sin IA simplemente dejando el campo vacío.
-    if (!BehaviorTree) return;
+	// Solo arrancamos la IA si este enemigo tiene un Behavior Tree asignado.
+	// Esto permite tener enemigos "mudos" sin IA simplemente dejando el campo vacío.
+	if (!BehaviorTree) return;
 
-    // Arrancamos el Behavior Tree. A partir de aquí el enemigo toma decisiones
-    // autónomas basándose en las reglas definidas en el árbol.
-    PantheliaAIController->RunBehaviorTree(BehaviorTree);
+	// Arrancamos el Behavior Tree. A partir de aquí el enemigo toma decisiones
+	// autónomas basándose en las reglas definidas en el árbol.
+	PantheliaAIController->RunBehaviorTree(BehaviorTree);
 
-    // Inicializamos el Blackboard con los datos del Behavior Tree.
-    // El Blackboard es la "pizarra" donde el árbol lee y escribe variables
-    // (ej: "¿Dónde está el jugador?", "¿Estoy en combate?").
-    // BehaviorTree->BlackboardAsset es el asset BB_ asociado al BT en el editor.
-    if (UBlackboardComponent* BlackboardComp = PantheliaAIController->GetBlackboardComponent())
-    {
-        BlackboardComp->InitializeBlackboard(*BehaviorTree->BlackboardAsset);
+	// Inicializamos el Blackboard con los datos del Behavior Tree.
+	// El Blackboard es la "pizarra" donde el árbol lee y escribe variables
+	// (ej: "¿Dónde está el jugador?", "¿Estoy en combate?").
+	// BehaviorTree->BlackboardAsset es el asset BB_ asociado al BT en el editor.
+	if (UBlackboardComponent* BlackboardComp = PantheliaAIController->GetBlackboardComponent())
+	{
+		BlackboardComp->InitializeBlackboard(*BehaviorTree->BlackboardAsset);
 
-        // Inicializamos las keys de estado explícitamente para que el árbol
-        // tenga valores definidos desde el primer tick, sin esperar al primer evento.
-        BlackboardComp->SetValueAsBool(FName("HitReacting"), false);
+		// Inicializamos las keys de estado explícitamente para que el árbol
+		// tenga valores definidos desde el primer tick, sin esperar al primer evento.
+		BlackboardComp->SetValueAsBool(FName("HitReacting"), false);
 
-        // RangedAttacker: true si este enemigo puede usar la rama de ataque a distancia.
-        // Antes se derivaba de CharacterClass (!= Warrior). Ahora es una propiedad
-        // configurable por Blueprint (bCanRangedAttack), permitiendo enemigos híbridos
-        // (melee + ranged) independientemente de su clase de atributos.
-        BlackboardComp->SetValueAsBool(FName("RangedAttacker"), bCanRangedAttack);
-    }
+		// RangedAttacker: true si este enemigo puede usar la rama de ataque a distancia.
+		// Antes se derivaba de CharacterClass (!= Warrior). Ahora es una propiedad
+		// configurable por Blueprint (bCanRangedAttack), permitiendo enemigos híbridos
+		// (melee + ranged) independientemente de su clase de atributos.
+		BlackboardComp->SetValueAsBool(FName("RangedAttacker"), bCanRangedAttack);
+	}
 }
 
 void APantheliaEnemy::InitAbilityActorInfo()
 {
-    AbilitySystemComponent->InitAbilityActorInfo(this, this);
+	AbilitySystemComponent->InitAbilityActorInfo(this, this);
 
-    if (UPantheliaAbilitySystemComponent* PantheliaASC = Cast<UPantheliaAbilitySystemComponent>(AbilitySystemComponent))
-    {
-        PantheliaASC->AbilityActorInfoSet();
-    }
+	if (UPantheliaAbilitySystemComponent* PantheliaASC = Cast<UPantheliaAbilitySystemComponent>(AbilitySystemComponent))
+	{
+		PantheliaASC->AbilityActorInfoSet();
+	}
 
-    // Broadcast del delegate de ASC listo (clase 311). Cualquier componente que haya
-    // hecho BeginPlay() ANTES de este punto (orden no garantizado entre componentes y
-    // el ASC) y no haya podido suscribirse todavía a los cambios de tag, recibe aquí su
-    // oportunidad de hacerlo — ver UPantheliaDebuffNiagaraComponent::BeginPlay.
-    OnASCRegistered.Broadcast(AbilitySystemComponent);
+	// Broadcast del delegate de ASC listo (clase 311). Cualquier componente que haya
+	// hecho BeginPlay() ANTES de este punto (orden no garantizado entre componentes y
+	// el ASC) y no haya podido suscribirse todavía a los cambios de tag, recibe aquí su
+	// oportunidad de hacerlo — ver UPantheliaDebuffNiagaraComponent::BeginPlay.
+	OnASCRegistered.Broadcast(AbilitySystemComponent);
 
-    InitializeDefaultAttributes();
+	InitializeDefaultAttributes();
 }
 
 void APantheliaEnemy::InitializeDefaultAttributes() const
 {
-    UPantheliaAbilitySystemLibrary::InitializeDefaultAttributes(this, CharacterClass, Level, AbilitySystemComponent);
+	UPantheliaAbilitySystemLibrary::InitializeDefaultAttributes(this, CharacterClass, Level, AbilitySystemComponent);
 }
 
 void APantheliaEnemy::HitReactTagChanged(const FGameplayTag CallbackTag, int32 NewCount)
 {
-    bHitReacting = NewCount > 0;
+	bHitReacting = NewCount > 0;
 
-    // Durante hit react: inmovilizar. Al terminar: restaurar velocidad base
-    // (pero solo si no estamos staggered también).
-    if (!bStaggered)
-    {
-        GetCharacterMovement()->MaxWalkSpeed = bHitReacting ? 0.f : BaseWalkSpeed;
-    }
+	// Durante hit react: inmovilizar. Al terminar: restaurar velocidad base
+	// (pero solo si no estamos staggered también).
+	if (!bStaggered)
+	{
+		GetCharacterMovement()->MaxWalkSpeed = bHitReacting ? 0.f : BaseWalkSpeed;
+	}
 
-    // Actualizamos el Blackboard para que el Behavior Tree sepa que estamos
-    // en hit react y pueda abortar la rama de movimiento/ataque (decorator abort self).
-    if (PantheliaAIController)
-    {
-        if (UBlackboardComponent* BlackboardComp = PantheliaAIController->GetBlackboardComponent())
-        {
-            BlackboardComp->SetValueAsBool(FName("HitReacting"), bHitReacting);
-        }
-    }
+	// Actualizamos el Blackboard para que el Behavior Tree sepa que estamos
+	// en hit react y pueda abortar la rama de movimiento/ataque (decorator abort self).
+	if (PantheliaAIController)
+	{
+		if (UBlackboardComponent* BlackboardComp = PantheliaAIController->GetBlackboardComponent())
+		{
+			BlackboardComp->SetValueAsBool(FName("HitReacting"), bHitReacting);
+		}
+	}
 }
 
 void APantheliaEnemy::StaggerTagChanged(const FGameplayTag CallbackTag, int32 NewCount)
 {
-    bStaggered = NewCount > 0;
+	bStaggered = NewCount > 0;
 
-    // Durante stagger: inmovilizar completamente.
-    // Al terminar: restaurar velocidad (el regen de postura ya se gestiona via timer).
-    GetCharacterMovement()->MaxWalkSpeed = bStaggered ? 0.f : BaseWalkSpeed;
+	// Durante stagger: inmovilizar completamente.
+	// Al terminar: restaurar velocidad (el regen de postura ya se gestiona via timer).
+	GetCharacterMovement()->MaxWalkSpeed = bStaggered ? 0.f : BaseWalkSpeed;
 }
 
 void APantheliaEnemy::SetCombatTarget_Implementation(AActor* InCombatTarget)
 {
-    // Guardamos el actor al que vamos a atacar.
-    // BTT_Attack lo llama justo antes de activar la ability de melee,
-    // así GA_MeleeAttack puede leerlo para orientar el Motion Warping.
-    CombatTarget = InCombatTarget;
+	// Guardamos el actor al que vamos a atacar.
+	// BTT_Attack lo llama justo antes de activar la ability de melee,
+	// así GA_MeleeAttack puede leerlo para orientar el Motion Warping.
+	CombatTarget = InCombatTarget;
 }
 
 AActor* APantheliaEnemy::GetCombatTarget_Implementation() const
 {
-    return CombatTarget;
+	return CombatTarget;
 }

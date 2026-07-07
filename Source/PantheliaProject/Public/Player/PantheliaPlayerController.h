@@ -31,6 +31,7 @@ protected:
 
 private:
 	// --- INPUT ---
+
 	UPROPERTY(EditAnywhere, Category = "Input")
 	TObjectPtr<UInputMappingContext> PantheliaContext;
 
@@ -43,6 +44,16 @@ private:
 	UPROPERTY(EditAnywhere, Category = "Input")
 	TObjectPtr<UInputAction> OpenAttributeMenuAction;
 
+	// Input normal del PlayerController, no GAS.
+	// IA_ToggleLockon: Bool, recomendado Tab o Middle Mouse Button.
+	UPROPERTY(EditAnywhere, Category = "Input|Lockon")
+	TObjectPtr<UInputAction> ToggleLockonAction;
+
+	// Input normal del PlayerController, no GAS.
+	// IA_SwitchTarget: Axis1D/Float. Wheel Up = +1, Wheel Down = -1.
+	UPROPERTY(EditAnywhere, Category = "Input|Lockon")
+	TObjectPtr<UInputAction> SwitchLockonTargetAction;
+
 	// Data Asset que vincula cada InputAction con su GameplayTag.
 	// Asignar desde el Blueprint del PlayerController (DA_InputConfig).
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
@@ -51,8 +62,11 @@ private:
 	void Move(const FInputActionValue& InputActionValue);
 	void Look(const FInputActionValue& InputActionValue);
 	void ToggleAttributeMenu();
+	void ToggleLockonInput();
+	void SwitchLockonTargetInput(const FInputActionValue& InputActionValue);
 
 	// --- CALLBACKS DE HABILIDADES ---
+
 	// Estas tres funciones se bindean a TODOS los inputs del InputConfig.
 	// Cada una recibe el InputTag del input que la disparó.
 
@@ -68,6 +82,7 @@ private:
 	void AbilityInputTagHeld(FGameplayTag InputTag);
 
 	// --- ASC CACHEADO ---
+
 	// Guardamos el ASC para no castear en cada frame (AbilityInputTagHeld se llama cada frame).
 	// Se inicializa lazy en GetASC() la primera vez que se necesita.
 	UPROPERTY()
@@ -78,6 +93,7 @@ private:
 	UPantheliaAbilitySystemComponent* GetASC();
 
 	// --- INTERACTION TRACE ---
+
 	void InteractionTrace();
 
 	UPROPERTY()
