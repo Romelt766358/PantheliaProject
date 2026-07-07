@@ -15,6 +15,7 @@
 // Solo necesitamos los punteros aquí; los includes van en el .cpp.
 class UBehaviorTree;
 class APantheliaAIController;
+class USceneComponent;
 
 UCLASS()
 class PANTHELIAPROJECT_API APantheliaEnemy : public APantheliaCharacterBase, public IEnemy
@@ -23,6 +24,12 @@ class PANTHELIAPROJECT_API APantheliaEnemy : public APantheliaCharacterBase, pub
 
 public:
 	APantheliaEnemy();
+
+	// Punto editable al que apunta el lock-on. Mantenerlo como componente separado
+	// permite ajustar enemigos grandes o raros desde el Blueprint sin tocar código.
+	// Si se deja en su posición default, apunta aproximadamente al torso.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Panthelia|Lockon")
+	TObjectPtr<USceneComponent> LockonTargetPoint;
 
 	/** IEnemy Interface */
 	virtual void HighlightActor_Implementation() override;

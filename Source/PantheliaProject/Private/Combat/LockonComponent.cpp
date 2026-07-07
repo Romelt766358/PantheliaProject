@@ -152,7 +152,7 @@ bool ULockonComponent::TryAutoLockOnFromBasicAttackHit(AActor* HitActor)
 
 	RefreshCachedReferences();
 
-	if (!IsValidLockonCandidate(HitActor))
+	if (!IsSelectableSearchCandidate(HitActor))
 	{
 		return false;
 	}
@@ -300,13 +300,25 @@ void ULockonComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActo
 		return;
 	}
 
-	TargetLocation.Z -= 125.0f;
+	if (ShouldBreakLockonFromBlockedLineOfSight(DeltaTime))
+	{
+		EndLockon();
+		return;
+	}
 
-	FRotator NewRotation{ UKismetMathLibrary::FindLookAtRotation(
+	TargetLocation.Z += LockonCameraTargetVerticalOffset;
+
+	FRotator DesiredRotation{ UKismetMathLibrary::FindLookAtRotation(
 		CurrentLocation, TargetLocation
 	) };
 
-	Controller->SetControlRotation(NewRotation);
+	if (bSmoothLockonCameraRotation && LockonCameraRotationInterpSpeed > 0.0f)
+	{
+		const FRotator CurrentRotation = Controller->GetControlRotation();
+		DesiredRotation = FMath::RInterpTo(CurrentRotation, DesiredRotation, DeltaTime, LockonCameraRotationInterpSpeed);
+	}
+
+	Controller->SetControlRotation(DesiredRotation);
 }
 
 TArray<AActor*> ULockonComponent::FindLockonCandidates(float Radius, AActor* ActorToIgnore)
@@ -636,6 +648,30 @@ bool ULockonComponent::PassesCameraAngleCheck(AActor* Candidate, float MinDot)
 	return DotProduct >= MinDot;
 }
 
+bool ULockonComponent::ShouldBreakLockonFromBlockedLineOfSight(float DeltaTime)
+{
+	if (!bBreakLockonWhenLineOfSightBlocked)
+	{
+		CurrentLineOfSightBlockedTime = 0.0f;
+		return false;
+	}
+
+	if (!IsValid(CurrentTargetActor))
+	{
+		CurrentLineOfSightBlockedTime = 0.0f;
+		return false;
+	}
+
+	if (HasLineOfSightToCandidate(CurrentTargetActor.Get()))
+	{
+		CurrentLineOfSightBlockedTime = 0.0f;
+		return false;
+	}
+
+	CurrentLineOfSightBlockedTime += DeltaTime;
+	return CurrentLineOfSightBlockedTime >= LineOfSightBreakDelay;
+}
+
 void ULockonComponent::SetCurrentTarget(AActor* NewTarget, bool bCallDeselectOnOldTarget)
 {
 	if (CurrentTargetActor == NewTarget)
@@ -649,6 +685,7 @@ void ULockonComponent::SetCurrentTarget(AActor* NewTarget, bool bCallDeselectOnO
 	}
 
 	CurrentTargetActor = NewTarget;
+	CurrentLineOfSightBlockedTime = 0.0f;
 
 	if (IsValid(CurrentTargetActor))
 	{

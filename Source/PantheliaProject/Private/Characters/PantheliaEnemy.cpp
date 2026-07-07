@@ -12,6 +12,7 @@
 #include "AI/PantheliaAIController.h"
 #include "BehaviorTree/BehaviorTree.h"
 #include "BehaviorTree/BlackboardComponent.h"
+#include "Components/SceneComponent.h"
 
 APantheliaEnemy::APantheliaEnemy()
 {
@@ -25,6 +26,10 @@ APantheliaEnemy::APantheliaEnemy()
 	bUseControllerRotationYaw = false;
 
 	GetCharacterMovement()->bUseControllerDesiredRotation = true;
+
+	LockonTargetPoint = CreateDefaultSubobject<USceneComponent>("LockonTargetPoint");
+	LockonTargetPoint->SetupAttachment(GetRootComponent());
+	LockonTargetPoint->SetRelativeLocation(FVector(0.0f, 0.0f, 80.0f));
 
 	AbilitySystemComponent = CreateDefaultSubobject<UPantheliaAbilitySystemComponent>("AbilitySystemComponent");
 	AbilitySystemComponent->SetIsReplicated(true);
@@ -51,9 +56,10 @@ bool APantheliaEnemy::IsLockonTargetable_Implementation() const
 
 FVector APantheliaEnemy::GetLockonLocation_Implementation() const
 {
-	// Gancho futuro: reemplazar por un componente/socket dedicado en enemigos grandes
-	// sin tocar el algoritmo de búsqueda del LockonComponent.
-	return GetActorLocation();
+	// El componente permite ajustar el punto de lock-on por Blueprint sin que
+	// ULockonComponent tenga que conocer sockets, meshes ni clases concretas.
+	// Si por alguna razón no existe, caemos a GetActorLocation como fallback seguro.
+	return LockonTargetPoint ? LockonTargetPoint->GetComponentLocation() : GetActorLocation();
 }
 
 int32 APantheliaEnemy::GetPlayerLevel_Implementation() const

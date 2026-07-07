@@ -128,6 +128,33 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lockon Settings")
 	TEnumAsByte<ECollisionChannel> LineOfSightTraceChannel = ECC_Visibility;
 
+	// Si está activo, el lock-on se rompe cuando el target permanece oculto por una
+	// pared/obstáculo durante LineOfSightBreakDelay segundos. No se rompe instantáneo:
+	// un soulslike debe tolerar columnas, esquinas y cámara imperfecta por un momento.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lockon Settings|Occlusion")
+	bool bBreakLockonWhenLineOfSightBlocked = true;
+
+	// Tiempo continuo sin línea de visión antes de romper el lock-on.
+	// Valores recomendados: 0.5 a 1.0. Menos que eso se siente nervioso.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lockon Settings|Occlusion", meta = (ClampMin = "0.0"))
+	float LineOfSightBreakDelay = 0.75f;
+
+	// Si está activo, la cámara interpola hacia el target en vez de hacer snap directo.
+	// Mantenerlo configurable permite desactivarlo si una pelea específica necesita
+	// una cámara más rígida durante pruebas.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lockon Settings|Camera")
+	bool bSmoothLockonCameraRotation = true;
+
+	// Velocidad de interpolación de la cámara en lock-on. Más alto = sigue más rápido.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lockon Settings|Camera", meta = (ClampMin = "0.0"))
+	float LockonCameraRotationInterpSpeed = 12.0f;
+
+	// Offset vertical final aplicado al punto de lock-on al orientar la cámara.
+	// Se deja como propiedad para poder ajustar la composición sin cambiar código,
+	// sobre todo cuando GetLockonLocation() empiece a usar sockets/componentes reales.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lockon Settings|Camera")
+	float LockonCameraTargetVerticalOffset = -125.0f;
+
 	// Radio usado cuando el target muere y buscamos otro enemigo cercano.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lockon Settings")
 	float AutoRetargetRadius{ 950.0f };
@@ -173,6 +200,10 @@ public:
 private:
 	bool bLockonStateApplied = false;
 
+	// Acumula cuánto tiempo lleva bloqueada la línea de visión del target actual.
+	// Se resetea al cambiar de target o recuperar visibilidad.
+	float CurrentLineOfSightBlockedTime = 0.0f;
+
 	// Protege contra doble llamada al mismo input en el mismo frame.
 	// Esto cubre el caso típico en UE donde queda una llamada vieja en Blueprint
 	// y otra nueva en C++ sobre el mismo IA_Lockon.
@@ -195,6 +226,7 @@ private:
 	bool HasLineOfSightToCandidate(AActor* Candidate);
 	bool IsSelectableSearchCandidate(AActor* Candidate);
 	bool PassesCameraAngleCheck(AActor* Candidate, float MinDot);
+	bool ShouldBreakLockonFromBlockedLineOfSight(float DeltaTime);
 
 	void SetCurrentTarget(AActor* NewTarget, bool bCallDeselectOnOldTarget = true);
 	void ApplyLockonState();
