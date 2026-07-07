@@ -327,12 +327,25 @@ FRotator UPantheliaPlayerAttackAbility::GetDesiredAttackRotation() const
 
 	const FVector ActorLocation = AvatarActor->GetActorLocation();
 
-	// 1) Con lock-on: mirar hacia el objetivo actual.
+	// 1) Con lock-on: mirar hacia el objetivo actual. Sin lock-on duro, intentar
+	// soft-lock melee: elegir un enemigo cercano/frontal y orientar el golpe hacia él
+	// SIN fijar CurrentTargetActor ni mostrar widget. Si el golpe conecta, el auto-lock
+	// por hit que ya existe podrá fijarlo después.
 	if (ULockonComponent* LockonComp = AvatarActor->FindComponentByClass<ULockonComponent>())
 	{
-		if (LockonComp->CurrentTargetActor)
+		AActor* AttackTarget = nullptr;
+		if (IsValid(LockonComp->CurrentTargetActor))
 		{
-			FVector ToTarget = LockonComp->CurrentTargetActor->GetActorLocation() - ActorLocation;
+			AttackTarget = LockonComp->CurrentTargetActor.Get();
+		}
+		else
+		{
+			AttackTarget = LockonComp->FindBestSoftLockTarget();
+		}
+
+		if (IsValid(AttackTarget))
+		{
+			FVector ToTarget = LockonComp->GetLockonLocation(AttackTarget) - ActorLocation;
 			ToTarget.Z = 0.f; // Solo yaw, no inclinar el personaje.
 
 			if (!ToTarget.IsNearlyZero())
@@ -342,7 +355,7 @@ FRotator UPantheliaPlayerAttackAbility::GetDesiredAttackRotation() const
 		}
 	}
 
-	// 2) Sin lock-on: mirar hacia la direccion del input de movimiento del jugador.
+	// 2) Sin lock-on ni soft-lock: mirar hacia la direccion del input de movimiento del jugador.
 	// GetLastMovementInputVector devuelve la direccion del ultimo AddMovementInput.
 	if (const UCharacterMovementComponent* MoveComp = AvatarActor->FindComponentByClass<UCharacterMovementComponent>())
 	{

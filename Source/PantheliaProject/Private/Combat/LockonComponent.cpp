@@ -171,6 +171,83 @@ bool ULockonComponent::IsAutoLockOnFromBasicAttackHitEnabled() const
 	return bAutoLockOnFromBasicAttackHit;
 }
 
+void ULockonComponent::SetSoftLockOnMeleeAttacksEnabled(bool bEnabled)
+{
+	bSoftLockOnMeleeAttacks = bEnabled;
+}
+
+bool ULockonComponent::IsSoftLockOnMeleeAttacksEnabled() const
+{
+	return bSoftLockOnMeleeAttacks;
+}
+
+AActor* ULockonComponent::FindBestSoftLockTarget(float RadiusOverride)
+{
+	if (!bSoftLockOnMeleeAttacks)
+	{
+		return nullptr;
+	}
+
+	// Soft-lock solo asiste ataques SIN lock-on duro activo. Si ya existe
+	// CurrentTargetActor, la rotación del ataque debe respetar ese target.
+	if (IsValid(CurrentTargetActor))
+	{
+		return nullptr;
+	}
+
+	RefreshCachedReferences();
+
+	if (!OwnerRef)
+	{
+		return nullptr;
+	}
+
+	const float SearchRadius = RadiusOverride > 0.0f ? RadiusOverride : SoftLockRadius;
+	const TArray<AActor*> Candidates = FindLockonCandidates(SearchRadius);
+
+	AActor* BestTarget = nullptr;
+	float BestScore = -FLT_MAX;
+
+	const FVector OwnerLocation = OwnerRef->GetActorLocation();
+	FVector OwnerForward = OwnerRef->GetActorForwardVector();
+	OwnerForward.Z = 0.0f;
+	OwnerForward.Normalize();
+
+	for (AActor* Candidate : Candidates)
+	{
+		FVector ToCandidate = GetLockonLocation(Candidate) - OwnerLocation;
+		ToCandidate.Z = 0.0f;
+
+		if (ToCandidate.IsNearlyZero())
+		{
+			continue;
+		}
+
+		const float Distance = ToCandidate.Size();
+		const FVector DirectionToCandidate = ToCandidate / Distance;
+		const float ForwardDot = FVector::DotProduct(OwnerForward, DirectionToCandidate);
+
+		if (ForwardDot < SoftLockForwardThreshold)
+		{
+			continue;
+		}
+
+		const float DistanceScore = 1.0f - FMath::Clamp(Distance / SearchRadius, 0.0f, 1.0f);
+
+		// Soft-lock melee: priorizamos que esté frente al personaje, con cercanía
+		// como segundo factor. No queremos atraer un básico a un enemigo lateral lejano.
+		const float Score = (ForwardDot * 0.70f) + (DistanceScore * 0.30f);
+
+		if (Score > BestScore)
+		{
+			BestScore = Score;
+			BestTarget = Candidate;
+		}
+	}
+
+	return BestTarget;
+}
+
 void ULockonComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);

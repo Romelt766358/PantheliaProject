@@ -86,6 +86,24 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Lockon|Options")
 	bool IsAutoLockOnFromBasicAttackHitEnabled() const;
 
+	// Gancho para el futuro menú de opciones: activa/desactiva el soft-lock de ataques
+	// melee. Soft-lock NO fija CurrentTargetActor; solo ayuda a orientar el ataque hacia
+	// un enemigo cercano/frontal cuando el jugador no tiene lock-on duro activo.
+	UFUNCTION(BlueprintCallable, Category = "Lockon|Options")
+	void SetSoftLockOnMeleeAttacksEnabled(bool bEnabled);
+
+	UFUNCTION(BlueprintPure, Category = "Lockon|Options")
+	bool IsSoftLockOnMeleeAttacksEnabled() const;
+
+	// Devuelve el mejor objetivo para soft-lock melee sin activar lock-on duro.
+	// Null si el lock-on duro ya está activo, si la opción está desactivada, o si
+	// ningún enemigo cercano/frontal pasa los filtros de visibilidad/targeteabilidad.
+	AActor* FindBestSoftLockTarget(float RadiusOverride = -1.0f);
+
+	// Punto centralizado desde el que cámara, proyectiles y soft-lock pueden apuntar
+	// al enemigo. Hoy delega en IEnemy::GetLockonLocation() y cae a GetActorLocation.
+	FVector GetLockonLocation(AActor* TargetActor) const;
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -133,6 +151,22 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lockon Settings|Options")
 	bool bAutoLockOnFromBasicAttackHit = true;
 
+	// Opción de gameplay: ayuda a orientar ataques melee hacia enemigos cercanos/frontrales
+	// cuando NO hay lock-on duro activo. No selecciona target ni muestra widget; solo
+	// devuelve un objetivo de asistencia para que la ability rote al personaje.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lockon Settings|Options")
+	bool bSoftLockOnMeleeAttacks = true;
+
+	// Radio de búsqueda para la asistencia de ataque sin lock-on. Debe ser menor que el
+	// lock-on duro para que no atraiga golpes hacia enemigos lejanos.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lockon Settings|Soft Lock")
+	float SoftLockRadius = 650.0f;
+
+	// Dot mínimo contra el forward del personaje. 0.25 permite targets ligeramente
+	// laterales; subirlo hace el soft-lock más estricto.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lockon Settings|Soft Lock")
+	float SoftLockForwardThreshold = 0.25f;
+
 public:
 	virtual void TickComponent(float DeltaTime, ELevelTick TickType, FActorComponentTickFunction* ThisTickFunction) override;
 
@@ -161,7 +195,6 @@ private:
 	bool HasLineOfSightToCandidate(AActor* Candidate);
 	bool IsSelectableSearchCandidate(AActor* Candidate);
 	bool PassesCameraAngleCheck(AActor* Candidate, float MinDot);
-	FVector GetLockonLocation(AActor* TargetActor) const;
 
 	void SetCurrentTarget(AActor* NewTarget, bool bCallDeselectOnOldTarget = true);
 	void ApplyLockonState();
