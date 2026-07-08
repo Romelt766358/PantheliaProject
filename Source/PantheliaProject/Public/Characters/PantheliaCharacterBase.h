@@ -69,6 +69,9 @@ public:
 
 	// Devuelve GetUpMontage (declarado más abajo) — mismo patrón que los dos de arriba.
 	virtual UAnimMontage* GetGetUpMontage_Implementation() override;
+
+	// Devuelve HeavyKnockbackMontage (declarado más abajo) — Nivel 2 de knockback.
+	virtual UAnimMontage* GetHeavyKnockbackMontage_Implementation() override;
 	// GetBloodEffect_Implementation: devuelve BloodEffect (gancho de impacto, vacío por ahora).
 	virtual UNiagaraSystem* GetBloodEffect_Implementation() override;
 	virtual void Die(const FVector& DeathImpulse) override;
@@ -329,6 +332,11 @@ protected:
 	// HitReactMontage/StaggerMontage arriba.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat")
 	TObjectPtr<UAnimMontage> GetUpMontage;
+
+	// Montage de reacción al knockback "pesado" (Nivel 2, a petición). Lo reproduce
+	// GA_HeavyKnockback — asignar en el Blueprint del personaje, mismo patrón.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Combat")
+	TObjectPtr<UAnimMontage> HeavyKnockbackMontage;
 
 	// GANCHO (pendiente de assets): efecto de impacto (sangre/chispas/etc.) que se spawnea
 	// en el punto de golpe cuando ESTE personaje es alcanzado por un ataque melee. Se obtiene

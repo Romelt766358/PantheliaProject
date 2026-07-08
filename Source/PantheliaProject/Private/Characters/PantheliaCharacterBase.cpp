@@ -160,6 +160,11 @@ UAnimMontage* APantheliaCharacterBase::GetGetUpMontage_Implementation()
 	return GetUpMontage;
 }
 
+UAnimMontage* APantheliaCharacterBase::GetHeavyKnockbackMontage_Implementation()
+{
+	return HeavyKnockbackMontage;
+}
+
 UNiagaraSystem* APantheliaCharacterBase::GetBloodEffect_Implementation()
 {
 	// Gancho de impacto: devuelve el efecto Niagara asignado en el Blueprint de este

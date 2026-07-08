@@ -159,6 +159,12 @@ struct FDamageEffectParams
 
     UPROPERTY()
     float LaunchChance = 0.f;
+
+    // Nivel 2 de knockback ("empujón fuerte"). Igual que el resto de campos de este
+    // struct para daño secundario: existe por completitud, no es el camino real de
+    // propagación en Panthelia (eso es el SetByCaller CombatTricks_KnockbackIsHeavy).
+    UPROPERTY()
+    bool bKnockbackIsHeavy = false;
 };
 
 // ============================================================
@@ -235,6 +241,13 @@ public:
     // y Launch NO comparten campo aunque ambos terminen en un LaunchCharacter.
     FVector GetLaunchForce() const { return LaunchForce; }
 
+    // Nivel 2 de knockback ("empujón fuerte", a petición): true si ESTE knockback debe
+    // bloquear GA_HitReact y disparar GA_HeavyKnockback en vez del comportamiento
+    // normal (que convive con HitReact). Bool simple, no TSharedPtr — mismo motivo que
+    // DeathImpulse: no hay ambigüedad "nunca asignado" vs "vacío" (false por defecto ya
+    // significa "knockback normal", que es el caso común).
+    bool IsKnockbackHeavy() const { return bKnockbackIsHeavy; }
+
     // Setters — usados en ExecCalc_Damage para escribir el resultado del golpe
     void SetIsCriticalHit(bool bInIsCriticalHit) { bIsCriticalHit = bInIsCriticalHit; }
 
@@ -289,6 +302,12 @@ public:
     void SetLaunchForce(const FVector& InForce)
     {
         LaunchForce = InForce;
+    }
+
+    // Asigna si este knockback es "pesado" (Nivel 2, a petición).
+    void SetKnockbackIsHeavy(bool bInHeavy)
+    {
+        bKnockbackIsHeavy = bInHeavy;
     }
 
     // GAS requiere que las subclases sobreescriban GetScriptStruct().
@@ -379,6 +398,12 @@ protected:
     // a propósito — ver la nota de diseño en FPantheliaGameplayTags.
     UPROPERTY()
     FVector LaunchForce = FVector::ZeroVector;
+
+    // Nivel 2 de knockback ("empujón fuerte", a petición). false = knockback normal
+    // (convive con HitReact); true = knockback pesado (bloquea HitReact, dispara
+    // GA_HeavyKnockback).
+    UPROPERTY()
+    bool bKnockbackIsHeavy = false;
 };
 
 // ============================================================

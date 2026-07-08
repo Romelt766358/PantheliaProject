@@ -222,6 +222,12 @@ public:
 	// TryActivateAbilitiesByTag cuando el personaje aterriza tras estar State_Airborne.
 	FGameplayTag Effects_GetUp;
 
+	// Tag de activación de GA_HeavyKnockback (Nivel 2, a petición). Mismo patrón exacto
+	// que Effects_HitReact/Effects_Stagger/Effects_GetUp: GA_HeavyKnockback debe tener
+	// este tag en sus Ability Tags, y HandleIncomingDamage (PantheliaAttributeSet.cpp)
+	// la activa con TryActivateAbilitiesByTag cuando un knockback "pesado" se confirma.
+	FGameplayTag Effects_HeavyKnockback;
+
 	// --- TAGS DE DEBUFF (efectos de estado negativos elementales) ---
 	// Un "debuff" es un estado negativo que se aplica a la víctima y dura un tiempo
 	// (a diferencia de un golpe, que es instantáneo). En Panthelia cada elemento tiene
@@ -297,6 +303,14 @@ public:
 	FGameplayTag CombatTricks_KnockbackForceMagnitude;
 	FGameplayTag CombatTricks_KnockbackChance;
 
+	// Nivel 2 de knockback ("empujón fuerte", a petición). NO es un sistema aparte con
+	// su propio chance/magnitud — es un booleano que UPGRADEA un knockback normal (el de
+	// arriba) a "pesado": misma tirada de dado, mismo vector, pero además bloquea
+	// GA_HitReact y dispara una reacción distinta (GA_HeavyKnockback). Se transporta
+	// como SetByCaller igual que los demás (1.0 = true, 0.0 = false — SetByCaller solo
+	// mueve floats, no hay un tipo "bool" nativo para esto).
+	FGameplayTag CombatTricks_KnockbackIsHeavy;
+
 	// Launch (post-315, Nivel 3 — lanzamiento aéreo). Semánticamente distinto del
 	// Knockback de arriba, aunque comparten mecanismo interno (LaunchCharacter): el
 	// Knockback es un empujón horizontal que convive con HitReact; el Launch es un
@@ -344,6 +358,16 @@ public:
 	// vuelo (depende de la física real, no de un timer fijo) — se quita exactamente al
 	// aterrizar, no tras un tiempo prefijado.
 	FGameplayTag State_Airborne;
+
+	// Nivel 2 de knockback ("empujón fuerte", a petición). Concedido brevemente (GE
+	// dinámico con duración, vía GrantTemporaryGameplayTag) cuando un knockback marcado
+	// como "pesado" se activa. Dos usos, igual que State.Airborne: (1) tag de bloqueo
+	// para GA_HitReact — un HitReact normal no pega con salir empujado varios metros;
+	// (2) condición para disparar GA_HeavyKnockback (Effects.HeavyKnockback) desde
+	// HandleIncomingDamage. A diferencia de State.Airborne, este SÍ tiene una duración
+	// fija (no depende de un evento físico como aterrizar) — dura lo que tarde la
+	// reacción en reproducirse, así que se concede vía GE con Duration, no loose tag.
+	FGameplayTag State_HeavyKnockback;
 
 	// --- Gameplay Cues: efectos visuales y de sonido del parry/bloqueo ---
 	// Cada combinacion (tipo x perfeccion) tiene su propio Cue para que el diseñador pueda

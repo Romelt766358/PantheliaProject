@@ -243,6 +243,7 @@ void FPantheliaGameplayTags::InitializeNativeGameplayTags()
 	GameplayTags.Effects_HitReact = Manager.AddNativeGameplayTag(FName("Effects.HitReact"), FString("Otorgado por GE_HitReact. Inmoviliza al enemigo durante el hit react."));
 	GameplayTags.Effects_Stagger = Manager.AddNativeGameplayTag(FName("Effects.Stagger"), FString("Otorgado cuando la postura llega a 0. Aturdimiento prolongado."));
 	GameplayTags.Effects_GetUp = Manager.AddNativeGameplayTag(FName("Effects.GetUp"), FString("Tag de activacion de GA_GetUp. La dispara Landed() al aterrizar desde State.Airborne."));
+	GameplayTags.Effects_HeavyKnockback = Manager.AddNativeGameplayTag(FName("Effects.HeavyKnockback"), FString("Tag de activacion de GA_HeavyKnockback (Nivel 2). La dispara HandleIncomingDamage."));
 
 	// --- TAGS DE DEBUFF (efectos de estado negativos elementales) ---
 	// Un debuff por elemento (ver el header para la decisión de diseño completa). La raíz
@@ -305,6 +306,9 @@ void FPantheliaGameplayTags::InitializeNativeGameplayTags()
 	GameplayTags.CombatTricks_KnockbackChance = Manager.AddNativeGameplayTag(
 		FName("CombatTricks.KnockbackChance"),
 		FString("SetByCaller: probabilidad (0-100) de que este golpe (no fatal) active el knockback."));
+	GameplayTags.CombatTricks_KnockbackIsHeavy = Manager.AddNativeGameplayTag(
+		FName("CombatTricks.KnockbackIsHeavy"),
+		FString("SetByCaller (1.0/0.0): si es true, este knockback bloquea HitReact y dispara GA_HeavyKnockback en vez del comportamiento normal."));
 
 	// Launch (post-315, Nivel 3 — lanzamiento aéreo, independiente del Knockback)
 	GameplayTags.CombatTricks_LaunchChance = Manager.AddNativeGameplayTag(
@@ -333,6 +337,11 @@ void FPantheliaGameplayTags::InitializeNativeGameplayTags()
 	GameplayTags.State_Airborne = Manager.AddNativeGameplayTag(
 		FName("State.Airborne"),
 		FString("Personaje en el aire por un lanzamiento. Bloquea GA_HitReact; su remocion en Landed() dispara GA_GetUp."));
+
+	// --- Nivel 2 de knockback ("empujón fuerte", a petición) ---
+	GameplayTags.State_HeavyKnockback = Manager.AddNativeGameplayTag(
+		FName("State.HeavyKnockback"),
+		FString("Concedido brevemente por un knockback pesado. Bloquea GA_HitReact mientras dura."));
 
 	// Gameplay Cues del parry/bloqueo. Efectos visuales y sonidos por combinacion.
 	// Los tags siguen la convencion GameplayCue.X para que el GameplayCueManager los

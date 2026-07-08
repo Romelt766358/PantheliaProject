@@ -131,6 +131,15 @@ void APantheliaProjectile::OnSphereOverlap(UPrimitiveComponent* OverlappedCompon
 
 				FGameplayEffectContextHandle ContextHandle = DamageEffectSpecHandle.Data->GetContext();
 				UPantheliaAbilitySystemLibrary::SetKnockbackForce(ContextHandle, KnockbackForce);
+
+				// Nivel 2 (a petición) — ver la explicación completa en
+				// WeaponTraceComponent.cpp (mismo bloque, adaptado ahí también).
+				const bool bIsHeavy = DamageEffectSpecHandle.Data->GetSetByCallerMagnitude(
+					GameplayTags.CombatTricks_KnockbackIsHeavy, false, 0.f) > 0.5f;
+				if (bIsHeavy)
+				{
+					UPantheliaAbilitySystemLibrary::SetKnockbackIsHeavy(ContextHandle, true);
+				}
 			}
 		}
 

@@ -382,6 +382,32 @@ void UPantheliaAttributeSet::HandleIncomingDamage(const FEffectProperties& Props
 				// es siempre igual de contundente sin importar si el personaje ya se estaba
 				// moviendo o no. Ver LaunchCharacter en la documentación de ACharacter.
 				Props.TargetCharacter->LaunchCharacter(KnockbackForce, true, true);
+
+				// --- NIVEL 2: KNOCKBACK PESADO (a petición) ---
+				// Si la ability marcó este knockback como "pesado" (bKnockbackIsHeavy en
+				// UPantheliaDamageGameplayAbility), en vez de dejar que HitReact conviva con
+				// el empujón (comportamiento normal, Nivel 1), lo bloqueamos brevemente y
+				// disparamos una reacción dedicada (GA_HeavyKnockback) — un ataque fuerte
+				// merece una animación de "salir despedido con fuerza", no la mueca genérica
+				// de HitReact mientras el cuerpo patina varios metros.
+				if (UPantheliaAbilitySystemLibrary::IsKnockbackHeavy(Props.EffectContextHandle) && Props.TargetASC)
+				{
+					// Concede State.HeavyKnockback durante 1 segundo — tiempo suficiente para
+					// cubrir la reacción sin tener que sincronizarlo a mano con la duración
+					// exacta del montage (si la reacción termina antes, el tag simplemente
+					// sigue activo un instante más sin bloquear nada nuevo relevante; si
+					// necesitas más margen, sube este número). A diferencia de State.Airborne
+					// (Nivel 3), aquí no hay un evento físico como "aterrizar" que nos diga
+					// cuándo quitarlo, así que una duración fija tiene sentido.
+					UPantheliaAbilitySystemLibrary::GrantTemporaryGameplayTag(
+						Props.TargetASC, FPantheliaGameplayTags::Get().State_HeavyKnockback, 1.f);
+
+					// Dispara GA_HeavyKnockback — mismo patrón que GA_HitReact/GA_GetUp
+					// (activación externa vía TryActivateAbilitiesByTag con su Ability Tag).
+					FGameplayTagContainer HeavyKnockbackTags;
+					HeavyKnockbackTags.AddTag(FPantheliaGameplayTags::Get().Effects_HeavyKnockback);
+					Props.TargetASC->TryActivateAbilitiesByTag(HeavyKnockbackTags);
+				}
 			}
 
 			// --- LAUNCH / NIVEL 3 (post-315, a petición) ---

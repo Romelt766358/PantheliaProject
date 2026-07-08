@@ -252,6 +252,20 @@ void UWeaponTraceComponent::PerformTrace()
 
 				FGameplayEffectContextHandle ContextHandle = DamageSpecHandle.Data->GetContext();
 				UPantheliaAbilitySystemLibrary::SetKnockbackForce(ContextHandle, KnockbackForce);
+
+				// Nivel 2 (a petición): si la ability marcó este knockback como "pesado",
+				// lo escribimos también — HandleIncomingDamage decidirá qué hacer con ello
+				// (bloquear HitReact + disparar GA_HeavyKnockback en vez del comportamiento
+				// normal). Mismo bloque, mismo context — no hace falta un roll de dado
+				// aparte: "pesado" no es una probabilidad propia, es una propiedad fija de
+				// la ability que se activa junto con el knockback normal cuando este ya tuvo
+				// éxito.
+				const bool bIsHeavy = DamageSpecHandle.Data->GetSetByCallerMagnitude(
+					FPantheliaGameplayTags::Get().CombatTricks_KnockbackIsHeavy, false, 0.f) > 0.5f;
+				if (bIsHeavy)
+				{
+					UPantheliaAbilitySystemLibrary::SetKnockbackIsHeavy(ContextHandle, true);
+				}
 			}
 		}
 

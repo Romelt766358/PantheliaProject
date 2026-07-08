@@ -207,4 +207,12 @@ void UPantheliaDamageGameplayAbility::ApplyDamageScalingToSpec(
 	UAbilitySystemBlueprintLibrary::AssignTagSetByCallerMagnitude(
 		SpecHandle, GameplayTags.CombatTricks_LaunchPitchOverride,
 		LaunchPitchOverride.GetValueAtLevel(GetAbilityLevel()));
+
+	// PASO 10 (Nivel 2 de knockback, a petición): Asignar bKnockbackIsHeavy al
+	// SetByCaller. SetByCaller solo mueve floats — no hay un tipo "bool" nativo para
+	// esto, así que se transporta como 1.0 (true) / 0.0 (false), igual que hacen otros
+	// booleanos de GAS cuando necesitan viajar por este mecanismo.
+	UAbilitySystemBlueprintLibrary::AssignTagSetByCallerMagnitude(
+		SpecHandle, GameplayTags.CombatTricks_KnockbackIsHeavy,
+		bKnockbackIsHeavy ? 1.f : 0.f);
 }

@@ -118,6 +118,11 @@ public:
 	UFUNCTION(BlueprintPure, Category = "PantheliaAbilitySystemLibrary|GameplayEffects|DamageEffect")
 	static FVector GetLaunchForce(const FGameplayEffectContextHandle& EffectContextHandle);
 
+	// Devuelve true si el knockback de este golpe está marcado como "pesado" (Nivel 2,
+	// a petición) — bloquea GA_HitReact y dispara GA_HeavyKnockback en su lugar.
+	UFUNCTION(BlueprintPure, Category = "PantheliaAbilitySystemLibrary|GameplayEffects|DamageEffect")
+	static bool IsKnockbackHeavy(const FGameplayEffectContextHandle& EffectContextHandle);
+
 	// ============================================================
 	// ESCRITURA DEL RESULTADO DE DEBUFF (clase 309)
 	// ============================================================
@@ -173,6 +178,13 @@ public:
 	static void SetLaunchForce(UPARAM(ref) FGameplayEffectContextHandle& EffectContextHandle,
 		const FVector& InForce);
 
+	// Marca este knockback como "pesado" (Nivel 2, a petición). Llamada desde
+	// APantheliaProjectile::OnSphereOverlap y UWeaponTraceComponent::PerformTrace, en el
+	// mismo bloque donde ya se calcula/escribe KnockbackForce.
+	UFUNCTION(BlueprintCallable, Category = "PantheliaAbilitySystemLibrary|GameplayEffects|DamageEffect")
+	static void SetKnockbackIsHeavy(UPARAM(ref) FGameplayEffectContextHandle& EffectContextHandle,
+		bool bInHeavy);
+
 	// ============================================================
 	// UTILIDAD DE DIRECCIÓN CON PITCH FIJO (clase 315)
 	// ============================================================
@@ -208,6 +220,21 @@ public:
 	// falta tocar esta función ni el chequeo del ExecCalc — ya están listos para eso.
 	UFUNCTION(BlueprintCallable, Category = "PantheliaAbilitySystemLibrary|Combat")
 	static void GrantTemporaryInvulnerability(UAbilitySystemComponent* ASC, float Duration);
+
+	// ============================================================
+	// TAG TEMPORAL GENÉRICO (Nivel 2 de knockback, a petición)
+	// ============================================================
+	// Generalización de GrantTemporaryInvulnerability: mismo mecanismo (GE dinámico con
+	// duración, sin modificadores, que solo concede un tag), pero para CUALQUIER tag,
+	// no solo State.Invulnerable. GrantTemporaryInvulnerability ahora llama a esta
+	// función por dentro (ver el .cpp) — se mantiene como función aparte, con su firma
+	// intacta, para no romper el nodo ya cableado en GA_GetUp.
+	//
+	// Primer uso: State.HeavyKnockback (Nivel 2), concedido brevemente desde
+	// HandleIncomingDamage cuando un knockback "pesado" se activa, para bloquear
+	// GA_HitReact mientras dura la reacción de GA_HeavyKnockback.
+	UFUNCTION(BlueprintCallable, Category = "PantheliaAbilitySystemLibrary|Combat")
+	static void GrantTemporaryGameplayTag(UAbilitySystemComponent* ASC, FGameplayTag Tag, float Duration);
 
 	// ============================================================
 	// APLICACIÓN DE DAÑO SECUNDARIO/DEBUFF (clase 305)

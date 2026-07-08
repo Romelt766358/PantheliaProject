@@ -139,6 +139,14 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Damage")
 	FScalableFloat KnockbackForceMagnitude = FScalableFloat(500.f);
 
+	// Nivel 2 de knockback ("empujón fuerte", a petición). false (por defecto): el
+	// knockback normal de arriba, que convive con GA_HitReact. true: este knockback
+	// bloquea GA_HitReact y dispara GA_HeavyKnockback en su lugar — pensado para
+	// ataques deliberadamente pesados, no como algo que la mayoría de abilities deba
+	// activar.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Damage")
+	bool bKnockbackIsHeavy = false;
+
 	// --- LAUNCH / NIVEL 3 (post-315, a petición) ---
 	// Sistema INDEPENDIENTE del Knockback de arriba, no una variación suya. Reservado a
 	// propósito para fuentes de daño específicas (explosiones, golpes desde abajo) — la

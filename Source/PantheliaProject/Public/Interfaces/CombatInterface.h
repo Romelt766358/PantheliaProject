@@ -126,6 +126,12 @@ public:
     UFUNCTION(BlueprintCallable, BlueprintNativeEvent)
     UAnimMontage* GetGetUpMontage();
 
+    // Devuelve el montage de reacción al knockback "pesado" (Nivel 2, a petición) — el
+    // personaje se ve empujado con más fuerza y una animación dedicada, en vez del
+    // HitReact normal. Lo reproduce GA_HeavyKnockback — mismo patrón que los anteriores.
+    UFUNCTION(BlueprintCallable, BlueprintNativeEvent)
+    UAnimMontage* GetHeavyKnockbackMontage();
+
     // Maneja la muerte del personaje (ragdoll + dissolve + lifespan).
     // DeathImpulse (clase 314): vector ya calculado (dirección × magnitud) que se aplica
     // físicamente al ragdoll/arma en MulticastHandleDeath. Se obtiene del context del

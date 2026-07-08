@@ -27,6 +27,7 @@ bool FPantheliaGameplayEffectContext::NetSerialize(FArchive& Ar, UPackageMap* Ma
     //   bit 10 — DeathImpulse (FVector, solo si no es el vector cero)
     //   bit 11 — KnockbackForce (FVector, solo si no es el vector cero)
     //   bit 12 — LaunchForce (FVector, solo si no es el vector cero)
+    //   bit 13 — bKnockbackIsHeavy (bool, solo si true)
     // ----------------------------------------------------------------
 
     uint32 RepBits = 0;
@@ -97,10 +98,16 @@ bool FPantheliaGameplayEffectContext::NetSerialize(FArchive& Ar, UPackageMap* Ma
         {
             RepBits |= 1 << 12;
         }
+
+        // --- Nivel 2 de knockback ---
+        if (bKnockbackIsHeavy)
+        {
+            RepBits |= 1 << 13;
+        }
     }
 
-    // 13 bits usados en total (antes 12 — Nivel 3 añade LaunchForce).
-    Ar.SerializeBits(&RepBits, 13);
+    // 14 bits usados en total (antes 13 — Nivel 2 añade bKnockbackIsHeavy).
+    Ar.SerializeBits(&RepBits, 14);
 
     if (RepBits & (1 << 0))
     {
@@ -179,6 +186,12 @@ bool FPantheliaGameplayEffectContext::NetSerialize(FArchive& Ar, UPackageMap* Ma
     if (RepBits & (1 << 12))
     {
         LaunchForce.NetSerialize(Ar, Map, bOutSuccess);
+    }
+
+    // --- Nivel 2 de knockback ---
+    if (RepBits & (1 << 13))
+    {
+        Ar << bKnockbackIsHeavy;
     }
 
     // Al cargar, reconstruir InstigatorAbilitySystemComponent desde el Instigator.

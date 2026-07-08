@@ -296,6 +296,19 @@ FVector UPantheliaAbilitySystemLibrary::GetLaunchForce(const FGameplayEffectCont
 	return FVector::ZeroVector;
 }
 
+bool UPantheliaAbilitySystemLibrary::IsKnockbackHeavy(const FGameplayEffectContextHandle& EffectContextHandle)
+{
+	const FPantheliaGameplayEffectContext* PantheliaContext =
+		static_cast<const FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+
+	if (PantheliaContext)
+	{
+		return PantheliaContext->IsKnockbackHeavy();
+	}
+
+	return false;
+}
+
 // ============================================================
 // ESCRITURA DEL RESULTADO DE DEBUFF (clase 309)
 // ============================================================
@@ -408,6 +421,19 @@ void UPantheliaAbilitySystemLibrary::SetLaunchForce(
 	}
 }
 
+void UPantheliaAbilitySystemLibrary::SetKnockbackIsHeavy(
+	FGameplayEffectContextHandle& EffectContextHandle,
+	bool bInHeavy)
+{
+	FPantheliaGameplayEffectContext* PantheliaContext =
+		static_cast<FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+
+	if (PantheliaContext)
+	{
+		PantheliaContext->SetKnockbackIsHeavy(bInHeavy);
+	}
+}
+
 FVector UPantheliaAbilitySystemLibrary::GetDirectionWithPitchOverride(
 	const FVector& InDirection, float PitchOverrideDegrees)
 {
@@ -422,7 +448,16 @@ FVector UPantheliaAbilitySystemLibrary::GetDirectionWithPitchOverride(
 
 void UPantheliaAbilitySystemLibrary::GrantTemporaryInvulnerability(UAbilitySystemComponent* ASC, float Duration)
 {
-	if (!ASC || Duration <= 0.f)
+	// Delegamos en la función genérica (Nivel 2 de knockback, a petición) — misma
+	// implementación de siempre, ahora compartida. La firma pública NO cambia, así que
+	// cualquier nodo de Blueprint ya cableado contra esta función (ej. GA_GetUp) sigue
+	// funcionando exactamente igual, sin tener que volver a conectarlo.
+	GrantTemporaryGameplayTag(ASC, FPantheliaGameplayTags::Get().State_Invulnerable, Duration);
+}
+
+void UPantheliaAbilitySystemLibrary::GrantTemporaryGameplayTag(UAbilitySystemComponent* ASC, FGameplayTag Tag, float Duration)
+{
+	if (!ASC || !Tag.IsValid() || Duration <= 0.f)
 	{
 		return;
 	}
@@ -431,15 +466,15 @@ void UPantheliaAbilitySystemLibrary::GrantTemporaryInvulnerability(UAbilitySyste
 	// simplificado: aquí NO hace falta ningún modificador de atributo (Effect->Modifiers
 	// se queda vacío) — el único propósito de este GE es existir durante Duration
 	// segundos y conceder un tag mientras tanto.
-	UGameplayEffect* Effect = NewObject<UGameplayEffect>(GetTransientPackage(), FName("DynamicInvulnerability"));
+	UGameplayEffect* Effect = NewObject<UGameplayEffect>(GetTransientPackage(), FName("DynamicTemporaryTag"));
 	Effect->DurationPolicy = EGameplayEffectDurationType::HasDuration;
 	Effect->DurationMagnitude = FGameplayEffectModifierMagnitude(FScalableFloat(Duration));
 
-	// Conceder State.Invulnerable — vía el componente moderno (UTargetTagsGameplayEffectComponent),
+	// Conceder el tag — vía el componente moderno (UTargetTagsGameplayEffectComponent),
 	// NO vía InheritableOwnedTagsContainer (deprecado desde UE 5.3, ver la explicación
 	// completa en UPantheliaAttributeSet::Debuff, clase 310).
 	FInheritedTagContainer TagContainer;
-	TagContainer.AddTag(FPantheliaGameplayTags::Get().State_Invulnerable);
+	TagContainer.AddTag(Tag);
 	UTargetTagsGameplayEffectComponent& TagComponent = Effect->AddComponent<UTargetTagsGameplayEffectComponent>();
 	TagComponent.SetAndApplyTargetTagChanges(TagContainer);
 
