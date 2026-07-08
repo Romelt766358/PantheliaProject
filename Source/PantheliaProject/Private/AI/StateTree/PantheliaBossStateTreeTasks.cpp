@@ -11,16 +11,11 @@
 
 namespace
 {
-	AActor* ResolveBossActor(const FStateTreeExecutionContext& Context, AActor* Actor, AAIController* AIController)
+	AActor* ResolveBossActor(const FStateTreeExecutionContext& Context, AActor* Actor)
 	{
 		if (Actor)
 		{
 			return Actor;
-		}
-
-		if (AIController)
-		{
-			return AIController->GetPawn();
 		}
 
 		UObject* Owner = Context.GetOwner();
@@ -32,9 +27,9 @@ namespace
 		return Cast<AActor>(Owner);
 	}
 
-	UPantheliaBossBrainComponent* ResolveBossBrainComponent(const FStateTreeExecutionContext& Context, AActor* Actor, AAIController* AIController)
+	UPantheliaBossBrainComponent* ResolveBossBrainComponent(const FStateTreeExecutionContext& Context, AActor* Actor)
 	{
-		if (AActor* BossActor = ResolveBossActor(Context, Actor, AIController))
+		if (AActor* BossActor = ResolveBossActor(Context, Actor))
 		{
 			return BossActor->FindComponentByClass<UPantheliaBossBrainComponent>();
 		}
@@ -52,6 +47,92 @@ namespace
 		// Temporary fallback: final integration should provide TargetActor from StateTree/Blackboard/Context binding.
 		return UGameplayStatics::GetPlayerCharacter(Context.GetWorld(), 0);
 	}
+
+	EStateTreeRunStatus RotateActorYawTowardTarget(AActor* Actor, AActor* TargetActor, const float RotationSpeedDegreesPerSecond, const float AcceptableAngleDegrees, const float DeltaTime)
+	{
+		if (!Actor || !TargetActor)
+		{
+			return EStateTreeRunStatus::Failed;
+		}
+
+		const FVector ToTarget = TargetActor->GetActorLocation() - Actor->GetActorLocation();
+		const FVector ToTarget2D = FVector(ToTarget.X, ToTarget.Y, 0.f);
+		if (ToTarget2D.IsNearlyZero())
+		{
+			return EStateTreeRunStatus::Succeeded;
+		}
+
+		const float CurrentYaw = Actor->GetActorRotation().Yaw;
+		const float TargetYaw = ToTarget2D.Rotation().Yaw;
+		const float YawDelta = FMath::FindDeltaAngleDegrees(CurrentYaw, TargetYaw);
+		if (FMath::Abs(YawDelta) <= AcceptableAngleDegrees)
+		{
+			return EStateTreeRunStatus::Succeeded;
+		}
+
+		if (RotationSpeedDegreesPerSecond <= 0.f)
+		{
+			FRotator TargetRotation = Actor->GetActorRotation();
+			TargetRotation.Yaw = TargetYaw;
+			Actor->SetActorRotation(TargetRotation);
+			return EStateTreeRunStatus::Succeeded;
+		}
+
+		const float MaxYawStep = RotationSpeedDegreesPerSecond * DeltaTime;
+		if (FMath::Abs(YawDelta) <= MaxYawStep)
+		{
+			FRotator TargetRotation = Actor->GetActorRotation();
+			TargetRotation.Yaw = TargetYaw;
+			Actor->SetActorRotation(TargetRotation);
+			return EStateTreeRunStatus::Succeeded;
+		}
+
+		FRotator NewRotation = Actor->GetActorRotation();
+		NewRotation.Yaw = CurrentYaw + FMath::Clamp(YawDelta, -MaxYawStep, MaxYawStep);
+		Actor->SetActorRotation(NewRotation);
+
+		return EStateTreeRunStatus::Running;
+	}
+}
+
+FPantheliaStateTreeFaceTargetTask::FPantheliaStateTreeFaceTargetTask()
+{
+	bShouldCallTick = true;
+}
+
+EStateTreeRunStatus FPantheliaStateTreeFaceTargetTask::EnterState(FStateTreeExecutionContext& Context, const FStateTreeTransitionResult& Transition) const
+{
+	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	AActor* BossActor = ResolveBossActor(Context, InstanceData.Actor);
+	AActor* TargetActor = ResolveTargetActor(Context, InstanceData.TargetActor);
+
+	if (!BossActor || !TargetActor)
+	{
+		return EStateTreeRunStatus::Failed;
+	}
+
+	const FVector ToTarget = TargetActor->GetActorLocation() - BossActor->GetActorLocation();
+	const FVector ToTarget2D = FVector(ToTarget.X, ToTarget.Y, 0.f);
+	if (ToTarget2D.IsNearlyZero())
+	{
+		return EStateTreeRunStatus::Succeeded;
+	}
+
+	const float CurrentYaw = BossActor->GetActorRotation().Yaw;
+	const float TargetYaw = ToTarget2D.Rotation().Yaw;
+	const float YawDelta = FMath::FindDeltaAngleDegrees(CurrentYaw, TargetYaw);
+	return FMath::Abs(YawDelta) <= InstanceData.AcceptableAngleDegrees
+		? EStateTreeRunStatus::Succeeded
+		: EStateTreeRunStatus::Running;
+}
+
+EStateTreeRunStatus FPantheliaStateTreeFaceTargetTask::Tick(FStateTreeExecutionContext& Context, const float DeltaTime) const
+{
+	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
+	AActor* BossActor = ResolveBossActor(Context, InstanceData.Actor);
+	AActor* TargetActor = ResolveTargetActor(Context, InstanceData.TargetActor);
+
+	return RotateActorYawTowardTarget(BossActor, TargetActor, InstanceData.RotationSpeedDegreesPerSecond, InstanceData.AcceptableAngleDegrees, DeltaTime);
 }
 
 FPantheliaStateTreeSelectBossActionTask::FPantheliaStateTreeSelectBossActionTask()
@@ -63,7 +144,7 @@ FPantheliaStateTreeSelectBossActionTask::FPantheliaStateTreeSelectBossActionTask
 EStateTreeRunStatus FPantheliaStateTreeSelectBossActionTask::EnterState(FStateTreeExecutionContext& Context, const FStateTreeTransitionResult& Transition) const
 {
 	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
-	UPantheliaBossBrainComponent* BossBrain = ResolveBossBrainComponent(Context, InstanceData.Actor, InstanceData.AIController);
+	UPantheliaBossBrainComponent* BossBrain = ResolveBossBrainComponent(Context, InstanceData.Actor);
 	AActor* TargetActor = ResolveTargetActor(Context, InstanceData.TargetActor);
 
 	if (!BossBrain || !TargetActor)
@@ -86,7 +167,7 @@ FPantheliaStateTreeExecuteSelectedBossActionTask::FPantheliaStateTreeExecuteSele
 EStateTreeRunStatus FPantheliaStateTreeExecuteSelectedBossActionTask::EnterState(FStateTreeExecutionContext& Context, const FStateTreeTransitionResult& Transition) const
 {
 	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
-	UPantheliaBossBrainComponent* BossBrain = ResolveBossBrainComponent(Context, InstanceData.Actor, InstanceData.AIController);
+	UPantheliaBossBrainComponent* BossBrain = ResolveBossBrainComponent(Context, InstanceData.Actor);
 	AActor* TargetActor = ResolveTargetActor(Context, InstanceData.TargetActor);
 
 	if (!BossBrain || !TargetActor || !BossBrain->HasSelectedAction())
@@ -113,7 +194,7 @@ FPantheliaStateTreeWaitForBossActionTask::FPantheliaStateTreeWaitForBossActionTa
 EStateTreeRunStatus FPantheliaStateTreeWaitForBossActionTask::Tick(FStateTreeExecutionContext& Context, const float DeltaTime) const
 {
 	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
-	UPantheliaBossBrainComponent* BossBrain = ResolveBossBrainComponent(Context, InstanceData.Actor, InstanceData.AIController);
+	UPantheliaBossBrainComponent* BossBrain = ResolveBossBrainComponent(Context, InstanceData.Actor);
 
 	if (!BossBrain)
 	{
@@ -144,7 +225,7 @@ FPantheliaStateTreeClearBossActionTask::FPantheliaStateTreeClearBossActionTask()
 EStateTreeRunStatus FPantheliaStateTreeClearBossActionTask::EnterState(FStateTreeExecutionContext& Context, const FStateTreeTransitionResult& Transition) const
 {
 	FInstanceDataType& InstanceData = Context.GetInstanceData(*this);
-	UPantheliaBossBrainComponent* BossBrain = ResolveBossBrainComponent(Context, InstanceData.Actor, InstanceData.AIController);
+	UPantheliaBossBrainComponent* BossBrain = ResolveBossBrainComponent(Context, InstanceData.Actor);
 
 	if (!BossBrain)
 	{

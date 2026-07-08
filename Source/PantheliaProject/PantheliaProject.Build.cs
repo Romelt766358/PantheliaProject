@@ -17,6 +17,7 @@ public class PantheliaProject : ModuleRules
         "GameplayAbilities",
         "GameplayTags",
         "GameplayTasks",
+        "StateTreeModule",
         "AnimGraphRuntime",
         "Niagara",          // Requerido para UNiagaraSystem y UNiagaraFunctionLibrary
         "UMG"               // Requerido para UUserWidget, UImage, USizeBox, UWidgetAnimation (widgets UI)
@@ -24,7 +25,6 @@ public class PantheliaProject : ModuleRules
 
         PrivateDependencyModuleNames.AddRange(new string[] {
         "AIModule",         // Requerido para APantheliaAIController, UBehaviorTreeComponent, UBlackboardComponent
-        "StateTreeModule",
         "GameplayStateTreeModule"
 		});
 
