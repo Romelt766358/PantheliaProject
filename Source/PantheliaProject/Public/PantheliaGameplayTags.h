@@ -146,6 +146,17 @@ public:
 	// activaría TODAS las abilities de ataque a la vez.
 	FGameplayTag Abilities_Attack_Ranged;
 
+	// --- TAGS DE ABILITIES: BOSSES ---
+	// Abilities.Boss.* son hojas específicas para jefes. El BossProfile debe apuntar
+	// preferiblemente a una hoja exacta, no a un tag padre, para evitar que
+	// TryActivateAbilitiesByTag active varias abilities al mismo tiempo.
+	FGameplayTag Abilities_Boss;
+	FGameplayTag Abilities_Boss_WarriorBoss;
+	FGameplayTag Abilities_Boss_WarriorBoss_ShortSlash;
+	FGameplayTag Abilities_Boss_WarriorBoss_HeavySlash;
+	FGameplayTag Abilities_Boss_WarriorBoss_WideSlash;
+	FGameplayTag Abilities_Boss_WarriorBoss_GapCloser;
+
 	// --- TAGS DE BOSS AI ---
 	// Boss.Phase.* identifica fases del boss.
 	FGameplayTag Boss_Phase;
@@ -157,9 +168,12 @@ public:
 	FGameplayTag Boss_Action;
 	FGameplayTag Boss_Action_Melee;
 	FGameplayTag Boss_Action_Melee_Basic;
+	FGameplayTag Boss_Action_Melee_ShortSlash;
 	FGameplayTag Boss_Action_Melee_Heavy;
+	FGameplayTag Boss_Action_Melee_WideSlash;
 	FGameplayTag Boss_Action_Ranged;
 	FGameplayTag Boss_Action_GapCloser;
+	FGameplayTag Boss_Action_GapCloser_Leap;
 	FGameplayTag Boss_Action_Reposition;
 	FGameplayTag Boss_Action_Retreat;
 	FGameplayTag Boss_Action_Punish;

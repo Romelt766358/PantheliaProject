@@ -132,6 +132,29 @@ void FPantheliaGameplayTags::InitializeNativeGameplayTags()
 	// active melee y ranged a la vez cuando el enemigo tiene ambas abilities.
 	GameplayTags.Abilities_Attack_Ranged = Manager.AddNativeGameplayTag(FName("Abilities.Attack.Ranged"), FString("Activa la ability de ataque a distancia/mágico del enemigo."));
 
+	// --- TAGS DE ABILITIES: BOSSES ---
+	// Hojas específicas para acciones de jefes. BossProfile.ActionDefinitions debe usar
+	// estas hojas exactas como AbilityTag cuando una acción necesita ejecutar una
+	// GameplayAbility concreta y no el ataque genérico compartido por enemigos normales.
+	GameplayTags.Abilities_Boss = Manager.AddNativeGameplayTag(
+		FName("Abilities.Boss"),
+		FString("Padre de todas las abilities específicas de bosses."));
+	GameplayTags.Abilities_Boss_WarriorBoss = Manager.AddNativeGameplayTag(
+		FName("Abilities.Boss.WarriorBoss"),
+		FString("Padre de abilities específicas del WarriorBoss."));
+	GameplayTags.Abilities_Boss_WarriorBoss_ShortSlash = Manager.AddNativeGameplayTag(
+		FName("Abilities.Boss.WarriorBoss.ShortSlash"),
+		FString("WarriorBoss: tajo corto/rápido."));
+	GameplayTags.Abilities_Boss_WarriorBoss_HeavySlash = Manager.AddNativeGameplayTag(
+		FName("Abilities.Boss.WarriorBoss.HeavySlash"),
+		FString("WarriorBoss: tajo pesado."));
+	GameplayTags.Abilities_Boss_WarriorBoss_WideSlash = Manager.AddNativeGameplayTag(
+		FName("Abilities.Boss.WarriorBoss.WideSlash"),
+		FString("WarriorBoss: barrido amplio para cubrir ángulos laterales."));
+	GameplayTags.Abilities_Boss_WarriorBoss_GapCloser = Manager.AddNativeGameplayTag(
+		FName("Abilities.Boss.WarriorBoss.GapCloser"),
+		FString("WarriorBoss: acción de cierre de distancia."));
+
 	// --- TAGS DE BOSS AI ---
 	// Boss.Phase.* identifica fases del boss.
 	GameplayTags.Boss_Phase = Manager.AddNativeGameplayTag(
@@ -154,16 +177,25 @@ void FPantheliaGameplayTags::InitializeNativeGameplayTags()
 		FString("Acciones melee de boss."));
 	GameplayTags.Boss_Action_Melee_Basic = Manager.AddNativeGameplayTag(
 		FName("Boss.Action.Melee.Basic"),
-		FString("Accion melee basica de boss."));
+		FString("Accion melee basica de boss. Tag genérico conservado para compatibilidad."));
+	GameplayTags.Boss_Action_Melee_ShortSlash = Manager.AddNativeGameplayTag(
+		FName("Boss.Action.Melee.ShortSlash"),
+		FString("Accion melee rápida/corta de boss."));
 	GameplayTags.Boss_Action_Melee_Heavy = Manager.AddNativeGameplayTag(
 		FName("Boss.Action.Melee.Heavy"),
 		FString("Accion melee pesada de boss."));
+	GameplayTags.Boss_Action_Melee_WideSlash = Manager.AddNativeGameplayTag(
+		FName("Boss.Action.Melee.WideSlash"),
+		FString("Accion melee de barrido amplio de boss."));
 	GameplayTags.Boss_Action_Ranged = Manager.AddNativeGameplayTag(
 		FName("Boss.Action.Ranged"),
 		FString("Accion ranged de boss."));
 	GameplayTags.Boss_Action_GapCloser = Manager.AddNativeGameplayTag(
 		FName("Boss.Action.GapCloser"),
 		FString("Accion de acercamiento de boss."));
+	GameplayTags.Boss_Action_GapCloser_Leap = Manager.AddNativeGameplayTag(
+		FName("Boss.Action.GapCloser.Leap"),
+		FString("Accion de salto/cierre de distancia de boss."));
 	GameplayTags.Boss_Action_Reposition = Manager.AddNativeGameplayTag(
 		FName("Boss.Action.Reposition"),
 		FString("Accion de reposicionamiento de boss."));

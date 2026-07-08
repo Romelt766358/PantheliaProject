@@ -88,11 +88,14 @@ struct FPantheliaBossActionDefinition
 {
 	GENERATED_BODY()
 
-	// Identidad interna de la acción. Ej: BossAction.Melee.ShortSlash.
+	// Identidad interna de la acción. Ej: Boss.Action.Melee.ShortSlash.
+	// Este tag lo usa BossBrain para cooldowns, memoria y selección data-driven.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Action")
 	FGameplayTag ActionTag;
 
-	// Ability real que se activa en GAS. Ej: Abilities.Attack.Melee.
+	// Ability real que se activa en GAS. Ej: Abilities.Boss.WarriorBoss.ShortSlash.
+	// Usar una hoja exacta evita activar varias abilities cuando TryActivateAbilitiesByTag
+	// recibe un tag padre como Abilities.Attack.Melee.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Action")
 	FGameplayTag AbilityTag;
 
@@ -123,6 +126,27 @@ struct FPantheliaBossActionDefinition
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Action")
 	bool bCanExtendCombo = false;
+
+	// Grupo usado por la memoria anti-repetición. Si queda inválido, se usa ActionTag.
+	// Varias acciones pueden compartir grupo para penalizar una misma familia sin bloquear
+	// acciones individuales. Ej: varios tajos rápidos podrían compartir Boss.Action.Melee.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Action|Memory")
+	FGameplayTag MemoryGroupTag;
+
+	// Multiplicador aplicado cuando esta acción pertenece al mismo grupo que la acción
+	// ejecutada inmediatamente antes. 0 bloquea la repetición inmediata; 1 no penaliza.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Action|Memory", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float ImmediateRepeatWeightMultiplier = 0.35f;
+
+	// Multiplicador aplicado si esta acción aparece en la memoria reciente, pero no fue
+	// necesariamente la última. 1 desactiva la penalización reciente.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Action|Memory", meta = (ClampMin = "0.0", ClampMax = "1.0"))
+	float RecentRepeatWeightMultiplier = 0.75f;
+
+	// Límite de usos consecutivos del mismo grupo de memoria. 0 = sin límite duro.
+	// Con valor 2, la tercera selección consecutiva del mismo grupo queda bloqueada.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Action|Memory", meta = (ClampMin = "0"))
+	int32 MaxConsecutiveUses = 2;
 
 	// El boss debe tener todos estos tags activos para poder usar la acción.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Action")

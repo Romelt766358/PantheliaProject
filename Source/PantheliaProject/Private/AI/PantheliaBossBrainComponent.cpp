@@ -8,6 +8,7 @@
 #include "Characters/PantheliaEnemy.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Interfaces/CombatInterface.h"
+#include "PantheliaLogChannels.h"
 #include "Engine/World.h"
 #include "TimerManager.h"
 
@@ -72,6 +73,7 @@ bool UPantheliaBossBrainComponent::InitializeBossFromProfile()
 	ApplyStatsPreset(*StatsPreset);
 	UpdatePhaseFromHealth();
 	ResetAllActionCooldowns();
+	ResetActionMemory();
 	ClearCurrentAction();
 	return true;
 }
@@ -175,20 +177,33 @@ bool UPantheliaBossBrainComponent::UpdatePhaseFromHealth()
 
 	const float HealthPercent = GetHealthPercent();
 	const FPantheliaBossPhaseDefinition* BestPhase = nullptr;
-	float BestThreshold = TNumericLimits<float>::Lowest();
+	float BestThreshold = TNumericLimits<float>::Max();
 
+	// Elegimos la fase válida con el umbral más bajo que todavía contiene la vida actual.
+	// Ejemplo: Phase1=1.0, Phase2=0.5. A 40% ambas condiciones no deben dejar Phase1;
+	// debe ganar Phase2 porque es la fase más específica/profunda.
 	for (const FPantheliaBossPhaseDefinition& Phase : BossProfile->Phases)
 	{
-		if (HealthPercent <= Phase.EnterHealthPercent && Phase.EnterHealthPercent >= BestThreshold)
+		if (HealthPercent <= Phase.EnterHealthPercent && Phase.EnterHealthPercent <= BestThreshold)
 		{
 			BestPhase = &Phase;
 			BestThreshold = Phase.EnterHealthPercent;
 		}
 	}
 
-	if (!BestPhase && BossProfile->Phases.Num() > 0)
+	// Fallback defensivo para perfiles mal configurados donde ninguna fase cubre el
+	// porcentaje actual. Se usa el umbral más alto, normalmente Phase1.
+	if (!BestPhase)
 	{
-		BestPhase = &BossProfile->Phases[0];
+		float HighestThreshold = TNumericLimits<float>::Lowest();
+		for (const FPantheliaBossPhaseDefinition& Phase : BossProfile->Phases)
+		{
+			if (Phase.EnterHealthPercent >= HighestThreshold)
+			{
+				BestPhase = &Phase;
+				HighestThreshold = Phase.EnterHealthPercent;
+			}
+		}
 	}
 
 	if (!BestPhase)
@@ -198,6 +213,15 @@ bool UPantheliaBossBrainComponent::UpdatePhaseFromHealth()
 
 	const bool bChangedPhase = ActivePhaseID != BestPhase->PhaseID;
 	ActivePhaseID = BestPhase->PhaseID;
+
+	if (bChangedPhase && bLogActionSelection)
+	{
+		UE_LOG(LogPanthelia, Log, TEXT("BossBrain [%s] changed phase to %s at HealthPercent %.2f"),
+			*GetNameSafe(GetOwner()),
+			*ActivePhaseID.ToString(),
+			HealthPercent);
+	}
+
 	return bChangedPhase;
 }
 
@@ -245,6 +269,13 @@ void UPantheliaBossBrainComponent::ResetActionCooldown(const FGameplayTag& Actio
 void UPantheliaBossBrainComponent::ResetAllActionCooldowns()
 {
 	ActionCooldownEndTimes.Empty();
+}
+
+void UPantheliaBossBrainComponent::ResetActionMemory()
+{
+	RecentActionMemoryGroups.Empty();
+	LastActionMemoryGroup = FGameplayTag();
+	ConsecutiveMemoryGroupUses = 0;
 }
 
 bool UPantheliaBossBrainComponent::IsActionOnCooldown(const FGameplayTag& ActionTag) const
@@ -304,6 +335,17 @@ bool UPantheliaBossBrainComponent::SelectAction(AActor* TargetActor, FPantheliaB
 			? EPantheliaBossActionFailureReason::NoAction
 			: EPantheliaBossActionFailureReason::ActionUnavailable,
 			true);
+
+		if (bLogActionSelection)
+		{
+			UE_LOG(LogPanthelia, Warning, TEXT("BossBrain [%s] found no valid actions. Phase=%s Distance=%.1f Angle=%.1f Failure=%d"),
+				*GetNameSafe(GetOwner()),
+				*ActivePhaseID.ToString(),
+				GetDistanceToTarget(TargetActor),
+				GetAngleToTarget(TargetActor),
+				static_cast<int32>(LastFailureReason));
+		}
+
 		return false;
 	}
 
@@ -313,7 +355,8 @@ bool UPantheliaBossBrainComponent::SelectAction(AActor* TargetActor, FPantheliaB
 		return false;
 	}
 
-	float Roll = FMath::FRandRange(0.f, TotalWeight);
+	const float InitialRoll = FMath::FRandRange(0.f, TotalWeight);
+	float Roll = InitialRoll;
 	for (int32 Index = 0; Index < Candidates.Num(); ++Index)
 	{
 		Roll -= CandidateWeights[Index];
@@ -321,12 +364,43 @@ bool UPantheliaBossBrainComponent::SelectAction(AActor* TargetActor, FPantheliaB
 		{
 			OutAction = *Candidates[Index];
 			SetSelectedAction(TargetActor, OutAction);
+
+			if (bLogActionSelection)
+			{
+				UE_LOG(LogPanthelia, Log, TEXT("BossBrain [%s] selected Action=%s Ability=%s Weight=%.2f TotalWeight=%.2f Roll=%.2f Candidates=%d Phase=%s Distance=%.1f Angle=%.1f"),
+					*GetNameSafe(GetOwner()),
+					*OutAction.ActionTag.ToString(),
+					*OutAction.AbilityTag.ToString(),
+					CandidateWeights[Index],
+					TotalWeight,
+					InitialRoll,
+					Candidates.Num(),
+					*ActivePhaseID.ToString(),
+					GetDistanceToTarget(TargetActor),
+					GetAngleToTarget(TargetActor));
+			}
+
 			return true;
 		}
 	}
 
 	OutAction = *Candidates.Last();
 	SetSelectedAction(TargetActor, OutAction);
+
+	if (bLogActionSelection)
+	{
+		UE_LOG(LogPanthelia, Log, TEXT("BossBrain [%s] selected fallback Action=%s Ability=%s TotalWeight=%.2f Roll=%.2f Candidates=%d Phase=%s Distance=%.1f Angle=%.1f"),
+			*GetNameSafe(GetOwner()),
+			*OutAction.ActionTag.ToString(),
+			*OutAction.AbilityTag.ToString(),
+			TotalWeight,
+			InitialRoll,
+			Candidates.Num(),
+			*ActivePhaseID.ToString(),
+			GetDistanceToTarget(TargetActor),
+			GetAngleToTarget(TargetActor));
+	}
+
 	return true;
 }
 
@@ -334,40 +408,71 @@ bool UPantheliaBossBrainComponent::IsActionAvailable(const FPantheliaBossActionD
 {
 	OutWeight = 0.f;
 
-	if (!HasValidTargetContext(TargetActor) || !Action.ActionTag.IsValid() || !Action.AbilityTag.IsValid())
+	if (!HasValidTargetContext(TargetActor))
 	{
+		LogActionRejected(Action, TargetActor, TEXT("invalid target context"));
+		return false;
+	}
+
+	if (!Action.ActionTag.IsValid())
+	{
+		LogActionRejected(Action, TargetActor, TEXT("invalid ActionTag"));
+		return false;
+	}
+
+	if (!Action.AbilityTag.IsValid())
+	{
+		LogActionRejected(Action, TargetActor, TEXT("invalid AbilityTag"));
 		return false;
 	}
 
 	if (!IsActionInActivePhase(Action))
 	{
+		LogActionRejected(Action, TargetActor, TEXT("inactive phase"));
 		return false;
 	}
 
 	if (IsActionOnCooldown(Action.ActionTag))
 	{
+		LogActionRejected(Action, TargetActor, TEXT("cooldown"));
 		return false;
 	}
 
 	if (!PassesActionRangeChecks(Action, TargetActor))
 	{
+		LogActionRejected(Action, TargetActor, TEXT("distance or angle"));
 		return false;
 	}
 
 	if (Action.bRequiresLineOfSight && !HasLineOfSightToTarget(TargetActor))
 	{
+		LogActionRejected(Action, TargetActor, TEXT("line of sight"));
 		return false;
 	}
 
 	if (!PassesActionTagChecks(Action))
 	{
+		LogActionRejected(Action, TargetActor, TEXT("owner tags"));
+		return false;
+	}
+
+	if (IsActionBlockedByMemory(Action))
+	{
+		LogActionRejected(Action, TargetActor, TEXT("memory limit"));
 		return false;
 	}
 
 	OutWeight = FMath::Max(0.f, Action.Weight);
 	OutWeight *= GetActionPhaseWeightMultiplier();
+	OutWeight *= GetActionMemoryWeightMultiplier(Action);
 
-	return OutWeight > 0.f;
+	if (OutWeight <= 0.f)
+	{
+		LogActionRejected(Action, TargetActor, TEXT("zero weight"));
+		return false;
+	}
+
+	return true;
 }
 
 bool UPantheliaBossBrainComponent::PassesActionRangeChecks(const FPantheliaBossActionDefinition& Action, AActor* TargetActor) const
@@ -403,6 +508,135 @@ float UPantheliaBossBrainComponent::GetActionPhaseWeightMultiplier() const
 	}
 
 	return 1.f;
+}
+
+FGameplayTag UPantheliaBossBrainComponent::GetActionMemoryGroup(const FPantheliaBossActionDefinition& Action) const
+{
+	return Action.MemoryGroupTag.IsValid() ? Action.MemoryGroupTag : Action.ActionTag;
+}
+
+bool UPantheliaBossBrainComponent::IsActionBlockedByMemory(const FPantheliaBossActionDefinition& Action) const
+{
+	if (!bUseActionMemory || Action.MaxConsecutiveUses <= 0)
+	{
+		return false;
+	}
+
+	const FGameplayTag MemoryGroup = GetActionMemoryGroup(Action);
+	if (!MemoryGroup.IsValid() || !LastActionMemoryGroup.IsValid())
+	{
+		return false;
+	}
+
+	return MemoryGroup.MatchesTagExact(LastActionMemoryGroup)
+		&& ConsecutiveMemoryGroupUses >= Action.MaxConsecutiveUses;
+}
+
+float UPantheliaBossBrainComponent::GetActionMemoryWeightMultiplier(const FPantheliaBossActionDefinition& Action) const
+{
+	if (!bUseActionMemory)
+	{
+		return 1.f;
+	}
+
+	const FGameplayTag MemoryGroup = GetActionMemoryGroup(Action);
+	if (!MemoryGroup.IsValid())
+	{
+		return 1.f;
+	}
+
+	if (LastActionMemoryGroup.IsValid() && MemoryGroup.MatchesTagExact(LastActionMemoryGroup))
+	{
+		return FMath::Clamp(Action.ImmediateRepeatWeightMultiplier, 0.f, 1.f);
+	}
+
+	if (IsMemoryGroupInRecentActions(MemoryGroup))
+	{
+		return FMath::Clamp(Action.RecentRepeatWeightMultiplier, 0.f, 1.f);
+	}
+
+	return 1.f;
+}
+
+bool UPantheliaBossBrainComponent::IsMemoryGroupInRecentActions(const FGameplayTag& MemoryGroup) const
+{
+	if (!MemoryGroup.IsValid() || RecentActionMemorySize <= 0)
+	{
+		return false;
+	}
+
+	for (const FGameplayTag& RecentGroup : RecentActionMemoryGroups)
+	{
+		if (RecentGroup.MatchesTagExact(MemoryGroup))
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void UPantheliaBossBrainComponent::RecordActionMemory(const FPantheliaBossActionDefinition& Action)
+{
+	if (!bUseActionMemory)
+	{
+		return;
+	}
+
+	const FGameplayTag MemoryGroup = GetActionMemoryGroup(Action);
+	if (!MemoryGroup.IsValid())
+	{
+		return;
+	}
+
+	if (LastActionMemoryGroup.IsValid() && MemoryGroup.MatchesTagExact(LastActionMemoryGroup))
+	{
+		++ConsecutiveMemoryGroupUses;
+	}
+	else
+	{
+		LastActionMemoryGroup = MemoryGroup;
+		ConsecutiveMemoryGroupUses = 1;
+	}
+
+	if (RecentActionMemorySize <= 0)
+	{
+		RecentActionMemoryGroups.Empty();
+		return;
+	}
+
+	RecentActionMemoryGroups.Remove(MemoryGroup);
+	RecentActionMemoryGroups.Insert(MemoryGroup, 0);
+
+	while (RecentActionMemoryGroups.Num() > RecentActionMemorySize)
+	{
+		RecentActionMemoryGroups.RemoveAt(RecentActionMemoryGroups.Num() - 1);
+	}
+}
+
+void UPantheliaBossBrainComponent::LogActionRejected(const FPantheliaBossActionDefinition& Action, AActor* TargetActor, const TCHAR* Reason) const
+{
+	if (!bLogActionSelection)
+	{
+		return;
+	}
+
+	const float CooldownRemaining = Action.ActionTag.IsValid() && IsActionOnCooldown(Action.ActionTag)
+		? FMath::Max(0.f, ActionCooldownEndTimes.FindRef(Action.ActionTag) - GetCurrentTimeSeconds())
+		: 0.f;
+
+	UE_LOG(LogPanthelia, Log, TEXT("BossBrain [%s] rejected Action=%s Ability=%s Reason=%s Phase=%s Distance=%.1f Range=[%.1f, %.1f] Angle=%.1f MaxAngle=%.1f CooldownRemaining=%.2f"),
+		*GetNameSafe(GetOwner()),
+		*Action.ActionTag.ToString(),
+		*Action.AbilityTag.ToString(),
+		Reason ? Reason : TEXT("unknown"),
+		*ActivePhaseID.ToString(),
+		GetDistanceToTarget(TargetActor),
+		Action.MinDistance,
+		Action.MaxDistance,
+		GetAngleToTarget(TargetActor),
+		Action.MaxAngle,
+		CooldownRemaining);
 }
 
 // Action Execution
@@ -467,6 +701,8 @@ bool UPantheliaBossBrainComponent::TryExecuteAction(AActor* TargetActor, const F
 	CurrentActionState = EPantheliaBossActionRuntimeState::Running;
 	LastFailureReason = EPantheliaBossActionFailureReason::None;
 	bActionActivationRequested = true;
+
+	RecordActionMemory(*Action);
 
 	if (Action->Cooldown > 0.f)
 	{
@@ -571,9 +807,36 @@ bool UPantheliaBossBrainComponent::ActivateActionAbility(const FPantheliaBossAct
 		return false;
 	}
 
-	FGameplayTagContainer AbilityTags;
-	AbilityTags.AddTag(Action.AbilityTag);
-	return OwnerASC->TryActivateAbilitiesByTag(AbilityTags);
+	UPantheliaAbilitySystemComponent* PantheliaASC = Cast<UPantheliaAbilitySystemComponent>(OwnerASC);
+	if (!PantheliaASC)
+	{
+		return false;
+	}
+
+	FGameplayAbilitySpec* AbilitySpec = PantheliaASC->GetSpecFromAbilityTag(Action.AbilityTag);
+	if (!AbilitySpec)
+	{
+		if (bLogActionSelection)
+		{
+			UE_LOG(LogPanthelia, Warning, TEXT("BossBrain [%s] cannot activate Action=%s because Ability=%s was not granted to the ASC"),
+				*GetNameSafe(GetOwner()),
+				*Action.ActionTag.ToString(),
+				*Action.AbilityTag.ToString());
+		}
+
+		return false;
+	}
+
+	const bool bActivated = PantheliaASC->TryActivateAbility(AbilitySpec->Handle);
+	if (!bActivated && bLogActionSelection)
+	{
+		UE_LOG(LogPanthelia, Warning, TEXT("BossBrain [%s] failed to activate Action=%s Ability=%s"),
+			*GetNameSafe(GetOwner()),
+			*Action.ActionTag.ToString(),
+			*Action.AbilityTag.ToString());
+	}
+
+	return bActivated;
 }
 
 void UPantheliaBossBrainComponent::SetSelectedAction(AActor* TargetActor, const FPantheliaBossActionDefinition& Action)

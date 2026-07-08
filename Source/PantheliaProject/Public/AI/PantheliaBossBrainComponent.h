@@ -59,6 +59,21 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Panthelia|Boss")
 	FName ActivePhaseID = NAME_None;
 
+	// Logs ligeros para validar selección ponderada desde Output Log.
+	// Mantener desactivado fuera de pruebas para no ensuciar el log.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Panthelia|Boss|Debug")
+	bool bLogActionSelection = false;
+
+	// Memoria ligera anti-repetición. No decide acciones por sí sola: solo ajusta pesos
+	// o bloquea repeticiones excesivas después de que una acción haya sido ejecutada.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Panthelia|Boss|Memory")
+	bool bUseActionMemory = true;
+
+	// Cantidad de grupos de acción recientes recordados para aplicar RecentRepeatWeightMultiplier.
+	// 0 desactiva la penalización reciente, pero mantiene la penalización inmediata.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Panthelia|Boss|Memory", meta = (ClampMin = "0", UIMin = "0", UIMax = "5"))
+	int32 RecentActionMemorySize = 3;
+
 	UFUNCTION(BlueprintCallable, Category = "Panthelia|Boss")
 	bool InitializeBossFromProfile();
 
@@ -113,6 +128,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Panthelia|Boss")
 	void ResetAllActionCooldowns();
 
+	UFUNCTION(BlueprintCallable, Category = "Panthelia|Boss")
+	void ResetActionMemory();
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -149,6 +167,15 @@ private:
 	UPROPERTY(Transient)
 	bool bActionActivationRequested = false;
 
+	UPROPERTY(Transient)
+	TArray<FGameplayTag> RecentActionMemoryGroups;
+
+	UPROPERTY(Transient)
+	FGameplayTag LastActionMemoryGroup;
+
+	UPROPERTY(Transient)
+	int32 ConsecutiveMemoryGroupUses = 0;
+
 	void CacheOwnerData();
 	void TryInitializeNextTick();
 	void DeferredInitializeBossFromProfile();
@@ -173,6 +200,12 @@ private:
 	bool PassesActionRangeChecks(const FPantheliaBossActionDefinition& Action, AActor* TargetActor) const;
 	bool PassesActionTagChecks(const FPantheliaBossActionDefinition& Action) const;
 	float GetActionPhaseWeightMultiplier() const;
+	FGameplayTag GetActionMemoryGroup(const FPantheliaBossActionDefinition& Action) const;
+	bool IsActionBlockedByMemory(const FPantheliaBossActionDefinition& Action) const;
+	float GetActionMemoryWeightMultiplier(const FPantheliaBossActionDefinition& Action) const;
+	bool IsMemoryGroupInRecentActions(const FGameplayTag& MemoryGroup) const;
+	void RecordActionMemory(const FPantheliaBossActionDefinition& Action);
+	void LogActionRejected(const FPantheliaBossActionDefinition& Action, AActor* TargetActor, const TCHAR* Reason) const;
 
 	// Action Execution
 	bool ActivateActionAbility(const FPantheliaBossActionDefinition& Action) const;
