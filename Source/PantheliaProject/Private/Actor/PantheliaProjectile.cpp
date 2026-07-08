@@ -104,12 +104,26 @@ void APantheliaProjectile::OnSphereOverlap(UPrimitiveComponent* OverlappedCompon
 			UPantheliaAbilitySystemLibrary::SetDeathImpulse(ContextHandle, DeathImpulse);
 		}
 
-		// --- KNOCKBACK (clase 315) ---
-		// Mismo patrón que el impulso de muerte, con una diferencia: el knockback tiene
-		// una PROBABILIDAD de activarse (KnockbackChance), no se aplica siempre que la
-		// magnitud sea > 0. Por eso primero comprobamos que haya magnitud configurada
-		// (evita tirar el dado para abilities que ni siquiera tienen knockback), y luego
-		// tiramos el dado de 100 caras — mismo patrón que DetermineDebuff en ExecCalc_Damage.
+		// --- KNOCKBACK (clase 315) + LAUNCH (Nivel 3) — patrón "escribir siempre" ---
+		//
+		// FIX DE CONTAMINACIÓN DE CONTEXTO (auditoría post-315): la versión anterior
+		// escribía KnockbackForce/LaunchForce/KnockbackIsHeavy en el contexto SOLO en
+		// caso de éxito del dado. Hoy este proyectil impacta a un único objetivo y se
+		// destruye, así que aquí el bug no se manifestaba — pero el mismo patrón en
+		// WeaponTraceComponent (multi-objetivo, contexto compartido) sí contaminaba a
+		// objetivos posteriores, y el fix se aplica en AMBOS sitios por consistencia y
+		// para que un futuro proyectil perforante no reintroduzca el bug: cada golpe
+		// escribe SIEMPRE sus tres resultados (vector real si ganó la tirada,
+		// ZeroVector/false si no), igual que ya hacía el crítico en ExecCalc_Damage.
+		//
+		// El knockback tiene una PROBABILIDAD de activarse (KnockbackChance), no se
+		// aplica siempre que la magnitud sea > 0. Por eso primero comprobamos que haya
+		// magnitud configurada (evita tirar el dado para abilities que ni siquiera
+		// tienen knockback), y luego tiramos el dado de 100 caras — mismo patrón que
+		// DetermineDebuff en ExecCalc_Damage.
+		FVector KnockbackForce = FVector::ZeroVector;
+		bool bKnockbackIsHeavyThisHit = false;
+
 		const float KnockbackForceMagnitude = DamageEffectSpecHandle.Data->GetSetByCallerMagnitude(
 			GameplayTags.CombatTricks_KnockbackForceMagnitude, false, 0.f);
 
@@ -127,29 +141,24 @@ void APantheliaProjectile::OnSphereOverlap(UPrimitiveComponent* OverlappedCompon
 				// es lo que de verdad vende la sensación de "salió disparado por el aire".
 				const FVector KnockbackDirection = UPantheliaAbilitySystemLibrary::GetDirectionWithPitchOverride(
 					GetActorForwardVector(), 45.f);
-				const FVector KnockbackForce = KnockbackDirection * KnockbackForceMagnitude;
-
-				FGameplayEffectContextHandle ContextHandle = DamageEffectSpecHandle.Data->GetContext();
-				UPantheliaAbilitySystemLibrary::SetKnockbackForce(ContextHandle, KnockbackForce);
+				KnockbackForce = KnockbackDirection * KnockbackForceMagnitude;
 
 				// Nivel 2 (a petición) — ver la explicación completa en
 				// WeaponTraceComponent.cpp (mismo bloque, adaptado ahí también).
-				const bool bIsHeavy = DamageEffectSpecHandle.Data->GetSetByCallerMagnitude(
+				bKnockbackIsHeavyThisHit = DamageEffectSpecHandle.Data->GetSetByCallerMagnitude(
 					GameplayTags.CombatTricks_KnockbackIsHeavy, false, 0.f) > 0.5f;
-				if (bIsHeavy)
-				{
-					UPantheliaAbilitySystemLibrary::SetKnockbackIsHeavy(ContextHandle, true);
-				}
 			}
 		}
 
 		// --- LAUNCH / NIVEL 3 (post-315, a petición) ---
 		// Mismo mecanismo que el Knockback de arriba (leer magnitud, tirar el dado si
-		// hay magnitud configurada, calcular vector con pitch override, escribir en el
-		// context), pero como sistema COMPLETAMENTE INDEPENDIENTE — su propio tag de
-		// magnitud/chance, su propio campo de contexto (LaunchForce, no KnockbackForce),
-		// y su propio pitch override CONFIGURABLE por ability (no un 45° fijo como
-		// Knockback) — algunas fuentes de daño querrán un lanzamiento más o menos vertical.
+		// hay magnitud configurada, calcular vector con pitch override), pero como
+		// sistema COMPLETAMENTE INDEPENDIENTE — su propio tag de magnitud/chance, su
+		// propio campo de contexto (LaunchForce, no KnockbackForce), y su propio pitch
+		// override CONFIGURABLE por ability (no un 45° fijo como Knockback) — algunas
+		// fuentes de daño querrán un lanzamiento más o menos vertical.
+		FVector LaunchForce = FVector::ZeroVector;
+
 		const float LaunchForceMagnitude = DamageEffectSpecHandle.Data->GetSetByCallerMagnitude(
 			GameplayTags.CombatTricks_LaunchForceMagnitude, false, 0.f);
 
@@ -166,11 +175,17 @@ void APantheliaProjectile::OnSphereOverlap(UPrimitiveComponent* OverlappedCompon
 
 				const FVector LaunchDirection = UPantheliaAbilitySystemLibrary::GetDirectionWithPitchOverride(
 					GetActorForwardVector(), LaunchPitchOverride);
-				const FVector LaunchForce = LaunchDirection * LaunchForceMagnitude;
-
-				FGameplayEffectContextHandle LaunchContextHandle = DamageEffectSpecHandle.Data->GetContext();
-				UPantheliaAbilitySystemLibrary::SetLaunchForce(LaunchContextHandle, LaunchForce);
+				LaunchForce = LaunchDirection * LaunchForceMagnitude;
 			}
+		}
+
+		// ESCRIBIR SIEMPRE (el corazón del fix): los tres resultados van al contexto
+		// con el valor real de ESTE impacto — éxito o cero/false.
+		{
+			FGameplayEffectContextHandle ContextHandle = DamageEffectSpecHandle.Data->GetContext();
+			UPantheliaAbilitySystemLibrary::SetKnockbackForce(ContextHandle, KnockbackForce);
+			UPantheliaAbilitySystemLibrary::SetLaunchForce(ContextHandle, LaunchForce);
+			UPantheliaAbilitySystemLibrary::SetKnockbackIsHeavy(ContextHandle, bKnockbackIsHeavyThisHit);
 		}
 
 		if (UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(OtherActor))

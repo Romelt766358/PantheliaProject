@@ -223,12 +223,32 @@ void UWeaponTraceComponent::PerformTrace()
 
 		if (!TargetASC) continue;
 
+		// === FIX DE CONTAMINACIÓN DE CONTEXTO (auditoría post-315) — leer antes de tocar ===
+		//
+		// Este bucle aplica el MISMO DamageSpecHandle a VARIOS objetivos en un mismo
+		// swing, y todas esas aplicaciones comparten el MISMO objeto de contexto
+		// (el handle es ref-counting, no una copia por objetivo). La versión anterior
+		// escribía KnockbackForce/LaunchForce/KnockbackIsHeavy en el contexto SOLO
+		// cuando el dado salía, y nunca los limpiaba — así que un éxito para el
+		// objetivo A quedaba "pegado" y el objetivo B (cuyo dado falló) salía
+		// despedido con el vector de A, o entraba en GA_HeavyKnockback sin motivo.
+		//
+		// La regla del fix es ESCRIBIR SIEMPRE: para CADA objetivo, ANTES de aplicarle
+		// el spec, se escribe en el contexto el resultado de SUS tiradas — vector real
+		// si ganó, ZeroVector/false si no. Así cada aplicación lee un contexto que
+		// describe SU golpe, nunca el del objetivo anterior. (Es el mismo principio
+		// que ya seguía el crítico en ExecCalc_Damage, y el mismo fix aplicado allí
+		// al parry y al debuff, y en PantheliaProjectile.cpp por consistencia.)
+
 		// --- KNOCKBACK (clase 315) ---
 		// Adaptación respecto al proyectil (PantheliaProjectile.cpp): un ataque melee no
 		// tiene una "dirección de vuelo" que reutilizar — en su lugar, usamos la dirección
 		// del ATACANTE (Owner, quien empuña el arma) hacia el OBJETIVO golpeado (HitActor).
-		// Mismo patrón de "leer magnitud del SetByCaller, tirar el dado, calcular vector,
-		// escribir en el context ANTES de aplicar el spec" que ya usa el proyectil.
+		// Los valores por defecto (ZeroVector / false) son lo que se escribe si el dado
+		// no sale — "sin knockback" para ESTE objetivo, sin heredar nada del anterior.
+		FVector KnockbackForce = FVector::ZeroVector;
+		bool bKnockbackIsHeavyThisTarget = false;
+
 		const float KnockbackForceMagnitude = DamageSpecHandle.Data->GetSetByCallerMagnitude(
 			FPantheliaGameplayTags::Get().CombatTricks_KnockbackForceMagnitude, false, 0.f);
 
@@ -248,24 +268,16 @@ void UWeaponTraceComponent::PerformTrace()
 				const FVector KnockbackDirection = UPantheliaAbilitySystemLibrary::GetDirectionWithPitchOverride(
 					ToTarget, 45.f);
 
-				const FVector KnockbackForce = KnockbackDirection * KnockbackForceMagnitude;
-
-				FGameplayEffectContextHandle ContextHandle = DamageSpecHandle.Data->GetContext();
-				UPantheliaAbilitySystemLibrary::SetKnockbackForce(ContextHandle, KnockbackForce);
+				KnockbackForce = KnockbackDirection * KnockbackForceMagnitude;
 
 				// Nivel 2 (a petición): si la ability marcó este knockback como "pesado",
-				// lo escribimos también — HandleIncomingDamage decidirá qué hacer con ello
+				// lo anotamos también — HandleIncomingDamage decidirá qué hacer con ello
 				// (bloquear HitReact + disparar GA_HeavyKnockback en vez del comportamiento
-				// normal). Mismo bloque, mismo context — no hace falta un roll de dado
-				// aparte: "pesado" no es una probabilidad propia, es una propiedad fija de
-				// la ability que se activa junto con el knockback normal cuando este ya tuvo
-				// éxito.
-				const bool bIsHeavy = DamageSpecHandle.Data->GetSetByCallerMagnitude(
+				// normal). No hace falta un roll de dado aparte: "pesado" no es una
+				// probabilidad propia, es una propiedad fija de la ability que se activa
+				// junto con el knockback normal cuando este ya tuvo éxito.
+				bKnockbackIsHeavyThisTarget = DamageSpecHandle.Data->GetSetByCallerMagnitude(
 					FPantheliaGameplayTags::Get().CombatTricks_KnockbackIsHeavy, false, 0.f) > 0.5f;
-				if (bIsHeavy)
-				{
-					UPantheliaAbilitySystemLibrary::SetKnockbackIsHeavy(ContextHandle, true);
-				}
 			}
 		}
 
@@ -273,6 +285,8 @@ void UWeaponTraceComponent::PerformTrace()
 		// Mismo mecanismo que el Knockback de arriba, como sistema independiente — ver
 		// la explicación completa en PantheliaProjectile.cpp (mismo bloque, adaptado ahí
 		// también). Dirección atacante -> objetivo, igual que el Knockback de este archivo.
+		FVector LaunchForce = FVector::ZeroVector;
+
 		const float LaunchForceMagnitude = DamageSpecHandle.Data->GetSetByCallerMagnitude(
 			FPantheliaGameplayTags::Get().CombatTricks_LaunchForceMagnitude, false, 0.f);
 
@@ -292,12 +306,16 @@ void UWeaponTraceComponent::PerformTrace()
 				const FVector LaunchDirection = UPantheliaAbilitySystemLibrary::GetDirectionWithPitchOverride(
 					ToTargetLaunch, LaunchPitchOverride);
 
-				const FVector LaunchForce = LaunchDirection * LaunchForceMagnitude;
-
-				FGameplayEffectContextHandle LaunchContextHandle = DamageSpecHandle.Data->GetContext();
-				UPantheliaAbilitySystemLibrary::SetLaunchForce(LaunchContextHandle, LaunchForce);
+				LaunchForce = LaunchDirection * LaunchForceMagnitude;
 			}
 		}
+
+		// ESCRIBIR SIEMPRE (el corazón del fix): los tres resultados van al contexto en
+		// cada iteración, con el valor real de ESTE objetivo — éxito o cero/false.
+		FGameplayEffectContextHandle ContextHandle = DamageSpecHandle.Data->GetContext();
+		UPantheliaAbilitySystemLibrary::SetKnockbackForce(ContextHandle, KnockbackForce);
+		UPantheliaAbilitySystemLibrary::SetLaunchForce(ContextHandle, LaunchForce);
+		UPantheliaAbilitySystemLibrary::SetKnockbackIsHeavy(ContextHandle, bKnockbackIsHeavyThisTarget);
 
 		// Si este swing es un ataque básico del jugador, permite que el lock-on se fije
 		// automáticamente al enemigo golpeado. La propia función del LockonComponent protege

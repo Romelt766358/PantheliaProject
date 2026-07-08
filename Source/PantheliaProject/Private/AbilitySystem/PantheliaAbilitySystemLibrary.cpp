@@ -466,7 +466,25 @@ void UPantheliaAbilitySystemLibrary::GrantTemporaryGameplayTag(UAbilitySystemCom
 	// simplificado: aquí NO hace falta ningún modificador de atributo (Effect->Modifiers
 	// se queda vacío) — el único propósito de este GE es existir durante Duration
 	// segundos y conceder un tag mientras tanto.
-	UGameplayEffect* Effect = NewObject<UGameplayEffect>(GetTransientPackage(), FName("DynamicTemporaryTag"));
+	//
+	// === NOMBRE ÚNICO POR CREACIÓN (fix auditoría post-315) ===
+	// La versión anterior usaba un FName FIJO ("DynamicTemporaryTag") en el mismo outer
+	// (GetTransientPackage) en CADA llamada. NewObject con un nombre que ya pertenece a
+	// un objeto VIVO (el GE de la invulnerabilidad anterior aún activa, o el
+	// State.HeavyKnockback de otro personaje golpeado hace medio segundo) es terreno
+	// indefinido del motor: puede reemplazar/reconstruir el objeto existente in situ
+	// mientras un efecto activo todavía apunta a él. MakeUniqueObjectName genera un
+	// nombre garantizado libre (añade un sufijo numérico: DynamicTag_State_Invulnerable_0,
+	// _1, ...), eliminando la colisión de raíz. A diferencia de los debuffs (que ahora
+	// cachean UNA definición por tipo para que el stacking agregue — ver
+	// CachedDebuffEffects en PantheliaAttributeSet.h), aquí NO queremos caché ni
+	// stacking: varios GEs de tag temporal COEXISTIENDO es el comportamiento correcto
+	// (el contador interno de tags del ASC los agrega solo — el tag está presente
+	// mientras al menos uno viva).
+	const FName UniqueName = MakeUniqueObjectName(
+		GetTransientPackage(), UGameplayEffect::StaticClass(),
+		FName(*FString::Printf(TEXT("DynamicTag_%s"), *Tag.ToString())));
+	UGameplayEffect* Effect = NewObject<UGameplayEffect>(GetTransientPackage(), UniqueName);
 	Effect->DurationPolicy = EGameplayEffectDurationType::HasDuration;
 	Effect->DurationMagnitude = FGameplayEffectModifierMagnitude(FScalableFloat(Duration));
 

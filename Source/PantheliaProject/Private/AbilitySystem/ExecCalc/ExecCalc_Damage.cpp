@@ -246,8 +246,42 @@ static void DetermineDebuff(
     const FGameplayEffectCustomExecutionParameters& ExecutionParams,
     const FGameplayEffectSpec& Spec,
     const FAggregatorEvaluateParameters& EvaluationParameters,
-    const TMap<FGameplayTag, FGameplayEffectAttributeCaptureDefinition>& TagToCaptureDef)
+    const TMap<FGameplayTag, FGameplayEffectAttributeCaptureDefinition>& TagToCaptureDef,
+    bool bWasPerfectParry)
 {
+    // === RESET INCONDICIONAL DEL RESULTADO (fix de contaminación de contexto) ===
+    //
+    // POR QUÉ ESTO ES OBLIGATORIO: en un ataque melee multi-objetivo, el MISMO spec
+    // (y por tanto el MISMO objeto de contexto, compartido por ref-counting) se aplica
+    // a varios objetivos en secuencia (WeaponTraceComponent::PerformTrace). Antes de
+    // este fix, SetIsSuccessfulDebuff(true) solo se escribía en caso de ÉXITO y nunca
+    // se limpiaba: si el dado salía para el objetivo A, el flag quedaba "pegado" en el
+    // contexto compartido y el objetivo B recibía el debuff SIN haber ganado su tirada
+    // (con los parámetros de A, además). La regla que corrige esto — y que ya seguía
+    // correctamente SetIsCriticalHit — es ESCRIBIR SIEMPRE: cada aplicación empieza
+    // reseteando el resultado a false, y solo lo vuelve a poner en true si ESTE
+    // objetivo gana ESTA tirada. Con el flag reseteado, los parámetros viejos
+    // (DebuffDamage/Duration/Frequency/DamageType) que pudieran quedar en el contexto
+    // son inofensivos: Debuff() en el AttributeSet solo los lee cuando el flag es true.
+    FGameplayEffectContextHandle ResetContextHandle = Spec.GetContext();
+    UPantheliaAbilitySystemLibrary::SetIsSuccessfulDebuff(ResetContextHandle, false);
+
+    // === PARRY PERFECTO NIEGA EL DEBUFF (decisión de diseño cerrada) ===
+    //
+    // Gramática soulslike (Lies of P, la referencia de parry del proyecto): un parry
+    // perfecto no solo anula el daño del golpe — también anula sus efectos de estado.
+    // Sin este veto, un jugador que parrease perfectamente un golpe de fuego seguiría
+    // recibiendo la Quemadura, lo que abarataría el valor del parry. El bloqueo
+    // imperfecto (bWasBlocked) NO niega el debuff a propósito: mitigar no es negar.
+    // Nota de orden: para que este parámetro exista, la llamada a esta función vive
+    // AHORA DESPUÉS del cálculo de parry en Execute_Implementation (antes de la clase
+    // 307 se llamaba antes del loop de daño — el orden era indiferente entonces
+    // porque el debuff no consultaba el resultado defensivo).
+    if (bWasPerfectParry)
+    {
+        return;
+    }
+
     const FPantheliaGameplayTags& Tags = FPantheliaGameplayTags::Get();
 
     for (const TTuple<FGameplayTag, FGameplayTag>& DamageTypePair : Tags.DamageTypesToResistances)
@@ -314,8 +348,12 @@ static void DetermineDebuff(
         // (mismo criterio simple que usa el curso — ajustable a curva más adelante si hace falta).
         const float EffectiveDebuffChance = SourceDebuffChance * (100.f - TargetDebuffResistance) / 100.f;
 
-        // PASO 5: tirada de dado de 100 caras.
-        const bool bDebuff = FMath::RandRange(1, 100) < EffectiveDebuffChance;
+        // PASO 5: tirada de dado de 100 caras. "<=" y no "<" (fix de sesgo): con "<",
+        // una probabilidad de 100 fallaba el 1% de las veces (RandRange(1,100) nunca es
+        // < 100 cuando sale 100) y una de 20 acertaba solo el 19%. Con "<=" el operador
+        // queda ademas unificado con las tiradas de Knockback/Launch del proyectil y
+        // del WeaponTraceComponent, que ya usaban "<=" correctamente.
+        const bool bDebuff = FMath::RandRange(1, 100) <= EffectiveDebuffChance;
 
         if (bDebuff)
         {
@@ -398,6 +436,13 @@ void UExecCalc_Damage::Execute_Implementation(
     // disponible todavía en este punto tan temprano. FPantheliaGameplayTags::Get() es
     // barato (un singleton ya construido, no hace trabajo real) así que pedirlo dos
     // veces en la misma función no tiene coste — este archivo ya lo hace en otro punto.
+    // DECISIÓN DE DISEÑO CERRADA (auditoría post-315): los i-frames bloquean SOLO el
+    // daño que pasa por este ExecCalc (golpes directos). Los ticks periódicos de los
+    // debuffs (Quemadura, etc.) modifican IncomingDamage directamente SIN pasar por
+    // aquí, y por tanto NO los bloquea la invulnerabilidad — a propósito, igual que
+    // en Elden Ring un DoT ya aplicado sigue tiqueando aunque ruedes. Si algún día se
+    // quisiera lo contrario, el sitio sería un chequeo del tag al inicio de
+    // HandleIncomingDamage en el AttributeSet, no aquí.
     if (TargetTags && TargetTags->HasTagExact(FPantheliaGameplayTags::Get().State_Invulnerable))
     {
         return;
@@ -491,12 +536,13 @@ void UExecCalc_Damage::Execute_Implementation(
         }();
 
     // ================================================================
-    // DEBUFF (clase 307) — se calcula ANTES del daño porque no depende de él.
+    // DEBUFF (clase 307) — NOTA DE REUBICACIÓN (fix parry-niega-debuff)
     // ================================================================
-    // Determina, por cada tipo de daño presente en el golpe, si el debuff elemental
-    // correspondiente se activa. Por ahora solo determina (bDebuff) — la clase 307
-    // no implementa todavía qué pasa cuando se activa (ver TODO dentro de la función).
-    DetermineDebuff(ExecutionParams, Spec, EvalParams, TagToCaptureDef);
+    // La llamada a DetermineDebuff vivía aquí (antes del loop de daño) desde la clase
+    // 307. Ahora vive DESPUÉS del bloque de parry/bloqueo, porque necesita saber si
+    // hubo parry perfecto para vetar el debuff (decisión de diseño cerrada). Ver la
+    // llamada y su explicación más abajo, justo después de escribir el resultado del
+    // parry en el context.
 
     // ================================================================
     // LOOP POR TIPO DE DAÑO (spec §1.8)
@@ -585,15 +631,19 @@ void UExecCalc_Damage::Execute_Implementation(
     //   Bloqueo Fisico (imperfecto) vs Fisico -> PhysicalImperfectBlockMultiplier.
     //   Bloqueo Magico (imperfecto) vs Magico -> MagicImperfectBlockMultiplier.
     // Sin estado defensivo -> dano completo.
+    // Booleanos del resultado defensivo, IZADOS fuera del if (TargetTags) — dos motivos:
+    // (1) el fix de contaminación de contexto de abajo necesita escribirlos SIEMPRE,
+    // incluso cuando TargetTags es nullptr; (2) DetermineDebuff (más abajo) necesita
+    // bWasPerfectParry para vetar el debuff en un parry perfecto.
+    bool bWasPerfectParry = false;
+    bool bWasBlocked = false;
+    float PoiseToAttacker = 0.f;
+
     if (TargetTags)
     {
         // Que tipos trae el golpe entrante (antes de mitigar).
         const bool bIncomingIsPhysical = PhysicalSubtotal > 0.f;
         const bool bIncomingIsMagic = MagicSubtotal > 0.f;
-
-        bool bWasPerfectParry = false;
-        bool bWasBlocked = false;
-        float PoiseToAttacker = 0.f;
 
         ApplyParryBlockMitigation(
             TargetAvatar, *TargetTags, Tags,
@@ -603,22 +653,38 @@ void UExecCalc_Damage::Execute_Implementation(
 
         // Recalcular el total tras la mitigacion defensiva.
         TotalDamage = PhysicalSubtotal + MagicSubtotal;
-
-        // Escribir el resultado del parry/bloqueo en el context para que
-        // PostGameplayEffectExecute aplique el dano de postura al atacante y los efectos.
-        if (FPantheliaGameplayEffectContext* PantheliaContext =
-            static_cast<FPantheliaGameplayEffectContext*>(EffectContextHandle.Get()))
-        {
-            if (bWasPerfectParry)
-            {
-                PantheliaContext->SetParryResult(true, PoiseToAttacker);
-            }
-            else if (bWasBlocked)
-            {
-                PantheliaContext->SetWasBlocked(true);
-            }
-        }
     }
+
+    // === ESCRIBIR SIEMPRE el resultado del parry/bloqueo (fix de contaminación) ===
+    //
+    // Antes, SetParryResult(true, ...) / SetWasBlocked(true) solo se escribían en caso
+    // de ÉXITO, dentro del if (TargetTags). En un melee multi-objetivo que comparte el
+    // mismo contexto entre aplicaciones (ver la explicación completa al inicio de
+    // DetermineDebuff), eso dejaba flags "pegados": si el enemigo A parreaba el swing,
+    // el contexto conservaba bWasParried=true al aplicar sobre el enemigo B (que no
+    // parreó), y HandleParryReaction re-aplicaba el daño de postura al atacante una
+    // segunda vez. La regla del fix — la misma que ya seguía SetIsCriticalHit — es
+    // escribir el resultado calculado SIEMPRE, sea true o false, en cada aplicación.
+    if (FPantheliaGameplayEffectContext* PantheliaContext =
+        static_cast<FPantheliaGameplayEffectContext*>(EffectContextHandle.Get()))
+    {
+        // SetParryResult escribe ambos campos a la vez (flag + postura al atacante):
+        // en el caso "no hubo parry" esto resetea correctamente a (false, 0).
+        PantheliaContext->SetParryResult(bWasPerfectParry, bWasPerfectParry ? PoiseToAttacker : 0.f);
+        PantheliaContext->SetWasBlocked(bWasBlocked);
+    }
+
+    // ================================================================
+    // DEBUFF (clases 307-309, reubicado) — DESPUÉS del parry, a propósito.
+    // ================================================================
+    // Determina, por cada tipo de daño presente en el golpe, si el debuff elemental
+    // correspondiente se activa, y escribe el resultado en el context. Vive aquí (y no
+    // antes del loop de daño, donde nació en la clase 307) porque ahora consulta
+    // bWasPerfectParry: un parry perfecto niega el debuff (decisión de diseño cerrada
+    // — ver la explicación dentro de la propia función). La función además RESETEA el
+    // resultado a false incondicionalmente al entrar, como parte del fix de
+    // contaminación de contexto en golpes multi-objetivo.
+    DetermineDebuff(ExecutionParams, Spec, EvalParams, TagToCaptureDef, bWasPerfectParry);
 
     // --- CRÍTICO (sobre el total) ---
     const bool bCriticalHit = FMath::RandRange(1, 100) <= CritChance;

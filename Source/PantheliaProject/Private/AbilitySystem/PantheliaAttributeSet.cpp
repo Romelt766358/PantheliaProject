@@ -315,7 +315,12 @@ void UPantheliaAttributeSet::HandleIncomingDamage(const FEffectProperties& Props
 
 	if (LocalIncomingDamage > 0.f)
 	{
-		const float NewHealth = FMath::Clamp(GetHealth() - LocalIncomingDamage, 0.f, GetMaxHealth());
+		// Guardamos la vida previa ANTES de escribirla — antes el log la reconstruía
+		// como GetHealth() + daño, lo que en un overkill (daño 100 sobre 30 de vida,
+		// clampeado a 0) imprimía "100.0 → 0.0" en vez de "30.0 → 0.0". Cosmético,
+		// pero un log de diagnóstico que miente es peor que no tener log.
+		const float OldHealth = GetHealth();
+		const float NewHealth = FMath::Clamp(OldHealth - LocalIncomingDamage, 0.f, GetMaxHealth());
 		SetHealth(NewHealth);
 
 		// Log de diagnóstico: todo daño que llega por GAS.
@@ -324,7 +329,7 @@ void UPantheliaAttributeSet::HandleIncomingDamage(const FEffectProperties& Props
 		UE_LOG(LogPanthelia, Log,
 			TEXT("[DAMAGE] Target: '%s' | Damage: %.1f | HP: %.1f → %.1f | Fatal: %s"),
 			Props.TargetCharacter ? *Props.TargetCharacter->GetName() : TEXT("null"),
-			LocalIncomingDamage, GetHealth() + LocalIncomingDamage, NewHealth,
+			LocalIncomingDamage, OldHealth, NewHealth,
 			NewHealth <= 0.f ? TEXT("SI") : TEXT("no"));
 
 		const bool bFatal = NewHealth <= 0.f;
@@ -352,76 +357,50 @@ void UPantheliaAttributeSet::HandleIncomingDamage(const FEffectProperties& Props
 			// HitReact lo activa IncomingPoiseDamage según FlinchThreshold
 			// TODO: VFX/SFX de crítico cuando bIsCriticalHit == true
 
-			// --- KNOCKBACK (clase 315) ---
-			// Solo tiene sentido en el golpe NO fatal — un golpe fatal usa el impulso de
-			// muerte (bloque bFatal arriba), que es físico de verdad (ragdoll). El
-			// knockback, en cambio, lanza a un personaje VIVO por el aire — por eso usa
-			// LaunchCharacter (un método de movimiento de ACharacter) y NO AddImpulse.
+			// --- LAUNCH / NIVEL 3 primero, KNOCKBACK después: EXCLUYENTES (fix auditoría) ---
 			//
-			// POR QUÉ LaunchCharacter Y NO AddImpulse (la pista del propio curso, que sí
-			// vale la pena entender): AddImpulse necesita que el mesh esté simulando
-			// física (ragdoll) para tener cualquier efecto — eso es exactamente lo que
-			// pasa al morir (MulticastHandleDeath activa el ragdoll primero). Pero un
-			// personaje VIVO sigue controlado por su CharacterMovementComponent, no por
+			// Antes eran dos bloques independientes que podían dispararse AMBOS en el mismo
+			// golpe (dados independientes): dos LaunchCharacter seguidos, donde el segundo
+			// sobreescribía al primero silenciosamente. Ahora se evalúa primero el Launch
+			// (la reacción más fuerte: lanzamiento aéreo + GA_GetUp) y, SOLO si no procede,
+			// el Knockback (empujón a ras de suelo, Nivel 1/2). El lanzamiento "contiene"
+			// al empujón — aplicar los dos a la vez nunca fue un resultado deseable.
+			//
+			// Ambos usan LaunchCharacter y NO AddImpulse. POR QUÉ (la pista del propio
+			// curso, que sí vale la pena entender): AddImpulse necesita que el mesh esté
+			// simulando física (ragdoll) para tener cualquier efecto — eso es exactamente
+			// lo que pasa al morir (MulticastHandleDeath activa el ragdoll primero). Pero
+			// un personaje VIVO sigue controlado por su CharacterMovementComponent, no por
 			// física de ragdoll — un impulso físico no haría absolutamente nada mientras
 			// el personaje sigue caminando/atacando normalmente. LaunchCharacter, en
 			// cambio, es un método pensado exactamente para esto: le dice al sistema de
 			// movimiento del personaje "muévete con esta velocidad ahora", sin tocar
-			// física ni ragdoll — funciona perfectamente en un personaje vivo y
-			// completamente controlado.
-			const FVector KnockbackForce = UPantheliaAbilitySystemLibrary::GetKnockbackForce(Props.EffectContextHandle);
-
+			// física ni ragdoll. Por eso ambos viven en la rama NO fatal — un golpe fatal
+			// usa el impulso de muerte (bloque bFatal arriba), que es físico de verdad.
+			//
 			// IsNearlyZero con tolerancia 1.0: comparar un FVector contra el cero exacto
 			// es frágil con floats (imprecisión de punto flotante). Una tolerancia pequeña
-			// (1 unidad de Unreal, prácticamente imperceptible) evita procesar un
-			// "knockback" que en la práctica es cero por error de redondeo.
-			if (!KnockbackForce.IsNearlyZero(1.f) && Props.TargetCharacter)
+			// (1 unidad de Unreal, prácticamente imperceptible) evita procesar un vector
+			// que en la práctica es cero por error de redondeo. Además, tras el fix de
+			// "escribir siempre" (proyectil/WeaponTrace), el cero es ahora el valor
+			// explícito de "esta tirada no salió" — este chequeo es el consumidor de esa
+			// convención.
+			const FVector LaunchForce = UPantheliaAbilitySystemLibrary::GetLaunchForce(Props.EffectContextHandle);
+			const bool bLaunchApplies = !LaunchForce.IsNearlyZero(1.f) && Props.TargetCharacter && Props.TargetASC;
+
+			if (bLaunchApplies)
 			{
+				// Sistema del Nivel 3 — su propio campo de contexto (LaunchForce), y además
+				// concede State.Airborne, que hace dos cosas: (1) bloquea GA_HitReact
+				// mientras el personaje está en el aire (State.Airborne debe estar en los
+				// Activation Blocked Tags de GA_HitReact en el editor); (2) le dice a
+				// Landed() (PantheliaCharacterBase.cpp) que ESTE aterrizaje debe disparar
+				// GA_GetUp, a diferencia de un salto o caída normal.
+				//
 				// bXYOverride=true, bZOverride=true: reemplazamos la velocidad actual del
-				// personaje en los 3 ejes por completo (no la sumamos) — así el knockback
+				// personaje en los 3 ejes por completo (no la sumamos) — así el lanzamiento
 				// es siempre igual de contundente sin importar si el personaje ya se estaba
 				// moviendo o no. Ver LaunchCharacter en la documentación de ACharacter.
-				Props.TargetCharacter->LaunchCharacter(KnockbackForce, true, true);
-
-				// --- NIVEL 2: KNOCKBACK PESADO (a petición) ---
-				// Si la ability marcó este knockback como "pesado" (bKnockbackIsHeavy en
-				// UPantheliaDamageGameplayAbility), en vez de dejar que HitReact conviva con
-				// el empujón (comportamiento normal, Nivel 1), lo bloqueamos brevemente y
-				// disparamos una reacción dedicada (GA_HeavyKnockback) — un ataque fuerte
-				// merece una animación de "salir despedido con fuerza", no la mueca genérica
-				// de HitReact mientras el cuerpo patina varios metros.
-				if (UPantheliaAbilitySystemLibrary::IsKnockbackHeavy(Props.EffectContextHandle) && Props.TargetASC)
-				{
-					// Concede State.HeavyKnockback durante 1 segundo — tiempo suficiente para
-					// cubrir la reacción sin tener que sincronizarlo a mano con la duración
-					// exacta del montage (si la reacción termina antes, el tag simplemente
-					// sigue activo un instante más sin bloquear nada nuevo relevante; si
-					// necesitas más margen, sube este número). A diferencia de State.Airborne
-					// (Nivel 3), aquí no hay un evento físico como "aterrizar" que nos diga
-					// cuándo quitarlo, así que una duración fija tiene sentido.
-					UPantheliaAbilitySystemLibrary::GrantTemporaryGameplayTag(
-						Props.TargetASC, FPantheliaGameplayTags::Get().State_HeavyKnockback, 1.f);
-
-					// Dispara GA_HeavyKnockback — mismo patrón que GA_HitReact/GA_GetUp
-					// (activación externa vía TryActivateAbilitiesByTag con su Ability Tag).
-					FGameplayTagContainer HeavyKnockbackTags;
-					HeavyKnockbackTags.AddTag(FPantheliaGameplayTags::Get().Effects_HeavyKnockback);
-					Props.TargetASC->TryActivateAbilitiesByTag(HeavyKnockbackTags);
-				}
-			}
-
-			// --- LAUNCH / NIVEL 3 (post-315, a petición) ---
-			// Sistema independiente del Knockback de arriba — su propio campo de contexto
-			// (LaunchForce), y además concede State.Airborne, que hace dos cosas: (1)
-			// bloquea GA_HitReact mientras el personaje está en el aire (hay que añadir
-			// State.Airborne a los Activation Blocked Tags de GA_HitReact en el editor,
-			// mismo patrón que ya hiciste con Debuff.Burn en la clase 314); (2) le dice a
-			// Landed() (PantheliaCharacterBase.cpp) que ESTE aterrizaje debe disparar
-			// GA_GetUp, a diferencia de un salto o caída normal.
-			const FVector LaunchForce = UPantheliaAbilitySystemLibrary::GetLaunchForce(Props.EffectContextHandle);
-
-			if (!LaunchForce.IsNearlyZero(1.f) && Props.TargetCharacter && Props.TargetASC)
-			{
 				Props.TargetCharacter->LaunchCharacter(LaunchForce, true, true);
 
 				// SetLooseGameplayTagCount(Tag, 1) en vez de AddLooseGameplayTag: un tag
@@ -432,6 +411,42 @@ void UPantheliaAttributeSet::HandleIncomingDamage(const FEffectProperties& Props
 				// y Landed() lo apaga de un solo golpe con SetLooseGameplayTagCount(0).
 				Props.TargetASC->SetLooseGameplayTagCount(
 					FPantheliaGameplayTags::Get().State_Airborne, 1);
+			}
+			else
+			{
+				// --- KNOCKBACK (clase 315) — solo si el Launch NO procedió ---
+				const FVector KnockbackForce = UPantheliaAbilitySystemLibrary::GetKnockbackForce(Props.EffectContextHandle);
+
+				if (!KnockbackForce.IsNearlyZero(1.f) && Props.TargetCharacter)
+				{
+					Props.TargetCharacter->LaunchCharacter(KnockbackForce, true, true);
+
+					// --- NIVEL 2: KNOCKBACK PESADO (a petición) ---
+					// Si la ability marcó este knockback como "pesado" (bKnockbackIsHeavy en
+					// UPantheliaDamageGameplayAbility), en vez de dejar que HitReact conviva con
+					// el empujón (comportamiento normal, Nivel 1), lo bloqueamos brevemente y
+					// disparamos una reacción dedicada (GA_HeavyKnockback) — un ataque fuerte
+					// merece una animación de "salir despedido con fuerza", no la mueca genérica
+					// de HitReact mientras el cuerpo patina varios metros.
+					if (UPantheliaAbilitySystemLibrary::IsKnockbackHeavy(Props.EffectContextHandle) && Props.TargetASC)
+					{
+						// Concede State.HeavyKnockback durante 1 segundo — tiempo suficiente para
+						// cubrir la reacción sin tener que sincronizarlo a mano con la duración
+						// exacta del montage (si la reacción termina antes, el tag simplemente
+						// sigue activo un instante más sin bloquear nada nuevo relevante; si
+						// necesitas más margen, sube este número). A diferencia de State.Airborne
+						// (Nivel 3), aquí no hay un evento físico como "aterrizar" que nos diga
+						// cuándo quitarlo, así que una duración fija tiene sentido.
+						UPantheliaAbilitySystemLibrary::GrantTemporaryGameplayTag(
+							Props.TargetASC, FPantheliaGameplayTags::Get().State_HeavyKnockback, 1.f);
+
+						// Dispara GA_HeavyKnockback — mismo patrón que GA_HitReact/GA_GetUp
+						// (activación externa vía TryActivateAbilitiesByTag con su Ability Tag).
+						FGameplayTagContainer HeavyKnockbackTags;
+						HeavyKnockbackTags.AddTag(FPantheliaGameplayTags::Get().Effects_HeavyKnockback);
+						Props.TargetASC->TryActivateAbilitiesByTag(HeavyKnockbackTags);
+					}
+				}
 			}
 		}
 	}
@@ -532,102 +547,160 @@ void UPantheliaAttributeSet::Debuff(const FEffectProperties& Props)
 	// saber qué debuff construir.
 	const FGameplayTag DamageType = UPantheliaAbilitySystemLibrary::GetDamageType(Props.EffectContextHandle);
 
-	// Nombre descriptivo del GE dinámico — solo para identificarlo en el debugger de GAS
-	// (showdebug abilitysystem) en vez de ver un "None" genérico. No afecta la lógica.
-	const FString DebuffName = FString::Printf(TEXT("DynamicDebuff_%s"), *DamageType.ToString());
-	UGameplayEffect* Effect = NewObject<UGameplayEffect>(GetTransientPackage(), FName(DebuffName));
-
-	// Duración: el debuff dura un tiempo (no es instantáneo ni infinito).
-	Effect->DurationPolicy = EGameplayEffectDurationType::HasDuration;
-
-	// Los 3 parámetros restantes viajan desde el context del golpe original — los
+	// Los 3 parámetros del debuff viajan desde el context del golpe original — los
 	// escribimos ahí en la clase 309 (ExecCalc_Damage → SetDebuffDamage/Duration/Frequency).
 	const float DebuffDamage = UPantheliaAbilitySystemLibrary::GetDebuffDamage(Props.EffectContextHandle);
 	const float DebuffDuration = UPantheliaAbilitySystemLibrary::GetDebuffDuration(Props.EffectContextHandle);
 	const float DebuffFrequency = UPantheliaAbilitySystemLibrary::GetDebuffFrequency(Props.EffectContextHandle);
 
-	// Period = cada cuántos segundos tiquea el daño (0 significaría no periódico).
-	Effect->Period = DebuffFrequency;
-	// DurationMagnitude: cuánto dura el efecto activo. FGameplayEffectModifierMagnitude
-	// envuelve varios tipos posibles de magnitud; usamos un FScalableFloat inicializado
-	// con un valor fijo, como una curva que siempre devuelve el mismo número sin importar
-	// el nivel (el nivel de este GE dinámico siempre es 1, ver más abajo).
-	Effect->DurationMagnitude = FGameplayEffectModifierMagnitude(FScalableFloat(DebuffDuration));
-
-	// --- TAG CONCEDIDO AL TARGET (dos adaptaciones respecto al curso — leer ambas) ---
-	//
-	// ADAPTACIÓN DE DISEÑO (ya establecida desde la clase 303): el curso resuelve el tag
-	// de debuff con Tags.DamageTypesToDebuffs[DamageType] — un mapa que decidimos NO
-	// construir porque varios tipos de daño colapsan al mismo elemento (8 tipos → 4
-	// elementos). Aquí reutilizamos la misma cadena de dos saltos que ya usa
-	// DetermineDebuff en ExecCalc_Damage: tipo de daño → elemento → debuff.
-	//
-	// ADAPTACIÓN DE API DE MOTOR (esto NO es una decisión de diseño nuestra — es un
-	// requisito de UE 5.8): el curso usa "InheritableOwnedTagsContainer.AddTag(tag)"
-	// directamente sobre el GameplayEffect. Esa propiedad está DEPRECADA desde UE 5.3 —
-	// Epic movió la gestión de tags concedidos a un sistema de "Gameplay Effect
-	// Components". La forma correcta en 5.8 es añadir un UTargetTagsGameplayEffectComponent
-	// al efecto y llamar a SetAndApplyTargetTagChanges() con un FInheritedTagContainer
-	// ya relleno con AddTag().
-	const FPantheliaGameplayTags& GameplayTags = FPantheliaGameplayTags::Get();
-	const EPantheliaElement* ElementPtr = GameplayTags.DamageTypeToElement.Find(DamageType);
-	if (ElementPtr && *ElementPtr != EPantheliaElement::None)
+	// === GUARD DE FRECUENCIA (fix auditoría) ===
+	// Period = 0 en un GE con un modificador sobre IncomingDamage NO significa "sin
+	// ticks": significa que el GE deja de ser periódico y su modificador Additive se
+	// convierte en un AGREGADO CONTINUO sobre el meta atributo durante toda la
+	// duración — IncomingDamage quedaría "inflado" sin ejecutar nunca
+	// PostGameplayEffectExecute. Es un estado silencioso y sin sentido, así que un
+	// dato malo (frecuencia <= 0) se rechaza aquí con aviso, en vez de aplicarse mal.
+	if (DebuffFrequency <= 0.f)
 	{
-		if (const FGameplayTag* DebuffTagPtr = GameplayTags.ElementToDebuff.Find(*ElementPtr))
-		{
-			FInheritedTagContainer TagContainer;
-			TagContainer.AddTag(*DebuffTagPtr);
-
-			UTargetTagsGameplayEffectComponent& TagComponent =
-				Effect->AddComponent<UTargetTagsGameplayEffectComponent>();
-			TagComponent.SetAndApplyTargetTagChanges(TagContainer);
-		}
+		UE_LOG(LogPanthelia, Warning,
+			TEXT("[DEBUFF] Frecuencia invalida (%.2f) para el debuff de '%s' — no se aplica. Revisa DebuffFrequency en la ability."),
+			DebuffFrequency, *DamageType.ToString());
+		return;
 	}
 
-	// --- STACKING: activo, con fecha de caducidad conocida (confirmado, no especulación) ---
-	//
-	// CONFIRMADO tras compilar (ver conversación): estas dos líneas compilan en tu UE 5.8
-	// con un warning C4996 ("Stacking Type will be made private, Please use
-	// GetStackingType — actualiza tu código antes de subir de versión, o tu proyecto
-	// dejará de compilar"). Investigué la alternativa que sugiere ese mensaje y hay un
-	// problema real: sí existe un SetStackingType() de reemplazo, pero está marcado
-	// "solo editor" — no se puede llamar desde código que corre en pleno gameplay (como
-	// esta función). Es decir: hoy no existe ninguna forma "a prueba de futuro" de fijar
-	// el stacking en un GameplayEffect creado dinámicamente en runtime. Es una limitación
-	// real y actual del motor, no algo que se resuelva reescribiendo esto de otra forma.
-	//
-	// DEJO estas líneas activas porque funcionan HOY y el stacking es el comportamiento
-	// correcto (dos Quemaduras seguidas en el mismo enemigo se combinan en una sola, en
-	// vez de correr en paralelo). Pero queda pendiente: el día que actualices de UE 5.8 a
-	// una versión más nueva, ESTA es la primera línea que revisar si el proyecto deja de
-	// compilar — para entonces Epic probablemente ya habrá publicado la forma correcta de
-	// hacerlo en runtime, y solo hará falta sustituir estas dos líneas por lo que sea que
-	// hayan definido.
-	Effect->StackingType = EGameplayEffectStackingType::AggregateBySource;
-	Effect->StackLimitCount = 1;
+	// Resolver el tag de IDENTIDAD del debuff (Debuff.Burn, etc.) desde el tipo de
+	// daño, con la misma cadena de dos saltos que usa DetermineDebuff en
+	// ExecCalc_Damage: tipo de daño → elemento → debuff. (ADAPTACIÓN DE DISEÑO desde
+	// la clase 303: el curso usa un mapa directo DamageTypesToDebuffs que decidimos
+	// NO construir, porque varios tipos de daño colapsan al mismo elemento.)
+	// Lo resolvemos ANTES de construir nada porque ahora es la CLAVE del caché.
+	const FPantheliaGameplayTags& GameplayTags = FPantheliaGameplayTags::Get();
+	FGameplayTag DebuffTag;
+	if (const EPantheliaElement* ElementPtr = GameplayTags.DamageTypeToElement.Find(DamageType))
+	{
+		if (*ElementPtr != EPantheliaElement::None)
+		{
+			if (const FGameplayTag* DebuffTagPtr = GameplayTags.ElementToDebuff.Find(*ElementPtr))
+			{
+				DebuffTag = *DebuffTagPtr;
+			}
+		}
+	}
+	if (!DebuffTag.IsValid())
+	{
+		// Sin tag de identidad no hay debuff que construir (daño sin elemento, o mapa
+		// incompleto). No debería llegar aquí — DetermineDebuff ya filtró estos casos
+		// antes de marcar el éxito — pero no crasheamos ante datos inconsistentes.
+		return;
+	}
 
-	// --- MODIFICADOR: cuánto daño tiquea cada Period ---
-	const int32 Index = Effect->Modifiers.Num();
-	Effect->Modifiers.SetNum(Index + 1);
-	FGameplayModifierInfo& ModifierInfo = Effect->Modifiers[Index];
-
-	ModifierInfo.ModifierMagnitude = FScalableFloat(DebuffDamage);
-	ModifierInfo.ModifierOp = EGameplayModOp::Additive;
-	ModifierInfo.Attribute = UPantheliaAttributeSet::GetIncomingDamageAttribute();
-
-	// --- CONSTRUIR EL SPEC Y APLICARLO ---
+	// === DEFINICIÓN CACHEADA (fix auditoría — ver la explicación completa sobre
+	// CachedDebuffEffects en el .h: arregla el stacking real y elimina la colisión
+	// de nombres de la versión anterior) ===
 	//
-	// CORRECCIÓN respecto al curso (no es una adaptación de diseño, es una mejora
-	// técnica): el curso crea el spec con "new FGameplayEffectSpec(...)" y nunca lo
-	// libera — eso es una fuga de memoria permanente en CADA debuff exitoso, que se
-	// acumularía durante una sesión larga de juego. FGameplayEffectSpec es un struct
-	// normal (no un UObject), así que no hay ninguna razón técnica para reservarlo en el
-	// heap con "new": lo creamos como variable local normal (en el stack), y se destruye
-	// solo al salir de la función — sin fuga.
+	// La clave incluye el tag de debuff Y la frecuencia: el Period es una propiedad
+	// FIJA de la definición (no puede ser SetByCaller), así que frecuencias distintas
+	// necesitan definiciones distintas — y no deben stackear entre sí de todas formas.
+	// Daño y duración SÍ son SetByCaller del spec (más abajo), por eso no aparecen
+	// en la clave: mil combinaciones de daño/duración comparten UNA definición.
+	const FName CacheKey(*FString::Printf(TEXT("DynamicDebuff_%s_P%.2f"),
+		*DebuffTag.ToString(), DebuffFrequency));
+
+	TObjectPtr<UGameplayEffect>& CachedEffect = CachedDebuffEffects.FindOrAdd(CacheKey);
+	if (!CachedEffect)
+	{
+		// Primera vez que se necesita esta combinación (debuff, frecuencia): se
+		// construye la definición UNA vez y queda cacheada para toda la partida.
+		// El nombre descriptivo sirve para identificarla en el debugger de GAS
+		// (showdebug abilitysystem) — y ahora, además, es único por construcción
+		// (una sola creación por clave), así que la colisión de NewObject con un
+		// nombre ya vivo es imposible.
+		UGameplayEffect* Effect = NewObject<UGameplayEffect>(GetTransientPackage(), CacheKey);
+
+		// Duración: el debuff dura un tiempo (no es instantáneo ni infinito).
+		Effect->DurationPolicy = EGameplayEffectDurationType::HasDuration;
+
+		// Period = cada cuántos segundos tiquea el daño. Fijo en la definición (por
+		// eso forma parte de la clave del caché).
+		Effect->Period = DebuffFrequency;
+
+		// EXPLÍCITO (decisión documentada, no un default heredado en silencio): el
+		// primer tick se ejecuta EN EL INSTANTE de aplicarse — la Quemadura "muerde"
+		// junto al golpe que la causó, y luego cada Period. Si algún día se prefiere
+		// que el primer tick espere un Period completo, este es el interruptor.
+		Effect->bExecutePeriodicEffectOnApplication = true;
+
+		// DurationMagnitude por SetByCaller (CAMBIO respecto a la versión anterior,
+		// que la fijaba con un FScalableFloat constante): al ser SetByCaller, cada
+		// APLICACIÓN trae su propia duración en el spec — imprescindible para que la
+		// definición sea reutilizable entre abilities con duraciones distintas.
+		// Reutilizamos el tag Debuff.Duration que ya existía como transporte (clase 304).
+		FSetByCallerFloat DurationSetByCaller;
+		DurationSetByCaller.DataTag = GameplayTags.Debuff_Duration;
+		Effect->DurationMagnitude = FGameplayEffectModifierMagnitude(DurationSetByCaller);
+
+		// --- TAG CONCEDIDO AL TARGET ---
+		// ADAPTACIÓN DE API DE MOTOR (no es decisión de diseño nuestra — requisito de
+		// UE 5.8): el curso usa "InheritableOwnedTagsContainer.AddTag(tag)" directamente
+		// sobre el GameplayEffect. Esa propiedad está DEPRECADA desde UE 5.3 — Epic
+		// movió la gestión de tags concedidos a los "Gameplay Effect Components". La
+		// forma correcta en 5.8: añadir un UTargetTagsGameplayEffectComponent al efecto
+		// y llamar a SetAndApplyTargetTagChanges() con un FInheritedTagContainer relleno.
+		FInheritedTagContainer TagContainer;
+		TagContainer.AddTag(DebuffTag);
+		UTargetTagsGameplayEffectComponent& TagComponent =
+			Effect->AddComponent<UTargetTagsGameplayEffectComponent>();
+		TagComponent.SetAndApplyTargetTagChanges(TagContainer);
+
+		// --- STACKING: activo, con fecha de caducidad conocida (confirmado, no especulación) ---
+		//
+		// CONFIRMADO tras compilar: estas dos líneas compilan en UE 5.8 con un warning
+		// C4996 ("Stacking Type will be made private, Please use GetStackingType —
+		// actualiza tu código antes de subir de versión"). El SetStackingType() de
+		// reemplazo está marcado solo-editor — hoy no existe forma "a prueba de futuro"
+		// de fijar el stacking en un GE creado en runtime. El día que actualices de
+		// UE 5.8, ESTA es la primera línea que revisar si el proyecto deja de compilar.
+		//
+		// Y AHORA EL STACKING FUNCIONA DE VERDAD (fix auditoría): con la definición
+		// cacheada, dos Quemaduras seguidas sobre el mismo enemigo SÍ son "el mismo
+		// efecto" para GAS (misma definición) → la segunda refresca a la primera en
+		// vez de correr en paralelo. Con las definiciones nuevas-por-aplicación de la
+		// versión anterior, estas dos líneas no tenían ningún efecto real entre
+		// aplicaciones (el stacking de GAS agrupa por definición).
+		Effect->StackingType = EGameplayEffectStackingType::AggregateBySource;
+		Effect->StackLimitCount = 1;
+
+		// --- MODIFICADOR: cuánto daño tiquea cada Period ---
+		// Magnitud por SetByCaller (mismo motivo que la duración: reutilizable entre
+		// abilities). Reutilizamos el tag Debuff.Damage (clase 304).
+		const int32 Index = Effect->Modifiers.Num();
+		Effect->Modifiers.SetNum(Index + 1);
+		FGameplayModifierInfo& ModifierInfo = Effect->Modifiers[Index];
+
+		FSetByCallerFloat DamageSetByCaller;
+		DamageSetByCaller.DataTag = GameplayTags.Debuff_Damage;
+		ModifierInfo.ModifierMagnitude = FGameplayEffectModifierMagnitude(DamageSetByCaller);
+		ModifierInfo.ModifierOp = EGameplayModOp::Additive;
+		ModifierInfo.Attribute = UPantheliaAttributeSet::GetIncomingDamageAttribute();
+
+		CachedEffect = Effect;
+	}
+
+	// --- CONSTRUIR EL SPEC (con los valores de ESTE golpe) Y APLICARLO ---
+	//
+	// CORRECCIÓN respecto al curso (mejora técnica, se conserva del refactor original):
+	// el curso crea el spec con "new FGameplayEffectSpec(...)" y nunca lo libera — fuga
+	// de memoria permanente en CADA debuff. FGameplayEffectSpec es un struct normal:
+	// variable local en el stack, se destruye sola al salir de la función.
 	//
 	// Nivel 1 siempre (simplificación deliberada, igual que el curso): los debuffs no
 	// escalan por nivel de ability en esta primera versión.
-	FGameplayEffectSpec MutableSpec(Effect, EffectContextHandle, 1.f);
+	FGameplayEffectSpec MutableSpec(CachedEffect, EffectContextHandle, 1.f);
+
+	// Los valores concretos de ESTE debuff viajan como SetByCaller del spec — la
+	// definición cacheada es genérica; el spec es lo específico de cada aplicación.
+	MutableSpec.SetSetByCallerMagnitude(GameplayTags.Debuff_Duration, DebuffDuration);
+	MutableSpec.SetSetByCallerMagnitude(GameplayTags.Debuff_Damage, DebuffDamage);
 
 	// Este es un context NUEVO (el que creamos arriba con MakeEffectContext), NO el
 	// context del golpe original que disparó el debuff. Le asignamos el DamageType aquí

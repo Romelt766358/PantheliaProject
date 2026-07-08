@@ -8,6 +8,10 @@
 #include "GameplayTagContainer.h"
 #include "PantheliaAttributeSet.generated.h"
 
+// Forward declaration para el caché de definiciones dinámicas de debuff (ver
+// CachedDebuffEffects más abajo) — solo guardamos punteros, no hace falta el header.
+class UGameplayEffect;
+
 #define ATTRIBUTE_ACCESSORS(ClassName, PropertyName) \
 	GAMEPLAYATTRIBUTE_PROPERTY_GETTER(ClassName, PropertyName) \
 	GAMEPLAYATTRIBUTE_VALUE_GETTER(PropertyName) \
@@ -189,6 +193,42 @@ private:
 	// (clase 310) — ahí se explican las adaptaciones de API frente al curso original
 	// (tags de GE deprecados desde 5.3, stacking en API inestable en 5.7+).
 	void Debuff(const FEffectProperties& Props);
+
+	// === CACHÉ DE DEFINICIONES DINÁMICAS DE DEBUFF (fix auditoría post-315) ===
+	//
+	// POR QUÉ EXISTE — dos bugs de la versión anterior de Debuff() que este caché
+	// resuelve A LA VEZ:
+	//
+	// 1. EL STACKING NO FUNCIONABA. Debuff() creaba un UGameplayEffect NUEVO con
+	//    NewObject en cada debuff exitoso y le configuraba StackingType =
+	//    AggregateBySource + StackLimitCount = 1. Pero el stacking de GAS agrupa por
+	//    DEFINICIÓN de efecto (el objeto UGameplayEffect concreto): dos Quemaduras
+	//    seguidas creaban DOS definiciones distintas, GAS no las consideraba "el
+	//    mismo efecto", y corrían EN PARALELO — exactamente lo que el stacking
+	//    intentaba evitar. Con una ÚNICA definición cacheada por tipo de debuff,
+	//    las aplicaciones repetidas SÍ agregan: la segunda Quemadura refresca la
+	//    duración de la primera en vez de sumarse.
+	//
+	// 2. COLISIÓN DE NOMBRES. NewObject con el MISMO FName en el MISMO outer
+	//    (GetTransientPackage) mientras el objeto anterior con ese nombre sigue vivo
+	//    (su debuff de 5s aún activo) es terreno indefinido del motor — puede
+	//    reemplazar/reconstruir el objeto in situ con un efecto activo apuntándole.
+	//    Con el caché, el objeto se crea UNA vez y se reutiliza: nunca se recrea un
+	//    nombre ocupado.
+	//
+	// La clave del mapa incluye el tag de debuff Y la frecuencia (Period): el Period
+	// es una propiedad fija de la definición (no puede ser SetByCaller), así que dos
+	// abilities con frecuencias distintas del mismo debuff necesitan definiciones
+	// distintas — y NO deben stackear entre sí de todas formas (tiquean a ritmos
+	// diferentes). Daño y duración, en cambio, SÍ viajan como SetByCaller en el spec
+	// (ver Debuff() en el .cpp), así que no fragmentan el caché.
+	//
+	// UPROPERTY(Transient): Transient porque es puro estado runtime (jamás se
+	// serializa a disco); UPROPERTY porque sin él el garbage collector podría
+	// llevarse una definición cacheada cuando ningún efecto activo la referencie —
+	// y la siguiente Quemadura usaría un puntero muerto.
+	UPROPERTY(Transient)
+	TMap<FName, TObjectPtr<UGameplayEffect>> CachedDebuffEffects;
 
 	// Llamada cuando IncomingDamage es fatal. Obtiene la XP del enemigo muerto,
 	// aplica el multiplicador de rendimientos decrecientes según EnemyID y kill count
