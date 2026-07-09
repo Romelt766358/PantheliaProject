@@ -69,6 +69,12 @@ struct FPantheliaBossPhaseDefinition
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Phase")
 	FName PhaseID = FName("Phase1");
 
+	// Tag real de gameplay para esta fase. Ej: Boss.Phase.1.
+	// PhaseID se conserva como nombre interno/legacy para assets existentes, pero
+	// las validaciones nuevas deben usar Gameplay Tags para evitar errores por FName.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Phase")
+	FGameplayTag PhaseTag;
+
 	// La fase se considera activa cuando HealthPercent <= EnterHealthPercent.
 	// Phase1 normalmente queda en 1.0; Phase2 puede quedar en 0.6 o 0.5.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Phase", meta = (ClampMin = "0.0", ClampMax = "1.0"))
@@ -102,6 +108,15 @@ struct FPantheliaBossActionDefinition
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Action")
 	EPantheliaBossActionType ActionType = EPantheliaBossActionType::Melee;
 
+	// Fases válidas usando Gameplay Tags. Ej: Boss.Phase.1.
+	// Este es el campo recomendado para configuración nueva. Si queda vacío,
+	// se consulta el campo legacy ValidPhases; si ambos quedan vacíos, la acción
+	// es válida en cualquier fase.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Action")
+	FGameplayTagContainer ValidPhaseTags;
+
+	// Legacy: se conserva para no romper perfiles ya creados que usan PhaseID como FName
+	// (ej. Phase1). Preferir ValidPhaseTags para datos nuevos.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Boss|Action")
 	TArray<FName> ValidPhases;
 

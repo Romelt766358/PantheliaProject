@@ -42,12 +42,14 @@ public:
 	//
 	// Esto NO reemplaza la locomoción táctica futura del StateTree. Es solo un dash
 	// controlado por la ability para ataques de cierre de distancia.
-	UFUNCTION(BlueprintCallable, Category = "Panthelia|Enemy Melee|Movement")
+	// No debe ser const: Unreal puede exponer funciones const con retorno como nodos puros,
+	// y este helper sí tiene efecto lateral real sobre el CharacterMovement.
+	UFUNCTION(BlueprintCallable, Category = "Panthelia|Enemy Melee|Movement", meta = (ExpandBoolAsExecs = "ReturnValue"))
 	bool LaunchAvatarTowardCombatTarget(
 		float StopDistance = 180.f,
 		float TravelTime = 0.35f,
 		float MaxHorizontalSpeed = 1400.f,
 		float VerticalSpeed = 0.f,
 		bool bOverrideXY = true,
-		bool bOverrideZ = false) const;
+		bool bOverrideZ = false);
 };

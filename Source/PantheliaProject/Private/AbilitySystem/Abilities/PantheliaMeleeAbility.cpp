@@ -3,7 +3,9 @@
 #include "AbilitySystem/Abilities/PantheliaMeleeAbility.h"
 
 #include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
 #include "Interfaces/Enemy.h"
+#include "PantheliaLogChannels.h"
 
 AActor* UPantheliaMeleeAbility::GetCombatTargetFromAvatar() const
 {
@@ -34,12 +36,15 @@ bool UPantheliaMeleeAbility::LaunchAvatarTowardCombatTarget(
 	float MaxHorizontalSpeed,
 	float VerticalSpeed,
 	bool bOverrideXY,
-	bool bOverrideZ) const
+	bool bOverrideZ)
 {
 	ACharacter* AvatarCharacter = Cast<ACharacter>(GetAvatarActorFromActorInfo());
 	AActor* TargetActor = GetCombatTargetFromAvatar();
 	if (!AvatarCharacter || !TargetActor)
 	{
+		UE_LOG(LogPanthelia, Warning, TEXT("GapCloser launch failed. Avatar=%s Target=%s"),
+			*GetNameSafe(AvatarCharacter),
+			*GetNameSafe(TargetActor));
 		return false;
 	}
 
@@ -52,12 +57,20 @@ bool UPantheliaMeleeAbility::LaunchAvatarTowardCombatTarget(
 	const float DistanceToTravel = FMath::Max(0.f, DistanceToTarget - StopDistance);
 	if (DistanceToTravel <= KINDA_SMALL_NUMBER)
 	{
+		UE_LOG(LogPanthelia, Log, TEXT("GapCloser launch skipped. Avatar=%s Target=%s Distance=%.1f StopDistance=%.1f"),
+			*GetNameSafe(AvatarCharacter),
+			*GetNameSafe(TargetActor),
+			DistanceToTarget,
+			StopDistance);
 		return false;
 	}
 
 	const FVector DirectionToTarget = ToTarget2D.GetSafeNormal();
 	if (DirectionToTarget.IsNearlyZero())
 	{
+		UE_LOG(LogPanthelia, Warning, TEXT("GapCloser launch failed because direction is zero. Avatar=%s Target=%s"),
+			*GetNameSafe(AvatarCharacter),
+			*GetNameSafe(TargetActor));
 		return false;
 	}
 
@@ -71,6 +84,22 @@ bool UPantheliaMeleeAbility::LaunchAvatarTowardCombatTarget(
 	FVector LaunchVelocity = DirectionToTarget * HorizontalSpeed;
 	LaunchVelocity.Z = VerticalSpeed;
 
+	if (UCharacterMovementComponent* MovementComp = AvatarCharacter->GetCharacterMovement())
+	{
+		MovementComp->StopMovementImmediately();
+	}
+
 	AvatarCharacter->LaunchCharacter(LaunchVelocity, bOverrideXY, bOverrideZ);
+
+	UE_LOG(LogPanthelia, Log, TEXT("GapCloser launch applied. Avatar=%s Target=%s Distance=%.1f Travel=%.1f Stop=%.1f TravelTime=%.2f Speed=%.1f Velocity=%s"),
+		*GetNameSafe(AvatarCharacter),
+		*GetNameSafe(TargetActor),
+		DistanceToTarget,
+		DistanceToTravel,
+		StopDistance,
+		TravelTime,
+		HorizontalSpeed,
+		*LaunchVelocity.ToString());
+
 	return true;
 }

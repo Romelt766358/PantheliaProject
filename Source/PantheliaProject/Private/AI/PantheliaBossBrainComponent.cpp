@@ -9,7 +9,9 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Interfaces/CombatInterface.h"
 #include "PantheliaLogChannels.h"
+#include "PantheliaGameplayTags.h"
 #include "Engine/World.h"
+#include "Engine/Engine.h"
 #include "TimerManager.h"
 
 UPantheliaBossBrainComponent::UPantheliaBossBrainComponent()
@@ -211,14 +213,17 @@ bool UPantheliaBossBrainComponent::UpdatePhaseFromHealth()
 		return false;
 	}
 
-	const bool bChangedPhase = ActivePhaseID != BestPhase->PhaseID;
+	const FGameplayTag NewPhaseTag = ResolvePhaseTag(*BestPhase);
+	const bool bChangedPhase = ActivePhaseID != BestPhase->PhaseID || ActivePhaseTag != NewPhaseTag;
 	ActivePhaseID = BestPhase->PhaseID;
+	ActivePhaseTag = NewPhaseTag;
 
 	if (bChangedPhase && bLogActionSelection)
 	{
-		UE_LOG(LogPanthelia, Log, TEXT("BossBrain [%s] changed phase to %s at HealthPercent %.2f"),
+		UE_LOG(LogPanthelia, Log, TEXT("BossBrain [%s] changed phase to %s (%s) at HealthPercent %.2f"),
 			*GetNameSafe(GetOwner()),
 			*ActivePhaseID.ToString(),
+			*ActivePhaseTag.ToString(),
 			HealthPercent);
 	}
 
@@ -243,7 +248,7 @@ float UPantheliaBossBrainComponent::GetHealthPercent() const
 
 bool UPantheliaBossBrainComponent::IsActionInActivePhase(const FPantheliaBossActionDefinition& Action) const
 {
-	if (ActivePhaseID.IsNone())
+	if (ActivePhaseID.IsNone() && !ActivePhaseTag.IsValid())
 	{
 		return true;
 	}
@@ -256,6 +261,13 @@ bool UPantheliaBossBrainComponent::IsActionInActivePhase(const FPantheliaBossAct
 		}
 	}
 
+	// Configuración nueva: fases por GameplayTag (ej. Boss.Phase.1).
+	if (!Action.ValidPhaseTags.IsEmpty())
+	{
+		return ActivePhaseTag.IsValid() && Action.ValidPhaseTags.HasTagExact(ActivePhaseTag);
+	}
+
+	// Compatibilidad legacy: perfiles antiguos pueden usar PhaseID como FName (ej. Phase1).
 	return Action.ValidPhases.Num() == 0 || Action.ValidPhases.Contains(ActivePhaseID);
 }
 
@@ -319,7 +331,7 @@ bool UPantheliaBossBrainComponent::SelectAction(AActor* TargetActor, FPantheliaB
 	for (const FPantheliaBossActionDefinition& Action : BossProfile->Actions)
 	{
 		float ActionWeight = 0.f;
-		if (!IsActionAvailable(Action, TargetActor, ActionWeight))
+		if (!IsActionAvailable(Action, TargetActor, ActionWeight, false))
 		{
 			continue;
 		}
@@ -327,6 +339,33 @@ bool UPantheliaBossBrainComponent::SelectAction(AActor* TargetActor, FPantheliaB
 		Candidates.Add(&Action);
 		CandidateWeights.Add(ActionWeight);
 		TotalWeight += ActionWeight;
+	}
+
+	if (Candidates.Num() <= 0 && bUseActionMemory)
+	{
+		// Si la memoria bloquea la única acción contextual disponible (caso típico:
+		// el jugador sigue lejos y solo el gap closer está en rango), hacemos una
+		// segunda pasada ignorando memoria. La memoria debe mejorar variedad, no dejar
+		// al boss parado sin opciones.
+		for (const FPantheliaBossActionDefinition& Action : BossProfile->Actions)
+		{
+			float ActionWeight = 0.f;
+			if (!IsActionAvailable(Action, TargetActor, ActionWeight, true))
+			{
+				continue;
+			}
+
+			Candidates.Add(&Action);
+			CandidateWeights.Add(ActionWeight);
+			TotalWeight += ActionWeight;
+		}
+
+		if (Candidates.Num() > 0 && bLogActionSelection)
+		{
+			UE_LOG(LogPanthelia, Log, TEXT("BossBrain [%s] allowed memory fallback because no normal candidates were available. Candidates=%d"),
+				*GetNameSafe(GetOwner()),
+				Candidates.Num());
+		}
 	}
 
 	if (Candidates.Num() <= 0)
@@ -338,9 +377,10 @@ bool UPantheliaBossBrainComponent::SelectAction(AActor* TargetActor, FPantheliaB
 
 		if (bLogActionSelection)
 		{
-			UE_LOG(LogPanthelia, Warning, TEXT("BossBrain [%s] found no valid actions. Phase=%s Distance=%.1f Angle=%.1f Failure=%d"),
+			UE_LOG(LogPanthelia, Warning, TEXT("BossBrain [%s] found no valid actions. Phase=%s (%s) Distance=%.1f Angle=%.1f Failure=%d"),
 				*GetNameSafe(GetOwner()),
 				*ActivePhaseID.ToString(),
+				*ActivePhaseTag.ToString(),
 				GetDistanceToTarget(TargetActor),
 				GetAngleToTarget(TargetActor),
 				static_cast<int32>(LastFailureReason));
@@ -364,10 +404,11 @@ bool UPantheliaBossBrainComponent::SelectAction(AActor* TargetActor, FPantheliaB
 		{
 			OutAction = *Candidates[Index];
 			SetSelectedAction(TargetActor, OutAction);
+			ShowActionDebugMessage(TEXT("SELECT"), OutAction, TargetActor);
 
 			if (bLogActionSelection)
 			{
-				UE_LOG(LogPanthelia, Log, TEXT("BossBrain [%s] selected Action=%s Ability=%s Weight=%.2f TotalWeight=%.2f Roll=%.2f Candidates=%d Phase=%s Distance=%.1f Angle=%.1f"),
+				UE_LOG(LogPanthelia, Log, TEXT("BossBrain [%s] selected Action=%s Ability=%s Weight=%.2f TotalWeight=%.2f Roll=%.2f Candidates=%d Phase=%s (%s) Distance=%.1f Angle=%.1f"),
 					*GetNameSafe(GetOwner()),
 					*OutAction.ActionTag.ToString(),
 					*OutAction.AbilityTag.ToString(),
@@ -376,6 +417,7 @@ bool UPantheliaBossBrainComponent::SelectAction(AActor* TargetActor, FPantheliaB
 					InitialRoll,
 					Candidates.Num(),
 					*ActivePhaseID.ToString(),
+					*ActivePhaseTag.ToString(),
 					GetDistanceToTarget(TargetActor),
 					GetAngleToTarget(TargetActor));
 			}
@@ -386,10 +428,11 @@ bool UPantheliaBossBrainComponent::SelectAction(AActor* TargetActor, FPantheliaB
 
 	OutAction = *Candidates.Last();
 	SetSelectedAction(TargetActor, OutAction);
+	ShowActionDebugMessage(TEXT("SELECT"), OutAction, TargetActor);
 
 	if (bLogActionSelection)
 	{
-		UE_LOG(LogPanthelia, Log, TEXT("BossBrain [%s] selected fallback Action=%s Ability=%s TotalWeight=%.2f Roll=%.2f Candidates=%d Phase=%s Distance=%.1f Angle=%.1f"),
+		UE_LOG(LogPanthelia, Log, TEXT("BossBrain [%s] selected fallback Action=%s Ability=%s TotalWeight=%.2f Roll=%.2f Candidates=%d Phase=%s (%s) Distance=%.1f Angle=%.1f"),
 			*GetNameSafe(GetOwner()),
 			*OutAction.ActionTag.ToString(),
 			*OutAction.AbilityTag.ToString(),
@@ -397,6 +440,7 @@ bool UPantheliaBossBrainComponent::SelectAction(AActor* TargetActor, FPantheliaB
 			InitialRoll,
 			Candidates.Num(),
 			*ActivePhaseID.ToString(),
+			*ActivePhaseTag.ToString(),
 			GetDistanceToTarget(TargetActor),
 			GetAngleToTarget(TargetActor));
 	}
@@ -404,7 +448,7 @@ bool UPantheliaBossBrainComponent::SelectAction(AActor* TargetActor, FPantheliaB
 	return true;
 }
 
-bool UPantheliaBossBrainComponent::IsActionAvailable(const FPantheliaBossActionDefinition& Action, AActor* TargetActor, float& OutWeight) const
+bool UPantheliaBossBrainComponent::IsActionAvailable(const FPantheliaBossActionDefinition& Action, AActor* TargetActor, float& OutWeight, const bool bIgnoreMemory) const
 {
 	OutWeight = 0.f;
 
@@ -456,7 +500,7 @@ bool UPantheliaBossBrainComponent::IsActionAvailable(const FPantheliaBossActionD
 		return false;
 	}
 
-	if (IsActionBlockedByMemory(Action))
+	if (!bIgnoreMemory && IsActionBlockedByMemory(Action))
 	{
 		LogActionRejected(Action, TargetActor, TEXT("memory limit"));
 		return false;
@@ -464,7 +508,10 @@ bool UPantheliaBossBrainComponent::IsActionAvailable(const FPantheliaBossActionD
 
 	OutWeight = FMath::Max(0.f, Action.Weight);
 	OutWeight *= GetActionPhaseWeightMultiplier();
-	OutWeight *= GetActionMemoryWeightMultiplier(Action);
+	if (!bIgnoreMemory)
+	{
+		OutWeight *= GetActionMemoryWeightMultiplier(Action);
+	}
 
 	if (OutWeight <= 0.f)
 	{
@@ -508,6 +555,28 @@ float UPantheliaBossBrainComponent::GetActionPhaseWeightMultiplier() const
 	}
 
 	return 1.f;
+}
+
+FGameplayTag UPantheliaBossBrainComponent::ResolvePhaseTag(const FPantheliaBossPhaseDefinition& Phase) const
+{
+	if (Phase.PhaseTag.IsValid())
+	{
+		return Phase.PhaseTag;
+	}
+
+	// Compatibilidad para perfiles existentes: PhaseID sigue siendo FName, pero el
+	// sistema nuevo de acciones puede validar contra Gameplay Tags reales.
+	const FPantheliaGameplayTags& Tags = FPantheliaGameplayTags::Get();
+	if (Phase.PhaseID == FName("Phase1"))
+	{
+		return Tags.Boss_Phase_1;
+	}
+	if (Phase.PhaseID == FName("Phase2"))
+	{
+		return Tags.Boss_Phase_2;
+	}
+
+	return FGameplayTag();
 }
 
 FGameplayTag UPantheliaBossBrainComponent::GetActionMemoryGroup(const FPantheliaBossActionDefinition& Action) const
@@ -625,18 +694,35 @@ void UPantheliaBossBrainComponent::LogActionRejected(const FPantheliaBossActionD
 		? FMath::Max(0.f, ActionCooldownEndTimes.FindRef(Action.ActionTag) - GetCurrentTimeSeconds())
 		: 0.f;
 
-	UE_LOG(LogPanthelia, Log, TEXT("BossBrain [%s] rejected Action=%s Ability=%s Reason=%s Phase=%s Distance=%.1f Range=[%.1f, %.1f] Angle=%.1f MaxAngle=%.1f CooldownRemaining=%.2f"),
+	UE_LOG(LogPanthelia, Log, TEXT("BossBrain [%s] rejected Action=%s Ability=%s Reason=%s Phase=%s (%s) Distance=%.1f Range=[%.1f, %.1f] Angle=%.1f MaxAngle=%.1f CooldownRemaining=%.2f"),
 		*GetNameSafe(GetOwner()),
 		*Action.ActionTag.ToString(),
 		*Action.AbilityTag.ToString(),
 		Reason ? Reason : TEXT("unknown"),
 		*ActivePhaseID.ToString(),
+		*ActivePhaseTag.ToString(),
 		GetDistanceToTarget(TargetActor),
 		Action.MinDistance,
 		Action.MaxDistance,
 		GetAngleToTarget(TargetActor),
 		Action.MaxAngle,
 		CooldownRemaining);
+}
+
+void UPantheliaBossBrainComponent::ShowActionDebugMessage(const TCHAR* Prefix, const FPantheliaBossActionDefinition& Action, AActor* TargetActor) const
+{
+	if (!bShowActionDebugOnScreen || !GEngine)
+	{
+		return;
+	}
+
+	const FString Message = FString::Printf(TEXT("%s %s | Dist %.0f | Angle %.0f"),
+		Prefix ? Prefix : TEXT("ACTION"),
+		*Action.ActionTag.ToString(),
+		GetDistanceToTarget(TargetActor),
+		GetAngleToTarget(TargetActor));
+
+	GEngine->AddOnScreenDebugMessage(-1, ActionDebugScreenDuration, FColor::Orange, Message);
 }
 
 // Action Execution
@@ -677,7 +763,7 @@ bool UPantheliaBossBrainComponent::TryExecuteAction(AActor* TargetActor, const F
 	SetSelectedAction(TargetActor, *Action);
 
 	float ActionWeight = 0.f;
-	if (!IsActionAvailable(*Action, TargetActor, ActionWeight))
+	if (!IsActionAvailable(*Action, TargetActor, ActionWeight, true))
 	{
 		SetActionFailure(!TargetActor
 			? EPantheliaBossActionFailureReason::NoTarget
@@ -691,6 +777,11 @@ bool UPantheliaBossBrainComponent::TryExecuteAction(AActor* TargetActor, const F
 
 	SetCombatTarget(TargetActor);
 	const bool bActivated = ActivateActionAbility(*Action);
+
+	if (bActivated)
+	{
+		ShowActionDebugMessage(TEXT("EXEC"), *Action, TargetActor);
+	}
 
 	if (!bActivated)
 	{
