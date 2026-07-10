@@ -833,10 +833,10 @@ void UPantheliaAttributeSet::TriggerElementalStatus(const FEffectProperties& Pro
 	// todo daño ofensivo de Quemadura, Veneno y Electrocución pasa por MagicDamage:
 	// los estados son payloads mágicos globales, aunque los haya detonado un arma.
 	float StatusPower = 0.f;
-	float MagicDamage = 0.f;
+	float SourceMagicDamage = 0.f;
 	if (Props.SourceASC)
 	{
-		MagicDamage = FMath::Max(
+		SourceMagicDamage = FMath::Max(
 			Props.SourceASC->GetNumericAttribute(GetMagicDamageAttribute()), 0.f);
 
 		if (const FGameplayTag* StatusPowerTag = GameplayTags.ElementToStatusPower.Find(Element))
@@ -856,7 +856,7 @@ void UPantheliaAttributeSet::TriggerElementalStatus(const FEffectProperties& Pro
 		0.f,
 		1.f + (StatusPower * Definition->DurationPercentPerStatusPower / 100.f));
 
-	const float MagicDamageContribution = MagicDamage * Definition->FlatDamagePerMagicDamage;
+	const float MagicDamageContribution = SourceMagicDamage * Definition->FlatDamagePerMagicDamage;
 	const float FinalMagnitude = FMath::Max(
 		(Definition->BaseMagnitude + MagicDamageContribution) * MagnitudeMultiplier, 0.f);
 	const float FinalDuration = FMath::Max(Definition->BaseDuration * DurationMultiplier, 0.f);
@@ -896,7 +896,7 @@ void UPantheliaAttributeSet::TriggerElementalStatus(const FEffectProperties& Pro
 		}
 	}
 
-	auto CalculateUnlockedPercent = [StatusPower, MagicDamage](
+	auto CalculateUnlockedPercent = [StatusPower, SourceMagicDamage](
 		float BasePercent,
 		float PercentPerStatusPower,
 		float PercentPerMagicDamage)
@@ -905,7 +905,7 @@ void UPantheliaAttributeSet::TriggerElementalStatus(const FEffectProperties& Pro
 		return FMath::Clamp(
 			BasePercent +
 			(StatusPower * PercentPerStatusPower) +
-			(MagicDamage * PercentPerMagicDamage),
+			(SourceMagicDamage * PercentPerMagicDamage),
 			0.f, 100.f);
 	};
 
@@ -1011,7 +1011,7 @@ void UPantheliaAttributeSet::TriggerElementalStatus(const FEffectProperties& Pro
 		TEXT("[STATUS] '%s' en '%s' | Flat %.2f | MagicDamage %.2f (contrib %.2f) | StatusPower %.2f | MaxHP %.3f%% | CurrentHP %.3f%% | MissingHP %.3f%% | PercentDamage %.2f | Dur %.2f | Freq %.2f | Grievous %.1f%%"),
 		*DebuffTagPtr->ToString(),
 		Props.TargetCharacter ? *Props.TargetCharacter->GetName() : TEXT("null"),
-		FinalMagnitude, MagicDamage, MagicDamageContribution, StatusPower,
+		FinalMagnitude, SourceMagicDamage, MagicDamageContribution, StatusPower,
 		FinalMaxHealthPercent, FinalCurrentHealthPercent, FinalMissingHealthPercent,
 		PercentageHealthDamage, FinalDuration, TickFrequency, FinalGrievousWoundsPercent);
 }
