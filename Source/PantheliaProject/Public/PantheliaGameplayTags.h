@@ -282,6 +282,16 @@ public:
 	// EPantheliaElement::None no tiene entrada (daño físico genérico = sin efecto de estado).
 	TMap<EPantheliaElement, FGameplayTag> ElementToDebuff;
 
+	// Mapa elemento → tag del atributo de RESISTENCIA de ese elemento.
+	// Mismo patrón canónico que ElementToDebuff (4 entradas, una fuente de verdad).
+	// Lo usa el ExecCalc en la sección de buildup: para cada elemento con buildup
+	// entrante, localiza la resistencia del target (vía TagToCaptureDef, que ya
+	// indexa las capturas por estos mismos tags) y aplica la reducción de intake:
+	//   BuildupEfectivo = Base × (1 − Res/100)   → Res 100 = intake 0 = INMUNIDAD.
+	// También lo usa el decay (PantheliaCharacterBase::TickBuildupDecay): a más
+	// resistencia, más rápido cae la barra.
+	TMap<EPantheliaElement, FGameplayTag> ElementToResistance;
+
 	// --- TAGS DE PARÁMETROS DE DEBUFF (SetByCaller, clase 304) ---
 	// Distintos de los tags de arriba (Debuff_Burn, etc.): aquellos son tags de IDENTIDAD
 	// (identifican QUÉ debuff es — se conceden al target mientras dura). Estos son tags
@@ -292,11 +302,12 @@ public:
 	// ya hace dentro de la raíz "Attributes". No son padre-hijo entre sí: son 4 tags hoja
 	// independientes bajo la raíz Debuff (que ya existe arriba).
 	//
-	// NOTA (pendiente de clases 305+): en Panthelia el disparador del debuff será la barra
-	// de acumulación (buildup), no una tirada de azar como en el curso — ver sesión de la
-	// clase 303. Es posible que Debuff_Chance cambie de rol o quede sin uso cuando se
-	// implemente ese disparador; se decide cuando lleguemos a esa clase, no ahora.
-	FGameplayTag Debuff_Chance;      // % de probabilidad de aplicar el debuff (rol pendiente de confirmar)
+	// DECISIÓN CERRADA (sistema de buildup): el disparador de los efectos de estado en
+	// Panthelia es la BARRA DE ACUMULACIÓN (umbral, estilo Souls/Lies of P), NO una
+	// tirada de azar como en el curso. Debuff_Chance fue ELIMINADO junto con el dado
+	// (DetermineDebuff) — en los Souls, los golpes o pegan o no pegan; lo único con
+	// azar es el crítico. Ver los tags CombatTricks_Buildup_* más abajo, que son el
+	// transporte del sistema real.
 	FGameplayTag Debuff_Damage;      // daño que tiquea cada Debuff_Frequency segundos
 	FGameplayTag Debuff_Duration;    // segundos que dura el debuff activo
 	FGameplayTag Debuff_Frequency;   // cada cuántos segundos tiquea Debuff_Damage (= "Period" del GE)
@@ -341,6 +352,35 @@ public:
 	// por ability, no fijo en código — algunas fuentes de daño querrán un lanzamiento
 	// más vertical que otras.
 	FGameplayTag CombatTricks_LaunchPitchOverride;
+
+	// --- TAGS DE BUILDUP ELEMENTAL (SetByCaller, sistema de umbral de acumulación) ---
+	// El corazón del sistema de efectos de estado soulslike (Gameplay_Mechanics,
+	// "Efectos de estado"): cada golpe elemental SUMA una cantidad fija a la barra
+	// del elemento correspondiente en la víctima; al llegar la barra a 100, el estado
+	// se dispara CON CERTEZA y la barra se resetea. Cero azar (así funciona en Elden
+	// Ring y Lies of P — el único azar del combate es el crítico).
+	//
+	// Estos 4 tags transportan, como SetByCaller del spec de daño, cuánto buildup
+	// deposita ESTE golpe por elemento. La ability los rellena colapsando su
+	// TMap BuildupAmounts (por tipo de daño) a nivel de elemento vía DamageTypeToElement
+	// — mismo colapso de dos saltos que ya usa el sistema de debuffs. El ExecCalc los
+	// lee, aplica resistencia + crítico + veto de parry, y deposita el resultado en
+	// los atributos XBuildup del target (ver Attributes_Buildup_* abajo).
+	FGameplayTag CombatTricks_Buildup_Fire;
+	FGameplayTag CombatTricks_Buildup_Storm;
+	FGameplayTag CombatTricks_Buildup_Water;
+	FGameplayTag CombatTricks_Buildup_Nature;
+
+	// --- TAGS DE ATRIBUTO DE BUILDUP (identidad, para TagsToAttributes/UI) ---
+	// Identifican los 4 atributos de barra de acumulación del AttributeSet, igual que
+	// Attributes_Resistance_* identifican las resistencias. Registrados ya (aunque la
+	// UI de barras de estado llegue después) para que TagsToAttributes los exponga
+	// desde el primer día — el widget de barra de estado del enemigo solo tendrá que
+	// bindearse por tag, sin tocar C++.
+	FGameplayTag Attributes_Buildup_Fire;
+	FGameplayTag Attributes_Buildup_Storm;
+	FGameplayTag Attributes_Buildup_Water;
+	FGameplayTag Attributes_Buildup_Nature;
 
 	// --- TAGS DE PARRY / BLOQUEO ---
 	// Abilities: se asignan en el AbilityTags de GA_Parry_Physical / GA_Parry_Magic.

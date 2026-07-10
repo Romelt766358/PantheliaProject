@@ -184,8 +184,12 @@ EPantheliaCharacterClass APantheliaCharacterBase::GetCharacterClass_Implementati
 
 void APantheliaCharacterBase::Die(const FVector& DeathImpulse)
 {
-	// Al morir cancelamos el timer de regen de postura.
+	// Al morir cancelamos el timer de regen de postura y el de decay de buildup —
+	// un cadáver no regenera postura ni "se enfría" de sus barras de estado (y el
+	// bloqueo global de muertos en PostGameplayEffectExecute ya impide que entre
+	// buildup nuevo; esto solo apaga el tick que quedaría girando en vacío).
 	GetWorldTimerManager().ClearTimer(PoiseRegenTimerHandle);
+	GetWorldTimerManager().ClearTimer(BuildupDecayTimerHandle);
 
 	// Corrección post-314: antes esto era siempre FinalWeaponMesh->DetachFromComponent(...).
 	// Ahora se desprende el arma REAL de este personaje (ver ResolveDeathWeaponMesh en el
@@ -507,4 +511,95 @@ void APantheliaCharacterBase::TickPoiseRegen()
 	// PoiseRegenRate unidades/segundo × 0.1s por tick = unidades por tick.
 	const float NewPoise = FMath::Min(CurrentPoise + PoiseRegenRate * 0.1f, MaxPoiseValue);
 	PAS->SetPoise(NewPoise);
+}
+
+// ============================================================
+// DECAY DE LAS BARRAS DE BUILDUP ELEMENTAL (sistema de umbral)
+// ============================================================
+// Clon deliberado del patrón de regeneración de postura de arriba (timer de 0.1s +
+// escritura directa de la base vía los setters del AttributeSet), con dos diferencias
+// razonadas: (1) SIN delay inicial — en Elden Ring las barras de estado empiezan a
+// caer inmediatamente; la tensión del sistema es la carrera entre tu ritmo de golpeo
+// y el decay constante, no una ventana de gracia; (2) el ritmo escala con la
+// RESISTENCIA del propio personaje (decisión cerrada): a más resistencia, más rápido
+// se sacude el estado — segunda mitad del doble rol de las resistencias (la primera
+// mitad, reducir el intake, vive en el ExecCalc).
+
+void APantheliaCharacterBase::NotifyElementalBuildupReceived()
+{
+	// Si el timer ya está girando (recibimos buildup con barras aún cargadas), no
+	// hay nada que hacer: el tick ya se encarga. Solo lo arrancamos si estaba
+	// detenido — a diferencia de ResetPoiseRegenTimer, aquí NO reiniciamos nada
+	// (no hay delay que resetear: el decay corre siempre que haya barra).
+	if (GetWorldTimerManager().IsTimerActive(BuildupDecayTimerHandle))
+	{
+		return;
+	}
+
+	GetWorldTimerManager().SetTimer(
+		BuildupDecayTimerHandle,
+		this,
+		&APantheliaCharacterBase::TickBuildupDecay,
+		0.1f,
+		true // loop — se auto-detiene dentro del tick cuando las 4 barras lleguen a 0
+	);
+}
+
+void APantheliaCharacterBase::TickBuildupDecay()
+{
+	// Mismo acceso directo al AttributeSet que TickPoiseRegen (y por el mismo motivo:
+	// SetXBuildup → SetNumericAttributeBase, la vía correcta en UE 5.x para escribir
+	// la base sin pasar por un GE). Escribir la base directamente NO dispara
+	// PostGameplayEffectExecute — imprescindible aquí: vaciar la barra jamás debe
+	// re-evaluar el umbral de disparo.
+	UPantheliaAttributeSet* PAS = Cast<UPantheliaAttributeSet>(AttributeSet);
+	if (!PAS)
+	{
+		GetWorldTimerManager().ClearTimer(BuildupDecayTimerHandle);
+		return;
+	}
+
+	// Por cada elemento: si su barra tiene contenido, restarle su decay de este tick.
+	// DecayPorSegundo = BuildupDecayRate × (1 + Res/100) → ×0.1 por tick de 0.1s.
+	// La resistencia se lee del PROPIO personaje (es SU capacidad de sacudirse el
+	// estado), no de quien le pegó.
+	bool bAnyRemaining = false;
+
+	struct FDecayRoute
+	{
+		float Current;
+		float Resistance;
+		void (UPantheliaAttributeSet::*Setter)(float);
+	};
+	const FDecayRoute Routes[] =
+	{
+		{ PAS->GetFireBuildup(),   PAS->GetFireResistance(),   &UPantheliaAttributeSet::SetFireBuildup },
+		{ PAS->GetStormBuildup(),  PAS->GetStormResistance(),  &UPantheliaAttributeSet::SetStormBuildup },
+		{ PAS->GetWaterBuildup(),  PAS->GetWaterResistance(),  &UPantheliaAttributeSet::SetWaterBuildup },
+		{ PAS->GetNatureBuildup(), PAS->GetNatureResistance(), &UPantheliaAttributeSet::SetNatureBuildup },
+	};
+
+	for (const FDecayRoute& Route : Routes)
+	{
+		if (Route.Current <= 0.f)
+		{
+			continue;
+		}
+
+		const float DecayThisTick = BuildupDecayRate * (1.f + Route.Resistance / 100.f) * 0.1f;
+		const float NewValue = FMath::Max(0.f, Route.Current - DecayThisTick);
+		(PAS->*Route.Setter)(NewValue);
+
+		if (NewValue > 0.f)
+		{
+			bAnyRemaining = true;
+		}
+	}
+
+	// Las 4 barras vacías → el timer se apaga solo. El siguiente golpe con buildup
+	// lo volverá a arrancar vía NotifyElementalBuildupReceived. Coste cero en reposo.
+	if (!bAnyRemaining)
+	{
+		GetWorldTimerManager().ClearTimer(BuildupDecayTimerHandle);
+	}
 }

@@ -19,7 +19,7 @@
 #include "Engine/OverlapResult.h"
 // Necesario para AssignTagSetByCallerMagnitude en ApplyDamageEffect
 #include "AbilitySystemBlueprintLibrary.h"
-// Necesario para leer los tags SetByCaller de debuff (Debuff_Chance, etc.) en ApplyDamageEffect
+// Necesario para leer los tags SetByCaller de debuff (Debuff_Damage, etc.) en ApplyDamageEffect
 #include "PantheliaGameplayTags.h"
 // Necesario para UE_LOG(LogPanthelia, ...) en ApplyDamageEffect
 #include "PantheliaLogChannels.h"
@@ -552,10 +552,9 @@ FGameplayEffectContextHandle UPantheliaAbilitySystemLibrary::ApplyDamageEffect(
 			SpecHandle, DamageEffectParams.DamageType, DamageEffectParams.BaseDamage);
 	}
 
-	// SetByCaller de los 4 parámetros de debuff (clase 304).
+	// SetByCaller de los parámetros de efecto de estado (clase 304, actualizado por
+	// buildup: Debuff.Chance fue ELIMINADO junto con el dado — sin azar).
 	const FPantheliaGameplayTags& GameplayTags = FPantheliaGameplayTags::Get();
-	UAbilitySystemBlueprintLibrary::AssignTagSetByCallerMagnitude(
-		SpecHandle, GameplayTags.Debuff_Chance, DamageEffectParams.DebuffChance);
 	UAbilitySystemBlueprintLibrary::AssignTagSetByCallerMagnitude(
 		SpecHandle, GameplayTags.Debuff_Damage, DamageEffectParams.DebuffDamage);
 	UAbilitySystemBlueprintLibrary::AssignTagSetByCallerMagnitude(

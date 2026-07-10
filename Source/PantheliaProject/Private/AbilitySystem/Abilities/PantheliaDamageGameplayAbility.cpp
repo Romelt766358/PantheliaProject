@@ -149,19 +149,15 @@ void UPantheliaDamageGameplayAbility::ApplyDamageScalingToSpec(
 			SpecHandle, GameplayTags.Damage_Poise, ScaledPoiseDamage);
 	}
 
-	// PASO 6 (clase 306): Asignar los 4 parámetros de debuff al SetByCaller.
-	// Se asignan SIEMPRE (aunque valgan 0 por defecto en abilities que no quieren debuff)
-	// para que cualquier código futuro que lea estos tags con Spec.GetSetByCallerMagnitude()
-	// pueda hacerlo sin necesitar comprobar antes si el tag fue asignado o no — encuentra el
-	// tag siempre, y decide qué hacer según el valor (0 = "sin debuff").
+	// PASO 6 (clase 306, actualizado por el sistema de buildup): Asignar los 3
+	// parámetros del efecto de estado al SetByCaller. Se asignan SIEMPRE (aunque
+	// valgan 0) para que cualquier lector con Spec.GetSetByCallerMagnitude() los
+	// encuentre sin comprobar existencia y decida por valor.
 	//
-	// Todavía NADIE lee estos 4 valores desde el spec — esto es infraestructura adelantada,
-	// igual que ElementToDebuff. El consumidor real (probablemente el ExecCalc decidiendo si
-	// dispara un debuff) llega en una clase posterior. Ver la nota de diseño en
-	// FPantheliaGameplayTags sobre DebuffChance: su rol final depende de si el disparador
-	// termina siendo azar (como en el curso) o el buildup ya diseñado para Panthelia.
-	UAbilitySystemBlueprintLibrary::AssignTagSetByCallerMagnitude(
-		SpecHandle, GameplayTags.Debuff_Chance, DebuffChance.GetValueAtLevel(GetAbilityLevel()));
+	// El consumidor real ya existe: TriggerElementalStatus (AttributeSet) los lee del
+	// spec DEL GOLPE QUE LLENÓ LA BARRA — el golpe que remata la barra define cómo es
+	// el estado (daño por tick, frecuencia, duración). Debuff.Chance fue ELIMINADO
+	// junto con el dado: el disparador es el umbral de buildup (PASO 11, abajo).
 	UAbilitySystemBlueprintLibrary::AssignTagSetByCallerMagnitude(
 		SpecHandle, GameplayTags.Debuff_Damage, DebuffDamage.GetValueAtLevel(GetAbilityLevel()));
 	UAbilitySystemBlueprintLibrary::AssignTagSetByCallerMagnitude(
@@ -215,4 +211,35 @@ void UPantheliaDamageGameplayAbility::ApplyDamageScalingToSpec(
 	UAbilitySystemBlueprintLibrary::AssignTagSetByCallerMagnitude(
 		SpecHandle, GameplayTags.CombatTricks_KnockbackIsHeavy,
 		bKnockbackIsHeavy ? 1.f : 0.f);
+
+	// PASO 11 (sistema de buildup): colapsar BuildupAmounts (por tipo de daño) a
+	// nivel de ELEMENTO y transportarlo como SetByCaller. Mismo colapso de dos saltos
+	// del sistema de estados (DamageTypeToElement): dos tipos que comparten elemento
+	// SUMAN sus buildups en la misma barra — correcto por diseño (un golpe
+	// Hielo+Agua llena la barra de Saturación con la suma de ambos, sin dobles
+	// tiradas porque ya no hay tiradas). Los 4 tags se asignan SIEMPRE (0 si la
+	// ability no acumula ese elemento), coherente con el resto de SetByCallers.
+	float ElementBuildup[4] = { 0.f, 0.f, 0.f, 0.f }; // Fire, Storm, Water, Nature
+	for (const TTuple<FGameplayTag, FScalableFloat>& BuildupPair : BuildupAmounts)
+	{
+		const EPantheliaElement* ElementPtr = GameplayTags.DamageTypeToElement.Find(BuildupPair.Key);
+		if (!ElementPtr) continue;
+		const float Amount = BuildupPair.Value.GetValueAtLevel(GetAbilityLevel());
+		switch (*ElementPtr)
+		{
+			case EPantheliaElement::Fire:   ElementBuildup[0] += Amount; break;
+			case EPantheliaElement::Storm:  ElementBuildup[1] += Amount; break;
+			case EPantheliaElement::Water:  ElementBuildup[2] += Amount; break;
+			case EPantheliaElement::Nature: ElementBuildup[3] += Amount; break;
+			default: break; // None: daño sin elemento, no acumula estado
+		}
+	}
+	UAbilitySystemBlueprintLibrary::AssignTagSetByCallerMagnitude(
+		SpecHandle, GameplayTags.CombatTricks_Buildup_Fire, ElementBuildup[0]);
+	UAbilitySystemBlueprintLibrary::AssignTagSetByCallerMagnitude(
+		SpecHandle, GameplayTags.CombatTricks_Buildup_Storm, ElementBuildup[1]);
+	UAbilitySystemBlueprintLibrary::AssignTagSetByCallerMagnitude(
+		SpecHandle, GameplayTags.CombatTricks_Buildup_Water, ElementBuildup[2]);
+	UAbilitySystemBlueprintLibrary::AssignTagSetByCallerMagnitude(
+		SpecHandle, GameplayTags.CombatTricks_Buildup_Nature, ElementBuildup[3]);
 }

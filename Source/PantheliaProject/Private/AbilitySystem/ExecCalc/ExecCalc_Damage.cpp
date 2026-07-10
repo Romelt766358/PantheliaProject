@@ -218,172 +218,19 @@ static void ApplyParryBlockMitigation(
 }
 
 // ================================================================
-// Helper: determinar si un debuff elemental se activa (clase 307)
+// NOTA HISTÓRICA: aquí vivía DetermineDebuff (clases 307-309) — ELIMINADA.
 // ================================================================
-// Recorre los tipos de daño presentes en este golpe (via SetByCaller) y, para
-// cada uno que resuelva a un elemento con debuff asociado, calcula si el debuff
-// se activa (probabilidad del source, mitigada por la resistencia del target).
-//
-// DECISIÓN DE DISEÑO (adaptada del curso): el curso itera un TMap "DamageTypesToDebuffs"
-// (tipo de daño -> debuff, relación 1 a 1) que en la clase 303 decidimos NO construir,
-// porque en Panthelia varios tipos de daño colapsan en el mismo elemento. En su lugar,
-// iteramos DamageTypesToResistances (ya existente, enumera los 8 tipos de daño
-// registrados) y resolvemos el debuff en dos saltos, reutilizando los mapas ya
-// construidos en las clases 303-304:
-//   tipo de daño --(DamageTypeToElement)--> elemento --(ElementToDebuff)--> debuff
-// Un tipo de daño físico genérico (elemento None) no tiene entrada en ElementToDebuff
-// y se salta sin más — sin debuff, correctamente.
-//
-// OJO (a vigilar en clases futuras, no resuelto aquí): si una ability tuviera DOS tipos
-// de daño que colapsan al MISMO elemento (ej. Damage.Physical.Ice y Damage.Magical.Water,
-// ambos Agua), este loop haría la tirada de Saturación dos veces en el mismo golpe. Hoy
-// ninguna ability de Panthelia hace esto, así que no es un problema real todavía — se
-// resuelve si llega a serlo (ej. deduplicando por debuff ya procesado en este golpe).
-//
-// Por ahora esta función SOLO determina si hubo debuff (bDebuff) — qué hacer al
-// respecto es la pregunta que responde la clase siguiente (ver TODO al final).
-static void DetermineDebuff(
-    const FGameplayEffectCustomExecutionParameters& ExecutionParams,
-    const FGameplayEffectSpec& Spec,
-    const FAggregatorEvaluateParameters& EvaluationParameters,
-    const TMap<FGameplayTag, FGameplayEffectAttributeCaptureDefinition>& TagToCaptureDef,
-    bool bWasPerfectParry)
-{
-    // === RESET INCONDICIONAL DEL RESULTADO (fix de contaminación de contexto) ===
-    //
-    // POR QUÉ ESTO ES OBLIGATORIO: en un ataque melee multi-objetivo, el MISMO spec
-    // (y por tanto el MISMO objeto de contexto, compartido por ref-counting) se aplica
-    // a varios objetivos en secuencia (WeaponTraceComponent::PerformTrace). Antes de
-    // este fix, SetIsSuccessfulDebuff(true) solo se escribía en caso de ÉXITO y nunca
-    // se limpiaba: si el dado salía para el objetivo A, el flag quedaba "pegado" en el
-    // contexto compartido y el objetivo B recibía el debuff SIN haber ganado su tirada
-    // (con los parámetros de A, además). La regla que corrige esto — y que ya seguía
-    // correctamente SetIsCriticalHit — es ESCRIBIR SIEMPRE: cada aplicación empieza
-    // reseteando el resultado a false, y solo lo vuelve a poner en true si ESTE
-    // objetivo gana ESTA tirada. Con el flag reseteado, los parámetros viejos
-    // (DebuffDamage/Duration/Frequency/DamageType) que pudieran quedar en el contexto
-    // son inofensivos: Debuff() en el AttributeSet solo los lee cuando el flag es true.
-    FGameplayEffectContextHandle ResetContextHandle = Spec.GetContext();
-    UPantheliaAbilitySystemLibrary::SetIsSuccessfulDebuff(ResetContextHandle, false);
-
-    // === PARRY PERFECTO NIEGA EL DEBUFF (decisión de diseño cerrada) ===
-    //
-    // Gramática soulslike (Lies of P, la referencia de parry del proyecto): un parry
-    // perfecto no solo anula el daño del golpe — también anula sus efectos de estado.
-    // Sin este veto, un jugador que parrease perfectamente un golpe de fuego seguiría
-    // recibiendo la Quemadura, lo que abarataría el valor del parry. El bloqueo
-    // imperfecto (bWasBlocked) NO niega el debuff a propósito: mitigar no es negar.
-    // Nota de orden: para que este parámetro exista, la llamada a esta función vive
-    // AHORA DESPUÉS del cálculo de parry en Execute_Implementation (antes de la clase
-    // 307 se llamaba antes del loop de daño — el orden era indiferente entonces
-    // porque el debuff no consultaba el resultado defensivo).
-    if (bWasPerfectParry)
-    {
-        return;
-    }
-
-    const FPantheliaGameplayTags& Tags = FPantheliaGameplayTags::Get();
-
-    for (const TTuple<FGameplayTag, FGameplayTag>& DamageTypePair : Tags.DamageTypesToResistances)
-    {
-        const FGameplayTag& DamageType = DamageTypePair.Key;
-
-        // ¿Este tipo de daño está presente en el golpe? Spec.GetSetByCallerMagnitude con
-        // WarnIfNotFound=false y DefaultIfNotFound=-1.f: como nunca asignamos daño negativo
-        // (convención del proyecto), -1.f solo puede significar "este tipo no está en el golpe".
-        // Ver ApplyDamageScalingToSpec (clase 303): solo se asignan al SetByCaller los tipos
-        // con BaseValue > 0, así que un tipo ausente del golpe nunca tendrá SetByCaller.
-        const float TypeDamage = Spec.GetSetByCallerMagnitude(DamageType, false, -1.f);
-        if (TypeDamage <= -1.f)
-        {
-            continue;
-        }
-
-        // PASO 1 (adaptado): resolver tipo de daño -> elemento -> debuff.
-        const EPantheliaElement* ElementPtr = Tags.DamageTypeToElement.Find(DamageType);
-        if (!ElementPtr || *ElementPtr == EPantheliaElement::None)
-        {
-            // Daño físico genérico: sin elemento, sin debuff elemental. Comportamiento
-            // correcto, no un caso de error — la mayoría de golpes físicos puros caen aquí.
-            continue;
-        }
-
-        const FGameplayTag* DebuffTypePtr = Tags.ElementToDebuff.Find(*ElementPtr);
-        if (!DebuffTypePtr)
-        {
-            // No debería ocurrir (los 4 elementos con entrada en DamageTypeToElement tienen
-            // su contraparte en ElementToDebuff), pero no crasheamos ante un mapa incompleto.
-            continue;
-        }
-        const FGameplayTag DebuffType = *DebuffTypePtr;
-
-        // PASO 2: probabilidad base del source (viene del SetByCaller asignado en la
-        // clase 306, siempre presente — por eso WarnIfNotFound=false es solo una red de
-        // seguridad, no algo que se espere disparar en la práctica).
-        const float SourceDebuffChance = Spec.GetSetByCallerMagnitude(Tags.Debuff_Chance, false, -1.f);
-
-        // Optimización: si esta ability no tiene ninguna probabilidad de debuff configurada
-        // (0 o el sentinel -1 de "no encontrado"), no tiene sentido capturar la resistencia
-        // del target ni tirar el dado — el resultado sería "no" de todas formas. No cambia
-        // el comportamiento, solo evita trabajo innecesario en cada golpe.
-        if (SourceDebuffChance <= 0.f)
-        {
-            continue;
-        }
-
-        // PASO 3: resistencia elemental del target (mismo patrón que el loop principal
-        // de daño: tipo de daño -> tag de resistencia -> CaptureDef -> valor capturado).
-        float TargetDebuffResistance = 0.f;
-        const FGameplayTag* ResistanceTagPtr = Tags.DamageTypesToResistances.Find(DamageType);
-        if (ResistanceTagPtr && ResistanceTagPtr->IsValid())
-        {
-            if (const FGameplayEffectAttributeCaptureDefinition* CaptureDef = TagToCaptureDef.Find(*ResistanceTagPtr))
-            {
-                ExecutionParams.AttemptCalculateCapturedAttributeMagnitude(*CaptureDef, EvaluationParameters, TargetDebuffResistance);
-            }
-        }
-        TargetDebuffResistance = FMath::Max(TargetDebuffResistance, 0.f);
-
-        // PASO 4: probabilidad efectiva. Cada punto de resistencia resta 1% de probabilidad
-        // (mismo criterio simple que usa el curso — ajustable a curva más adelante si hace falta).
-        const float EffectiveDebuffChance = SourceDebuffChance * (100.f - TargetDebuffResistance) / 100.f;
-
-        // PASO 5: tirada de dado de 100 caras. "<=" y no "<" (fix de sesgo): con "<",
-        // una probabilidad de 100 fallaba el 1% de las veces (RandRange(1,100) nunca es
-        // < 100 cuando sale 100) y una de 20 acertaba solo el 19%. Con "<=" el operador
-        // queda ademas unificado con las tiradas de Knockback/Launch del proyectil y
-        // del WeaponTraceComponent, que ya usaban "<=" correctamente.
-        const bool bDebuff = FMath::RandRange(1, 100) <= EffectiveDebuffChance;
-
-        if (bDebuff)
-        {
-            // Escribimos el resultado en el context del spec para que llegue hasta el
-            // AttributeSet (clase 309). Spec.GetContext() devuelve un HANDLE que comparte
-            // el mismo objeto de contexto subyacente (ref-counting) — no es una copia
-            // independiente, así que escribir en este handle es visible más adelante en
-            // el pipeline, donde sea que se lea el mismo FGameplayEffectSpec/contexto.
-            FGameplayEffectContextHandle ContextHandle = Spec.GetContext();
-
-            // Los 3 parámetros que el debuff necesita para aplicarse de verdad (Chance ya
-            // cumplió su función en la tirada de dado de arriba — no hace falta transportarlo).
-            const float SuccessfulDebuffDamage = Spec.GetSetByCallerMagnitude(Tags.Debuff_Damage, false, -1.f);
-            const float SuccessfulDebuffDuration = Spec.GetSetByCallerMagnitude(Tags.Debuff_Duration, false, -1.f);
-            const float SuccessfulDebuffFrequency = Spec.GetSetByCallerMagnitude(Tags.Debuff_Frequency, false, -1.f);
-
-            UPantheliaAbilitySystemLibrary::SetIsSuccessfulDebuff(ContextHandle, true);
-            UPantheliaAbilitySystemLibrary::SetDamageType(ContextHandle, DamageType);
-            UPantheliaAbilitySystemLibrary::SetDebuffDamage(ContextHandle, SuccessfulDebuffDamage);
-            UPantheliaAbilitySystemLibrary::SetDebuffDuration(ContextHandle, SuccessfulDebuffDuration);
-            UPantheliaAbilitySystemLibrary::SetDebuffFrequency(ContextHandle, SuccessfulDebuffFrequency);
-
-            // Nota de diseño (clase 307, sigue vigente): NO guardamos DebuffType (el tag de
-            // identidad — Debuff.Burn, etc.) en el context. Es derivable de DamageType vía
-            // la misma cadena DamageTypeToElement -> ElementToDebuff que ya usamos arriba,
-            // así que guardarlo aquí sería duplicar información. Quien aplique el debuff más
-            // adelante puede re-derivarlo con una línea de código en vez de leerlo de aquí.
-        }
-    }
-}
+// Era el "dado" del modelo del curso: por cada tipo de daño del golpe, tiraba una
+// probabilidad (DebuffChance mitigada por resistencia) y escribía el resultado en el
+// context para que HandleIncomingDamage aplicara el debuff. DECISIÓN CERRADA que la
+// jubila: en Panthelia los efectos de estado NO tienen azar — funcionan por UMBRAL DE
+// ACUMULACIÓN (buildup), como en Elden Ring/Lies of P: cada golpe elemental suma una
+// cantidad FIJA a la barra del elemento en la víctima, y al llegar a 100 el estado se
+// dispara con certeza. Lo único aleatorio del combate es el crítico. El reemplazo vive
+// en la sección BUILDUP de Execute_Implementation (abajo) + HandleElementalBuildup en
+// el AttributeSet. Con ella murieron: el tag Debuff.Chance, el campo DebuffChance de
+// la ability, y las escrituras de debuff en el context (sus campos quedan en el struct
+// como infraestructura reservada, sin escritores).
 
 void UExecCalc_Damage::Execute_Implementation(
     const FGameplayEffectCustomExecutionParameters& ExecutionParams,
@@ -536,13 +383,10 @@ void UExecCalc_Damage::Execute_Implementation(
         }();
 
     // ================================================================
-    // DEBUFF (clase 307) — NOTA DE REUBICACIÓN (fix parry-niega-debuff)
-    // ================================================================
-    // La llamada a DetermineDebuff vivía aquí (antes del loop de daño) desde la clase
-    // 307. Ahora vive DESPUÉS del bloque de parry/bloqueo, porque necesita saber si
-    // hubo parry perfecto para vetar el debuff (decisión de diseño cerrada). Ver la
-    // llamada y su explicación más abajo, justo después de escribir el resultado del
-    // parry en el context.
+    // NOTA HISTÓRICA: aquí vivió la llamada a DetermineDebuff (clase 307) — el
+    // sistema de debuff por dado fue REEMPLAZADO por el buildup de umbral. Ver la
+    // sección BUILDUP ELEMENTAL más abajo (después de parry y crítico, porque
+    // necesita ambos resultados).
 
     // ================================================================
     // LOOP POR TIPO DE DAÑO (spec §1.8)
@@ -633,8 +477,8 @@ void UExecCalc_Damage::Execute_Implementation(
     // Sin estado defensivo -> dano completo.
     // Booleanos del resultado defensivo, IZADOS fuera del if (TargetTags) — dos motivos:
     // (1) el fix de contaminación de contexto de abajo necesita escribirlos SIEMPRE,
-    // incluso cuando TargetTags es nullptr; (2) DetermineDebuff (más abajo) necesita
-    // bWasPerfectParry para vetar el debuff en un parry perfecto.
+    // incluso cuando TargetTags es nullptr; (2) la sección de BUILDUP (más abajo)
+    // necesita bWasPerfectParry: un parry perfecto niega el buildup del golpe.
     bool bWasPerfectParry = false;
     bool bWasBlocked = false;
     float PoiseToAttacker = 0.f;
@@ -659,8 +503,9 @@ void UExecCalc_Damage::Execute_Implementation(
     //
     // Antes, SetParryResult(true, ...) / SetWasBlocked(true) solo se escribían en caso
     // de ÉXITO, dentro del if (TargetTags). En un melee multi-objetivo que comparte el
-    // mismo contexto entre aplicaciones (ver la explicación completa al inicio de
-    // DetermineDebuff), eso dejaba flags "pegados": si el enemigo A parreaba el swing,
+    // mismo contexto entre aplicaciones (WeaponTraceComponent aplica el mismo spec a
+    // varios objetivos; el handle del contexto es ref-counting, no copia por objetivo),
+    // eso dejaba flags "pegados": si el enemigo A parreaba el swing,
     // el contexto conservaba bWasParried=true al aplicar sobre el enemigo B (que no
     // parreó), y HandleParryReaction re-aplicaba el daño de postura al atacante una
     // segunda vez. La regla del fix — la misma que ya seguía SetIsCriticalHit — es
@@ -674,22 +519,87 @@ void UExecCalc_Damage::Execute_Implementation(
         PantheliaContext->SetWasBlocked(bWasBlocked);
     }
 
-    // ================================================================
-    // DEBUFF (clases 307-309, reubicado) — DESPUÉS del parry, a propósito.
-    // ================================================================
-    // Determina, por cada tipo de daño presente en el golpe, si el debuff elemental
-    // correspondiente se activa, y escribe el resultado en el context. Vive aquí (y no
-    // antes del loop de daño, donde nació en la clase 307) porque ahora consulta
-    // bWasPerfectParry: un parry perfecto niega el debuff (decisión de diseño cerrada
-    // — ver la explicación dentro de la propia función). La función además RESETEA el
-    // resultado a false incondicionalmente al entrar, como parte del fix de
-    // contaminación de contexto en golpes multi-objetivo.
-    DetermineDebuff(ExecutionParams, Spec, EvalParams, TagToCaptureDef, bWasPerfectParry);
-
     // --- CRÍTICO (sobre el total) ---
+    // REUBICADO (sistema de buildup): antes vivía después de esta posición; ahora va
+    // ANTES de la sección de buildup porque esta necesita bCriticalHit (el crítico
+    // multiplica también el buildup que deposita el golpe — decisión cerrada). El
+    // orden de los cálculos de daño no cambia: TotalDamage ya está completo aquí
+    // (loop de tipos + mitigación defensiva del parry), solo faltaban los outputs.
     const bool bCriticalHit = FMath::RandRange(1, 100) <= CritChance;
     TotalDamage = bCriticalHit ? 1.5f * TotalDamage + CritDamage : TotalDamage;
     UPantheliaAbilitySystemLibrary::SetIsCriticalHit(EffectContextHandle, bCriticalHit);
+
+    // ================================================================
+    // BUILDUP ELEMENTAL (sistema de umbral — reemplaza al dado del debuff)
+    // ================================================================
+    // Por cada elemento con buildup entrante en este golpe (SetByCaller
+    // CombatTricks.Buildup.*, colapsado por la ability desde su TMap BuildupAmounts),
+    // calculamos el buildup EFECTIVO y lo depositamos como output modifier en el
+    // atributo XBuildup del target. La fórmula, término a término:
+    //
+    //   Efectivo = Base × (1 − Resistencia/100) × (crítico ? 1.5 : 1)
+    //
+    //   - Resistencia (0-100): reduce el intake linealmente. A 100, el intake es 0:
+    //     INMUNIDAD real al estado (la barra jamás sube). Es la MISMA resistencia
+    //     que ya mitiga el daño elemental — doble rol, decisión cerrada.
+    //   - Crítico ×1.5: el mismo multiplicador BASE del daño (decisión cerrada: un
+    //     crítico con arma elemental acerca más al enemigo a su estado). El flat de
+    //     CritDamage NO se aplica aquí — es una estadística de daño, no de estado.
+    //   - Parry perfecto: buildup CERO (coherente con "parry perfecto niega el
+    //     estado"). El bloqueo imperfecto NO reduce el buildup — mitigar no es negar.
+    //
+    // Vive DESPUÉS del parry y del crítico a propósito: necesita ambos resultados.
+    // El disparo del umbral NO ocurre aquí — ocurre en HandleElementalBuildup
+    // (AttributeSet) cuando estos modifiers lleguen al target.
+    if (!bWasPerfectParry)
+    {
+        struct FBuildupRoute
+        {
+            EPantheliaElement Element;
+            FGameplayTag SetByCallerTag;
+            FGameplayAttribute TargetAttribute;
+        };
+        const FBuildupRoute BuildupRoutes[] =
+        {
+            { EPantheliaElement::Fire,   Tags.CombatTricks_Buildup_Fire,   UPantheliaAttributeSet::GetFireBuildupAttribute() },
+            { EPantheliaElement::Storm,  Tags.CombatTricks_Buildup_Storm,  UPantheliaAttributeSet::GetStormBuildupAttribute() },
+            { EPantheliaElement::Water,  Tags.CombatTricks_Buildup_Water,  UPantheliaAttributeSet::GetWaterBuildupAttribute() },
+            { EPantheliaElement::Nature, Tags.CombatTricks_Buildup_Nature, UPantheliaAttributeSet::GetNatureBuildupAttribute() },
+        };
+
+        for (const FBuildupRoute& Route : BuildupRoutes)
+        {
+            // false = no avisar si el tag no está asignado (abilities antiguas que aún
+            // no re-guardaron su spec); 0 = sin buildup de este elemento.
+            const float BaseBuildup = Spec.GetSetByCallerMagnitude(Route.SetByCallerTag, false, 0.f);
+            if (BaseBuildup <= 0.f) continue;
+
+            // Resistencia del elemento en el TARGET, por la vía canónica:
+            // elemento --(ElementToResistance)--> tag de resistencia --(TagToCaptureDef)--> captura.
+            // Reutiliza las MISMAS capturas que ya usa la mitigación de daño elemental.
+            float Resistance = 0.f;
+            if (const FGameplayTag* ResistanceTag = Tags.ElementToResistance.Find(Route.Element))
+            {
+                if (const FGameplayEffectAttributeCaptureDefinition* CaptureDef = TagToCaptureDef.Find(*ResistanceTag))
+                {
+                    ExecutionParams.AttemptCalculateCapturedAttributeMagnitude(*CaptureDef, EvalParams, Resistance);
+                    Resistance = FMath::Clamp(Resistance, 0.f, 100.f);
+                }
+            }
+
+            const float CritMultiplier = bCriticalHit ? 1.5f : 1.f;
+            const float EffectiveBuildup = BaseBuildup * ((100.f - Resistance) / 100.f) * CritMultiplier;
+
+            // Resistencia 100 (o redondeos) → nada que depositar: inmunidad silenciosa.
+            if (EffectiveBuildup <= 0.f) continue;
+
+            // Output modifier Additive sobre el atributo de barra del target. GAS lo
+            // aplicará junto al daño, y PostGameplayEffectExecute (rama del atributo)
+            // hará el clamp + chequeo de umbral + disparo en HandleElementalBuildup.
+            OutExecutionOutput.AddOutputModifier(FGameplayModifierEvaluatedData(
+                Route.TargetAttribute, EGameplayModOp::Additive, EffectiveBuildup));
+        }
+    }
 
     // --- DAÑO A POSTURA ---
     const float BasePoiseDamage = Spec.GetSetByCallerMagnitude(Tags.Damage_Poise, false);

@@ -14,9 +14,9 @@
 #include "Characters/PantheliaEnemy.h"
 // Desacopla el bloque IncomingXP del AttributeSet del PlayerState concreto.
 // En vez de castear a APantheliaPlayerState directamente, usamos la interfaz.
-#include "Interfaces/PantheliaPlayerInterface.h" 
+#include "Interfaces/PantheliaPlayerInterface.h"
 // Necesario para UAbilitySystemBlueprintLibrary::SendGameplayEventToActor en SendXPEvent
-#include "AbilitySystemBlueprintLibrary.h" 
+#include "AbilitySystemBlueprintLibrary.h"
 #include "GameFramework/PlayerController.h"
 #include "PantheliaLogChannels.h"
 // Necesario para crear un UGameplayEffect dinámicamente en C++ (clase 310): UGameplayEffect,
@@ -38,9 +38,16 @@ UPantheliaAttributeSet::UPantheliaAttributeSet()
 	InitArmorPenetration(0.f); InitMagicPenetration(0.f);
 	InitCritChance(0.f); InitCritDamage(0.f);
 
-	// Resistencias (inicialmente 0 — el GE de secundarios las calcula desde Resilience)
+	// Resistencias (inicialmente 0). ORIGEN (decisión cerrada): árbol de habilidades,
+	// accesorios y armaduras — NO derivan de primarios. El Override placeholder desde
+	// Resilience en GE_SecondaryAttributes debe eliminarse en el editor (Etapa 3).
 	InitFireResistance(0.f); InitWaterResistance(0.f);
 	InitStormResistance(0.f); InitNatureResistance(0.f);
+
+	// Barras de buildup elemental (inicialmente 0 — vacías). Solo las llena el
+	// ExecCalc con golpes elementales; solo las vacía el decay o el disparo del estado.
+	InitFireBuildup(0.f); InitStormBuildup(0.f);
+	InitWaterBuildup(0.f); InitNatureBuildup(0.f);
 
 	// Vitales
 	InitHealth(75.f); InitMana(50.f); InitStamina(50.f); InitPoise(50.f);
@@ -76,6 +83,13 @@ UPantheliaAttributeSet::UPantheliaAttributeSet()
 	TagsToAttributes.Add(Tags.Attributes_Resistance_Water, GetWaterResistanceAttribute);
 	TagsToAttributes.Add(Tags.Attributes_Resistance_Storm, GetStormResistanceAttribute);
 	TagsToAttributes.Add(Tags.Attributes_Resistance_Nature, GetNatureResistanceAttribute);
+
+	// Barras de buildup elemental — registradas desde el primer día para que la
+	// futura UI de barras de estado del enemigo se bindee por tag sin tocar C++.
+	TagsToAttributes.Add(Tags.Attributes_Buildup_Fire, GetFireBuildupAttribute);
+	TagsToAttributes.Add(Tags.Attributes_Buildup_Storm, GetStormBuildupAttribute);
+	TagsToAttributes.Add(Tags.Attributes_Buildup_Water, GetWaterBuildupAttribute);
+	TagsToAttributes.Add(Tags.Attributes_Buildup_Nature, GetNatureBuildupAttribute);
 }
 
 void UPantheliaAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
@@ -107,6 +121,11 @@ void UPantheliaAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty
 	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, StormResistance, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, NatureResistance, COND_None, REPNOTIFY_Always);
 
+	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, FireBuildup, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, StormBuildup, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, WaterBuildup, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, NatureBuildup, COND_None, REPNOTIFY_Always);
+
 	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, Health, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, Mana, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, Stamina, COND_None, REPNOTIFY_Always);
@@ -127,6 +146,14 @@ void UPantheliaAttributeSet::PreAttributeChange(const FGameplayAttribute& Attrib
 	else if (Attribute == GetWaterResistanceAttribute())  NewValue = FMath::Clamp(NewValue, 0.f, 100.f);
 	else if (Attribute == GetStormResistanceAttribute())  NewValue = FMath::Clamp(NewValue, 0.f, 100.f);
 	else if (Attribute == GetNatureResistanceAttribute()) NewValue = FMath::Clamp(NewValue, 0.f, 100.f);
+
+	// Barras de buildup: clamp 0..BuildupThreshold. El disparo del umbral NO vive
+	// aquí (PreAttributeChange no debe tener lógica de juego, solo clamps) — vive en
+	// HandleElementalBuildup, que solo corre cuando el buildup entra por el ExecCalc.
+	else if (Attribute == GetFireBuildupAttribute())   NewValue = FMath::Clamp(NewValue, 0.f, BuildupThreshold);
+	else if (Attribute == GetStormBuildupAttribute())  NewValue = FMath::Clamp(NewValue, 0.f, BuildupThreshold);
+	else if (Attribute == GetWaterBuildupAttribute())  NewValue = FMath::Clamp(NewValue, 0.f, BuildupThreshold);
+	else if (Attribute == GetNatureBuildupAttribute()) NewValue = FMath::Clamp(NewValue, 0.f, BuildupThreshold);
 }
 
 void UPantheliaAttributeSet::PostAttributeChange(const FGameplayAttribute& Attribute, float OldValue, float NewValue)
@@ -240,6 +267,29 @@ void UPantheliaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModC
 	{
 		HandleIncomingDamage(Props);
 	}
+	// --- BARRAS DE BUILDUP ELEMENTAL (sistema de umbral, sin azar) ---
+	// Estas ramas SOLO se ejecutan cuando el buildup entra como output modifier del
+	// ExecCalc (un golpe elemental). El decay (TickBuildupDecay en CharacterBase)
+	// escribe la base con SetNumericAttributeBase, que NO dispara
+	// PostGameplayEffectExecute — por diseño: vaciar la barra jamás debe re-evaluar
+	// el umbral. Una rama por elemento porque GAS llama a esta función una vez por
+	// modificador de salida, con Data.EvaluatedData señalando el atributo concreto.
+	else if (Data.EvaluatedData.Attribute == GetFireBuildupAttribute())
+	{
+		HandleElementalBuildup(Data, EPantheliaElement::Fire);
+	}
+	else if (Data.EvaluatedData.Attribute == GetStormBuildupAttribute())
+	{
+		HandleElementalBuildup(Data, EPantheliaElement::Storm);
+	}
+	else if (Data.EvaluatedData.Attribute == GetWaterBuildupAttribute())
+	{
+		HandleElementalBuildup(Data, EPantheliaElement::Water);
+	}
+	else if (Data.EvaluatedData.Attribute == GetNatureBuildupAttribute())
+	{
+		HandleElementalBuildup(Data, EPantheliaElement::Nature);
+	}
 	else if (Data.EvaluatedData.Attribute == GetIncomingPoiseDamageAttribute())
 	{
 		const float LocalIncomingPoiseDamage = GetIncomingPoiseDamage();
@@ -304,14 +354,14 @@ void UPantheliaAttributeSet::HandleIncomingDamage(const FEffectProperties& Props
 	// los efectos elementales (gancho). El bloqueo no daña la postura del atacante.
 	HandleParryReaction(Props);
 
-	// --- DEBUFF (clases 307-309) ---
-	// Leemos el resultado que ExecCalc_Damage (DetermineDebuff) escribió en el context.
-	// Si hubo un debuff exitoso, Debuff(Props) es donde reaccionamos — todavía vacía,
-	// ver la función más abajo y su comentario.
-	if (UPantheliaAbilitySystemLibrary::IsSuccessfulDebuff(Props.EffectContextHandle))
-	{
-		Debuff(Props);
-	}
+	// --- DEBUFF: la ruta antigua por context (clases 307-309) FUE ELIMINADA ---
+	// El disparador de los efectos de estado ya no es un dado en el ExecCalc leído
+	// aquí vía IsSuccessfulDebuff — es el UMBRAL de las barras de buildup (sistema
+	// soulslike, sin azar). Ver HandleElementalBuildup más abajo: el ExecCalc deposita
+	// buildup en los atributos XBuildup, y cuando una barra llega a BuildupThreshold,
+	// ESE es el momento en que el estado se dispara, con certeza.
+	// (Los campos de debuff del FPantheliaGameplayEffectContext se conservan en el
+	// struct pero ya nadie los escribe — quedan como infraestructura reservada.)
 
 	if (LocalIncomingDamage > 0.f)
 	{
@@ -536,116 +586,197 @@ void UPantheliaAttributeSet::HandleIncomingXP(const FEffectProperties& Props)
 // LIMITACIÓN IMPORTANTE (viene del motor, no es un descuido nuestro): los GE creados así
 // en C++ no soportan replicación de red correctamente. Como el proyecto es sin
 // multiplayer (regla del proyecto), esto no nos afecta.
-void UPantheliaAttributeSet::Debuff(const FEffectProperties& Props)
+// ============================================================
+// SISTEMA DE BUILDUP — disparo por umbral (reemplaza al dado del curso)
+// ============================================================
+
+void UPantheliaAttributeSet::HandleElementalBuildup(const FGameplayEffectModCallbackData& Data, EPantheliaElement Element)
 {
-	// El SourceASC crea el contexto — es quien origina el debuff (el atacante original).
+	// Props: mismas propiedades de efecto que usa el resto de handlers (fuente,
+	// target, ASCs, context) — las necesita el disparador para construir el estado.
+	FEffectProperties Props;
+	SetEffectProperties(Data, Props);
+
+	// Leer/clampear/reescribir la barra del elemento. El clamp de PreAttributeChange
+	// ya recortó el CurrentValue, pero reescribimos la BASE explícitamente (mismo
+	// razonamiento del base corrupto documentado en PostAttributeChange): la barra
+	// es estado persistente y su base jamás debe superar el umbral.
+	float Current = 0.f;
+	switch (Element)
+	{
+		case EPantheliaElement::Fire:   Current = GetFireBuildup();   break;
+		case EPantheliaElement::Storm:  Current = GetStormBuildup();  break;
+		case EPantheliaElement::Water:  Current = GetWaterBuildup();  break;
+		case EPantheliaElement::Nature: Current = GetNatureBuildup(); break;
+		default: return;
+	}
+
+	const float Clamped = FMath::Clamp(Current, 0.f, BuildupThreshold);
+
+	// ¿Se llenó la barra? El estado se dispara CON CERTEZA (sin dado) y la barra se
+	// resetea a 0 — exactamente el ciclo de Elden Ring/Lies of P: acumular, procar,
+	// volver a empezar. Nota: >= y no ==, porque el clamp puede dejar el valor
+	// EXACTAMENTE en el umbral desde cualquier exceso.
+	const bool bTriggered = Clamped >= BuildupThreshold;
+	const float NewValue = bTriggered ? 0.f : Clamped;
+
+	switch (Element)
+	{
+		case EPantheliaElement::Fire:   SetFireBuildup(NewValue);   break;
+		case EPantheliaElement::Storm:  SetStormBuildup(NewValue);  break;
+		case EPantheliaElement::Water:  SetWaterBuildup(NewValue);  break;
+		case EPantheliaElement::Nature: SetNatureBuildup(NewValue); break;
+		default: break;
+	}
+
+	// Avisar al personaje de que recibió buildup, para que (re)arranque su timer de
+	// decay — mismo patrón exacto que ResetPoiseRegenTimer para la postura: el
+	// AttributeSet no gestiona timers, se lo pide al Character vía la interfaz.
+	if (ICombatInterface* CombatInterface = Cast<ICombatInterface>(Props.TargetAvatarActor))
+	{
+		CombatInterface->NotifyElementalBuildupReceived();
+	}
+
+	if (bTriggered)
+	{
+		TriggerElementalStatus(Props, Element, Data.EffectSpec);
+	}
+}
+
+void UPantheliaAttributeSet::TriggerElementalStatus(const FEffectProperties& Props, EPantheliaElement Element,
+	const FGameplayEffectSpec& TriggeringSpec)
+{
+	const FPantheliaGameplayTags& GameplayTags = FPantheliaGameplayTags::Get();
+
+	// Tag de identidad del estado, por la vía canónica ElementToDebuff (una fuente
+	// de verdad, 4 entradas — ver PantheliaGameplayTags.h).
+	const FGameplayTag* DebuffTagPtr = GameplayTags.ElementToDebuff.Find(Element);
+	if (!DebuffTagPtr || !DebuffTagPtr->IsValid()) return;
+
+	// Los parámetros del estado los define EL GOLPE QUE LLENÓ LA BARRA: sus
+	// SetByCaller Debuff.Damage/Duration/Frequency (transportados desde la clase 304,
+	// asignados siempre por ApplyDamageScalingToSpec). Es la lectura soulslike
+	// natural: el veneno que te remata define cómo de fuerte es el envenenamiento.
+	const float Damage    = TriggeringSpec.GetSetByCallerMagnitude(GameplayTags.Debuff_Damage, false, 0.f);
+	const float Duration  = TriggeringSpec.GetSetByCallerMagnitude(GameplayTags.Debuff_Duration, false, 0.f);
+	const float Frequency = TriggeringSpec.GetSetByCallerMagnitude(GameplayTags.Debuff_Frequency, false, 1.f);
+
+	// === PUNTO DE DESPACHO POR ELEMENTO ===
+	// HOY los 4 elementos aplican el DoT genérico como payload provisional. Los
+	// payloads reales del diseño (Gameplay_Mechanics, "Efectos de estado") se
+	// implementan AQUÍ, caso por caso, sin tocar nada más del pipeline:
+	switch (Element)
+	{
+		case EPantheliaElement::Fire:
+			// Quemadura: el DoT ya ES el payload correcto del diseño.
+			// TODO (diseño): sinergia "golpear al quemado con arma de fuego cura al
+			// atacante" — vive en el ExecCalc/HandleIncomingDamage consultando
+			// Debuff.Burn en el target, no aquí.
+			ApplyElementalDebuff(Props, *DebuffTagPtr, Damage, Duration, Frequency);
+			break;
+
+		case EPantheliaElement::Storm:
+			// TODO (diseño): Electrocución es una DETONACIÓN al llenarse (daño +
+			// daño de postura + restaura vida/maná al usuario si está cerca), NO un
+			// DoT. Payload provisional: DoT genérico, para que el sistema sea
+			// testeable de punta a punta desde hoy.
+			ApplyElementalDebuff(Props, *DebuffTagPtr, Damage, Duration, Frequency);
+			break;
+
+		case EPantheliaElement::Water:
+			// TODO (diseño): Saturación es una DEBILIDAD (reduce drásticamente la
+			// resistencia mágica durante la duración), NO un DoT. Cuando se
+			// implemente: ApplyElementalDebuff con Damage=0 (estado solo-tag) + un
+			// GE Infinite/Duration con el modificador de MagicResistance.
+			ApplyElementalDebuff(Props, *DebuffTagPtr, Damage, Duration, Frequency);
+			break;
+
+		case EPantheliaElement::Nature:
+			// Veneno: DoT (payload provisional válido; números por cerrar en diseño).
+			ApplyElementalDebuff(Props, *DebuffTagPtr, Damage, Duration, Frequency);
+			break;
+
+		default:
+			break;
+	}
+
+	UE_LOG(LogPanthelia, Log, TEXT("[BUILDUP] Barra de '%s' LLENA en '%s' — estado disparado (dmg %.1f / dur %.1f / freq %.1f)."),
+		*DebuffTagPtr->ToString(),
+		Props.TargetCharacter ? *Props.TargetCharacter->GetName() : TEXT("null"),
+		Damage, Duration, Frequency);
+}
+
+void UPantheliaAttributeSet::ApplyElementalDebuff(const FEffectProperties& Props, const FGameplayTag& DebuffTag,
+	float Damage, float Duration, float Frequency)
+{
+	if (!DebuffTag.IsValid() || !Props.SourceASC || !Props.TargetASC) return;
+
+	// Un estado sin duración no tiene sentido — dato malo, rechazado con aviso.
+	if (Duration <= 0.f)
+	{
+		UE_LOG(LogPanthelia, Warning,
+			TEXT("[DEBUFF] Duracion invalida (%.2f) para '%s' — no se aplica. Revisa DebuffDuration en la ability que lleno la barra."),
+			Duration, *DebuffTag.ToString());
+		return;
+	}
+
+	// ¿Este estado tiquea daño (DoT) o es solo-tag? Con Damage <= 0 construimos la
+	// variante SOLO-TAG: sin modificador, sin Period — el GE existe únicamente para
+	// conceder el tag de identidad durante la duración (lo que necesitará Saturación).
+	const bool bIsDoT = Damage > 0.f;
+
+	// === GUARD DE FRECUENCIA (solo aplica a la variante DoT) ===
+	// Period = 0 en un GE con un modificador sobre IncomingDamage NO significa "sin
+	// ticks": convierte el modificador Additive en un AGREGADO CONTINUO silencioso
+	// sobre el meta atributo durante toda la duración. Dato malo → rechazado.
+	if (bIsDoT && Frequency <= 0.f)
+	{
+		UE_LOG(LogPanthelia, Warning,
+			TEXT("[DEBUFF] Frecuencia invalida (%.2f) para el DoT de '%s' — no se aplica. Revisa DebuffFrequency en la ability."),
+			Frequency, *DebuffTag.ToString());
+		return;
+	}
+
+	// El SourceASC crea el contexto — quien llenó la barra es quien origina el estado.
 	FGameplayEffectContextHandle EffectContextHandle = Props.SourceASC->MakeEffectContext();
 	EffectContextHandle.AddSourceObject(Props.SourceAvatarActor);
 
-	// El tipo de daño que causó el debuff — lo guardamos en el context del golpe ORIGINAL
-	// en la clase 309 (ExecCalc_Damage → SetDamageType). Lo leemos de vuelta aquí para
-	// saber qué debuff construir.
-	const FGameplayTag DamageType = UPantheliaAbilitySystemLibrary::GetDamageType(Props.EffectContextHandle);
-
-	// Los 3 parámetros del debuff viajan desde el context del golpe original — los
-	// escribimos ahí en la clase 309 (ExecCalc_Damage → SetDebuffDamage/Duration/Frequency).
-	const float DebuffDamage = UPantheliaAbilitySystemLibrary::GetDebuffDamage(Props.EffectContextHandle);
-	const float DebuffDuration = UPantheliaAbilitySystemLibrary::GetDebuffDuration(Props.EffectContextHandle);
-	const float DebuffFrequency = UPantheliaAbilitySystemLibrary::GetDebuffFrequency(Props.EffectContextHandle);
-
-	// === GUARD DE FRECUENCIA (fix auditoría) ===
-	// Period = 0 en un GE con un modificador sobre IncomingDamage NO significa "sin
-	// ticks": significa que el GE deja de ser periódico y su modificador Additive se
-	// convierte en un AGREGADO CONTINUO sobre el meta atributo durante toda la
-	// duración — IncomingDamage quedaría "inflado" sin ejecutar nunca
-	// PostGameplayEffectExecute. Es un estado silencioso y sin sentido, así que un
-	// dato malo (frecuencia <= 0) se rechaza aquí con aviso, en vez de aplicarse mal.
-	if (DebuffFrequency <= 0.f)
-	{
-		UE_LOG(LogPanthelia, Warning,
-			TEXT("[DEBUFF] Frecuencia invalida (%.2f) para el debuff de '%s' — no se aplica. Revisa DebuffFrequency en la ability."),
-			DebuffFrequency, *DamageType.ToString());
-		return;
-	}
-
-	// Resolver el tag de IDENTIDAD del debuff (Debuff.Burn, etc.) desde el tipo de
-	// daño, con la misma cadena de dos saltos que usa DetermineDebuff en
-	// ExecCalc_Damage: tipo de daño → elemento → debuff. (ADAPTACIÓN DE DISEÑO desde
-	// la clase 303: el curso usa un mapa directo DamageTypesToDebuffs que decidimos
-	// NO construir, porque varios tipos de daño colapsan al mismo elemento.)
-	// Lo resolvemos ANTES de construir nada porque ahora es la CLAVE del caché.
 	const FPantheliaGameplayTags& GameplayTags = FPantheliaGameplayTags::Get();
-	FGameplayTag DebuffTag;
-	if (const EPantheliaElement* ElementPtr = GameplayTags.DamageTypeToElement.Find(DamageType))
-	{
-		if (*ElementPtr != EPantheliaElement::None)
-		{
-			if (const FGameplayTag* DebuffTagPtr = GameplayTags.ElementToDebuff.Find(*ElementPtr))
-			{
-				DebuffTag = *DebuffTagPtr;
-			}
-		}
-	}
-	if (!DebuffTag.IsValid())
-	{
-		// Sin tag de identidad no hay debuff que construir (daño sin elemento, o mapa
-		// incompleto). No debería llegar aquí — DetermineDebuff ya filtró estos casos
-		// antes de marcar el éxito — pero no crasheamos ante datos inconsistentes.
-		return;
-	}
 
-	// === DEFINICIÓN CACHEADA (fix auditoría — ver la explicación completa sobre
-	// CachedDebuffEffects en el .h: arregla el stacking real y elimina la colisión
-	// de nombres de la versión anterior) ===
+	// === DEFINICIÓN CACHEADA (ver la explicación completa sobre CachedDebuffEffects
+	// en el .h: arregla el stacking real y elimina la colisión de nombres) ===
 	//
-	// La clave incluye el tag de debuff Y la frecuencia: el Period es una propiedad
-	// FIJA de la definición (no puede ser SetByCaller), así que frecuencias distintas
-	// necesitan definiciones distintas — y no deben stackear entre sí de todas formas.
-	// Daño y duración SÍ son SetByCaller del spec (más abajo), por eso no aparecen
-	// en la clave: mil combinaciones de daño/duración comparten UNA definición.
-	const FName CacheKey(*FString::Printf(TEXT("DynamicDebuff_%s_P%.2f"),
-		*DebuffTag.ToString(), DebuffFrequency));
+	// La clave incluye el tag Y la variante: para los DoT también la frecuencia (el
+	// Period es propiedad FIJA de la definición, no puede ser SetByCaller); la
+	// variante solo-tag no tiene Period y usa su propia clave. Daño y duración SÍ
+	// son SetByCaller del spec (abajo), por eso no fragmentan el caché.
+	const FName CacheKey = bIsDoT
+		? FName(*FString::Printf(TEXT("DynamicDebuff_%s_P%.2f"), *DebuffTag.ToString(), Frequency))
+		: FName(*FString::Printf(TEXT("DynamicStatus_%s"), *DebuffTag.ToString()));
 
 	TObjectPtr<UGameplayEffect>& CachedEffect = CachedDebuffEffects.FindOrAdd(CacheKey);
 	if (!CachedEffect)
 	{
-		// Primera vez que se necesita esta combinación (debuff, frecuencia): se
-		// construye la definición UNA vez y queda cacheada para toda la partida.
-		// El nombre descriptivo sirve para identificarla en el debugger de GAS
-		// (showdebug abilitysystem) — y ahora, además, es único por construcción
-		// (una sola creación por clave), así que la colisión de NewObject con un
-		// nombre ya vivo es imposible.
+		// Primera vez que se necesita esta combinación: se construye la definición
+		// UNA vez y queda cacheada para toda la partida. El nombre descriptivo sirve
+		// en el debugger de GAS (showdebug abilitysystem) y es único por construcción.
 		UGameplayEffect* Effect = NewObject<UGameplayEffect>(GetTransientPackage(), CacheKey);
 
-		// Duración: el debuff dura un tiempo (no es instantáneo ni infinito).
+		// Duración: el estado dura un tiempo (no es instantáneo ni infinito).
 		Effect->DurationPolicy = EGameplayEffectDurationType::HasDuration;
 
-		// Period = cada cuántos segundos tiquea el daño. Fijo en la definición (por
-		// eso forma parte de la clave del caché).
-		Effect->Period = DebuffFrequency;
-
-		// EXPLÍCITO (decisión documentada, no un default heredado en silencio): el
-		// primer tick se ejecuta EN EL INSTANTE de aplicarse — la Quemadura "muerde"
-		// junto al golpe que la causó, y luego cada Period. Si algún día se prefiere
-		// que el primer tick espere un Period completo, este es el interruptor.
-		Effect->bExecutePeriodicEffectOnApplication = true;
-
-		// DurationMagnitude por SetByCaller (CAMBIO respecto a la versión anterior,
-		// que la fijaba con un FScalableFloat constante): al ser SetByCaller, cada
-		// APLICACIÓN trae su propia duración en el spec — imprescindible para que la
-		// definición sea reutilizable entre abilities con duraciones distintas.
-		// Reutilizamos el tag Debuff.Duration que ya existía como transporte (clase 304).
+		// DurationMagnitude por SetByCaller: cada APLICACIÓN trae su propia duración
+		// en el spec — imprescindible para que la definición sea reutilizable entre
+		// abilities con duraciones distintas. Tag Debuff.Duration (clase 304).
 		FSetByCallerFloat DurationSetByCaller;
 		DurationSetByCaller.DataTag = GameplayTags.Debuff_Duration;
 		Effect->DurationMagnitude = FGameplayEffectModifierMagnitude(DurationSetByCaller);
 
 		// --- TAG CONCEDIDO AL TARGET ---
-		// ADAPTACIÓN DE API DE MOTOR (no es decisión de diseño nuestra — requisito de
-		// UE 5.8): el curso usa "InheritableOwnedTagsContainer.AddTag(tag)" directamente
-		// sobre el GameplayEffect. Esa propiedad está DEPRECADA desde UE 5.3 — Epic
-		// movió la gestión de tags concedidos a los "Gameplay Effect Components". La
-		// forma correcta en 5.8: añadir un UTargetTagsGameplayEffectComponent al efecto
-		// y llamar a SetAndApplyTargetTagChanges() con un FInheritedTagContainer relleno.
+		// ADAPTACIÓN DE API DE MOTOR (requisito de UE 5.8, no decisión nuestra): el
+		// curso usa "InheritableOwnedTagsContainer.AddTag(tag)", DEPRECADO desde
+		// UE 5.3. Forma correcta en 5.8: UTargetTagsGameplayEffectComponent +
+		// FInheritedTagContainer + SetAndApplyTargetTagChanges().
 		FInheritedTagContainer TagContainer;
 		TagContainer.AddTag(DebuffTag);
 		UTargetTagsGameplayEffectComponent& TagComponent =
@@ -661,65 +792,68 @@ void UPantheliaAttributeSet::Debuff(const FEffectProperties& Props)
 		// de fijar el stacking en un GE creado en runtime. El día que actualices de
 		// UE 5.8, ESTA es la primera línea que revisar si el proyecto deja de compilar.
 		//
-		// Y AHORA EL STACKING FUNCIONA DE VERDAD (fix auditoría): con la definición
-		// cacheada, dos Quemaduras seguidas sobre el mismo enemigo SÍ son "el mismo
-		// efecto" para GAS (misma definición) → la segunda refresca a la primera en
-		// vez de correr en paralelo. Con las definiciones nuevas-por-aplicación de la
-		// versión anterior, estas dos líneas no tenían ningún efecto real entre
-		// aplicaciones (el stacking de GAS agrupa por definición).
+		// Con la definición cacheada, el stacking FUNCIONA de verdad: dos Quemaduras
+		// seguidas sobre el mismo enemigo son "el mismo efecto" para GAS (misma
+		// definición) → la segunda refresca a la primera en vez de correr en paralelo.
 		Effect->StackingType = EGameplayEffectStackingType::AggregateBySource;
 		Effect->StackLimitCount = 1;
 
-		// --- MODIFICADOR: cuánto daño tiquea cada Period ---
-		// Magnitud por SetByCaller (mismo motivo que la duración: reutilizable entre
-		// abilities). Reutilizamos el tag Debuff.Damage (clase 304).
-		const int32 Index = Effect->Modifiers.Num();
-		Effect->Modifiers.SetNum(Index + 1);
-		FGameplayModifierInfo& ModifierInfo = Effect->Modifiers[Index];
+		if (bIsDoT)
+		{
+			// Period = cada cuántos segundos tiquea el daño. Fijo en la definición
+			// (por eso forma parte de la clave del caché).
+			Effect->Period = Frequency;
 
-		FSetByCallerFloat DamageSetByCaller;
-		DamageSetByCaller.DataTag = GameplayTags.Debuff_Damage;
-		ModifierInfo.ModifierMagnitude = FGameplayEffectModifierMagnitude(DamageSetByCaller);
-		ModifierInfo.ModifierOp = EGameplayModOp::Additive;
-		ModifierInfo.Attribute = UPantheliaAttributeSet::GetIncomingDamageAttribute();
+			// EXPLÍCITO (decisión documentada): el primer tick se ejecuta EN EL
+			// INSTANTE de aplicarse — el estado "muerde" junto al golpe que llenó la
+			// barra, y luego cada Period. Interruptor por si se prefiere lo contrario.
+			Effect->bExecutePeriodicEffectOnApplication = true;
+
+			// --- MODIFICADOR: cuánto daño tiquea cada Period ---
+			// Magnitud por SetByCaller (mismo motivo que la duración). Tag
+			// Debuff.Damage (clase 304). NOTA: el tick modifica IncomingDamage
+			// DIRECTAMENTE, sin pasar por el ExecCalc — por eso los i-frames NO
+			// bloquean los ticks (decisión cerrada, ver el chequeo de State.Invulnerable
+			// en ExecCalc_Damage).
+			const int32 Index = Effect->Modifiers.Num();
+			Effect->Modifiers.SetNum(Index + 1);
+			FGameplayModifierInfo& ModifierInfo = Effect->Modifiers[Index];
+
+			FSetByCallerFloat DamageSetByCaller;
+			DamageSetByCaller.DataTag = GameplayTags.Debuff_Damage;
+			ModifierInfo.ModifierMagnitude = FGameplayEffectModifierMagnitude(DamageSetByCaller);
+			ModifierInfo.ModifierOp = EGameplayModOp::Additive;
+			ModifierInfo.Attribute = UPantheliaAttributeSet::GetIncomingDamageAttribute();
+		}
+		// (Variante solo-tag: sin Period ni modificadores — el GE solo concede el tag.)
 
 		CachedEffect = Effect;
 	}
 
-	// --- CONSTRUIR EL SPEC (con los valores de ESTE golpe) Y APLICARLO ---
+	// --- CONSTRUIR EL SPEC (con los valores de ESTE estado) Y APLICARLO ---
 	//
-	// CORRECCIÓN respecto al curso (mejora técnica, se conserva del refactor original):
-	// el curso crea el spec con "new FGameplayEffectSpec(...)" y nunca lo libera — fuga
-	// de memoria permanente en CADA debuff. FGameplayEffectSpec es un struct normal:
-	// variable local en el stack, se destruye sola al salir de la función.
+	// CORRECCIÓN respecto al curso (conservada del refactor original): el curso crea
+	// el spec con "new FGameplayEffectSpec(...)" y nunca lo libera — fuga de memoria.
+	// FGameplayEffectSpec es un struct normal: variable local en el stack.
 	//
-	// Nivel 1 siempre (simplificación deliberada, igual que el curso): los debuffs no
-	// escalan por nivel de ability en esta primera versión.
+	// Nivel 1 siempre (simplificación deliberada): los estados no escalan por nivel
+	// de ability en esta primera versión.
 	FGameplayEffectSpec MutableSpec(CachedEffect, EffectContextHandle, 1.f);
 
-	// Los valores concretos de ESTE debuff viajan como SetByCaller del spec — la
-	// definición cacheada es genérica; el spec es lo específico de cada aplicación.
-	MutableSpec.SetSetByCallerMagnitude(GameplayTags.Debuff_Duration, DebuffDuration);
-	MutableSpec.SetSetByCallerMagnitude(GameplayTags.Debuff_Damage, DebuffDamage);
+	// Los valores concretos viajan como SetByCaller del spec — la definición cacheada
+	// es genérica; el spec es lo específico de cada aplicación. El de daño se asigna
+	// también en la variante solo-tag (nadie lo lee ahí, pero un SetByCaller asignado
+	// de más es inofensivo y mantiene el código sin ramas extra).
+	MutableSpec.SetSetByCallerMagnitude(GameplayTags.Debuff_Duration, Duration);
+	MutableSpec.SetSetByCallerMagnitude(GameplayTags.Debuff_Damage, Damage);
 
-	// Este es un context NUEVO (el que creamos arriba con MakeEffectContext), NO el
-	// context del golpe original que disparó el debuff. Le asignamos el DamageType aquí
-	// también, por si algo más adelante en el pipeline de ESTE debuff necesitara leerlo
-	// igual que hicimos con el golpe original.
-	if (FPantheliaGameplayEffectContext* PantheliaContext =
-		static_cast<FPantheliaGameplayEffectContext*>(MutableSpec.GetContext().Get()))
-	{
-		const TSharedPtr<FGameplayTag> DebuffDamageTypePtr = MakeShareable(new FGameplayTag(DamageType));
-		PantheliaContext->SetDamageType(DebuffDamageTypePtr);
-	}
-
-	// IMPORTANTE (evita un bucle infinito): NO establecemos IsSuccessfulDebuff en este
-	// context nuevo. Cuando el propio debuff tiquee daño (cada Period), disparará su
-	// propio PostGameplayEffectExecute → HandleIncomingDamage, y ese chequeo leerá
-	// IsSuccessfulDebuff de ESTE context nuevo — que nunca lo pusimos en true, así que
-	// Debuff() no se vuelve a llamar a sí misma. Si algún día quisieras que los debuffs
-	// pudieran encadenar otros debuffs, este es el sitio exacto a tocar — con mucho
-	// cuidado de no crear un ciclo infinito.
+	// IMPORTANTE (evita un bucle infinito): este context NUEVO no lleva buildup ni
+	// flags de estado. Cuando el DoT tiquee daño (cada Period), disparará su propio
+	// PostGameplayEffectExecute → HandleIncomingDamage — pero ese golpe interno no
+	// deposita buildup (no trae SetByCallers de buildup ni pasa por el ExecCalc), así
+	// que un estado jamás llena barras ni encadena otros estados. Si algún día se
+	// quisiera lo contrario (estados que alimentan otras barras), este es el sitio
+	// exacto — con mucho cuidado de no crear un ciclo.
 	Props.TargetASC->ApplyGameplayEffectSpecToSelf(MutableSpec);
 }
 
@@ -750,6 +884,11 @@ void UPantheliaAttributeSet::OnRep_FireResistance(const FGameplayAttributeData& 
 void UPantheliaAttributeSet::OnRep_WaterResistance(const FGameplayAttributeData& O)  const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, WaterResistance, O); }
 void UPantheliaAttributeSet::OnRep_StormResistance(const FGameplayAttributeData& O)  const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, StormResistance, O); }
 void UPantheliaAttributeSet::OnRep_NatureResistance(const FGameplayAttributeData& O) const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, NatureResistance, O); }
+
+void UPantheliaAttributeSet::OnRep_FireBuildup(const FGameplayAttributeData& O) const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, FireBuildup, O); }
+void UPantheliaAttributeSet::OnRep_StormBuildup(const FGameplayAttributeData& O) const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, StormBuildup, O); }
+void UPantheliaAttributeSet::OnRep_WaterBuildup(const FGameplayAttributeData& O) const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, WaterBuildup, O); }
+void UPantheliaAttributeSet::OnRep_NatureBuildup(const FGameplayAttributeData& O) const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, NatureBuildup, O); }
 
 // ===== OnRep Vitales =====
 void UPantheliaAttributeSet::OnRep_Health(const FGameplayAttributeData& O)  const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, Health, O); }

@@ -186,6 +186,14 @@ public:
     // Llamado por el AttributeSet cada vez que se recibe daño de postura.
     virtual void ResetPoiseRegenTimer() {}
 
+    // Avisa de que el personaje recibió buildup elemental (cualquier barra subió).
+    // Llamado por el AttributeSet (HandleElementalBuildup) para que el personaje
+    // (re)arranque su timer de decay de las barras — mismo patrón exacto que
+    // ResetPoiseRegenTimer para la postura: el AttributeSet no gestiona timers,
+    // se lo pide al Character vía la interfaz. Ver TickBuildupDecay en
+    // PantheliaCharacterBase para el decay en sí (más resistencia = cae más rápido).
+    virtual void NotifyElementalBuildupReceived() {}
+
     // Devuelve el elemento defensivo del personaje.
     // Afecta a la tabla de afinidades de daño elemental en ExecCalc_Damage.
     //

@@ -309,13 +309,18 @@ void FPantheliaGameplayTags::InitializeNativeGameplayTags()
 	GameplayTags.ElementToDebuff.Add(EPantheliaElement::Water, GameplayTags.Debuff_Saturation);
 	GameplayTags.ElementToDebuff.Add(EPantheliaElement::Nature, GameplayTags.Debuff_Poison);
 
+	// Mapa elemento → tag de resistencia (ver header). Mismas 4 entradas canónicas.
+	GameplayTags.ElementToResistance.Add(EPantheliaElement::Fire, GameplayTags.Attributes_Resistance_Fire);
+	GameplayTags.ElementToResistance.Add(EPantheliaElement::Storm, GameplayTags.Attributes_Resistance_Storm);
+	GameplayTags.ElementToResistance.Add(EPantheliaElement::Water, GameplayTags.Attributes_Resistance_Water);
+	GameplayTags.ElementToResistance.Add(EPantheliaElement::Nature, GameplayTags.Attributes_Resistance_Nature);
+
 	// --- TAGS DE PARÁMETROS DE DEBUFF (SetByCaller, clase 304) ---
 	// Ver la explicación completa en el header. Se registran como hojas sueltas bajo la
 	// raíz Debuff (ya registrada arriba); nunca se conceden a un ASC, solo transportan
 	// magnitudes dentro de un FGameplayEffectSpec.
-	GameplayTags.Debuff_Chance = Manager.AddNativeGameplayTag(
-		FName("Debuff.Chance"),
-		FString("SetByCaller: probabilidad (0-100) de aplicar el debuff. Rol pendiente de confirmar — ver clase 303/304."));
+	// NOTA: Debuff.Chance fue ELIMINADO (decisión cerrada del sistema de buildup): el
+	// disparador de los estados es el umbral de acumulación, sin azar. Ver el header.
 	GameplayTags.Debuff_Damage = Manager.AddNativeGameplayTag(
 		FName("Debuff.Damage"),
 		FString("SetByCaller: daño que tiquea el debuff cada Debuff.Frequency segundos."));
@@ -352,6 +357,35 @@ void FPantheliaGameplayTags::InitializeNativeGameplayTags()
 	GameplayTags.CombatTricks_LaunchPitchOverride = Manager.AddNativeGameplayTag(
 		FName("CombatTricks.LaunchPitchOverride"),
 		FString("SetByCaller: angulo (grados) del pitch override para la direccion del lanzamiento."));
+
+	// --- TAGS DE BUILDUP ELEMENTAL (SetByCaller — sistema de umbral, sin azar) ---
+	// Ver la explicación completa en el header. Transporte del buildup por elemento.
+	GameplayTags.CombatTricks_Buildup_Fire = Manager.AddNativeGameplayTag(
+		FName("CombatTricks.Buildup.Fire"),
+		FString("SetByCaller: buildup de Quemadura que deposita este golpe (pre-resistencia/critico)."));
+	GameplayTags.CombatTricks_Buildup_Storm = Manager.AddNativeGameplayTag(
+		FName("CombatTricks.Buildup.Storm"),
+		FString("SetByCaller: buildup de Electrocucion que deposita este golpe (pre-resistencia/critico)."));
+	GameplayTags.CombatTricks_Buildup_Water = Manager.AddNativeGameplayTag(
+		FName("CombatTricks.Buildup.Water"),
+		FString("SetByCaller: buildup de Saturacion que deposita este golpe (pre-resistencia/critico)."));
+	GameplayTags.CombatTricks_Buildup_Nature = Manager.AddNativeGameplayTag(
+		FName("CombatTricks.Buildup.Nature"),
+		FString("SetByCaller: buildup de Veneno que deposita este golpe (pre-resistencia/critico)."));
+
+	// --- TAGS DE ATRIBUTO DE BUILDUP (identidad para TagsToAttributes/UI) ---
+	GameplayTags.Attributes_Buildup_Fire = Manager.AddNativeGameplayTag(
+		FName("Attributes.Buildup.Fire"),
+		FString("Barra de acumulacion de Quemadura (0-100). Al llenarse dispara el estado y se resetea."));
+	GameplayTags.Attributes_Buildup_Storm = Manager.AddNativeGameplayTag(
+		FName("Attributes.Buildup.Storm"),
+		FString("Barra de acumulacion de Electrocucion (0-100). Al llenarse dispara el estado y se resetea."));
+	GameplayTags.Attributes_Buildup_Water = Manager.AddNativeGameplayTag(
+		FName("Attributes.Buildup.Water"),
+		FString("Barra de acumulacion de Saturacion (0-100). Al llenarse dispara el estado y se resetea."));
+	GameplayTags.Attributes_Buildup_Nature = Manager.AddNativeGameplayTag(
+		FName("Attributes.Buildup.Nature"),
+		FString("Barra de acumulacion de Veneno (0-100). Al llenarse dispara el estado y se resetea."));
 
 	// --- PARRY / BLOQUEO ---
 	GameplayTags.Abilities_Parry = Manager.AddNativeGameplayTag(FName("Abilities.Parry"), FString("Asignar en AbilityTags de GA_Parry_Physical / GA_Parry_Magic."));

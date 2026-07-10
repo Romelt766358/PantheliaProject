@@ -6,11 +6,20 @@
 #include "AbilitySystemComponent.h"
 #include "AttributeSet.h"
 #include "GameplayTagContainer.h"
+// EPantheliaElement por valor en las firmas del sistema de buildup
+// (HandleElementalBuildup / TriggerElementalStatus): un enum class como parámetro
+// necesita su definición completa, no basta un forward declaration.
+#include "PantheliaElementTypes.h"
 #include "PantheliaAttributeSet.generated.h"
 
 // Forward declaration para el caché de definiciones dinámicas de debuff (ver
 // CachedDebuffEffects más abajo) — solo guardamos punteros, no hace falta el header.
 class UGameplayEffect;
+// Forward declarations para las firmas del sistema de buildup: se usan por
+// referencia, así que basta con declararlas (los .cpp que las usan ya incluyen
+// GameplayEffectExtension.h / GameplayEffect.h con las definiciones completas).
+struct FGameplayEffectModCallbackData;
+struct FGameplayEffectSpec;
 
 #define ATTRIBUTE_ACCESSORS(ClassName, PropertyName) \
 	GAMEPLAYATTRIBUTE_PROPERTY_GETTER(ClassName, PropertyName) \
@@ -109,13 +118,39 @@ public:
 
 		// ===== RESISTENCIAS ELEMENTALES =====
 		// Una resistencia cubre los dos tipos de su elemento (físico y mágico).
-		// Placeholder derivado de Resilience en el GE de secundarios.
-		// Cuando existan equipamiento y árbol de habilidades, serán esos sistemas
-		// los que modifiquen estos atributos directamente.
+		// Escala 0-100. DOBLE ROL (decisión cerrada del sistema de buildup):
+		//   1. Mitigan el daño elemental en el ExecCalc (rol original, sin cambios).
+		//   2. Gobiernan el efecto de estado del elemento: reducen el buildup entrante
+		//      (Res 100 = intake 0 = INMUNIDAD al estado) y aceleran el decay de la
+		//      barra (ver TickBuildupDecay en PantheliaCharacterBase).
+		// ORIGEN (decisión cerrada): NO derivan de atributos primarios. Se obtienen
+		// del árbol de habilidades, accesorios y armaduras (GEs Infinite Add). El
+		// Override placeholder desde Resilience en GE_SecondaryAttributes debe
+		// ELIMINARSE en el editor (Etapa 3 del plan de fundación — ejecutar ya).
 		UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_FireResistance, Category = "Resistance Attributes") FGameplayAttributeData FireResistance;   ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, FireResistance)
 		UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_WaterResistance, Category = "Resistance Attributes") FGameplayAttributeData WaterResistance;  ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, WaterResistance)
 		UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_StormResistance, Category = "Resistance Attributes") FGameplayAttributeData StormResistance;  ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, StormResistance)
 		UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_NatureResistance, Category = "Resistance Attributes") FGameplayAttributeData NatureResistance; ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, NatureResistance)
+
+		// ===== BARRAS DE ACUMULACIÓN ELEMENTAL (BUILDUP) =====
+		// El sistema de efectos de estado soulslike (Gameplay_Mechanics, "Efectos de
+		// estado"): cada golpe elemental SUMA aquí; al llegar a BuildupThreshold (100),
+		// el estado se dispara CON CERTEZA y la barra se resetea a 0. Sin azar — como
+		// en Elden Ring/Lies of P, lo único aleatorio del combate es el crítico.
+		//
+		// Flujo completo: la ability declara BuildupAmounts (por tipo de daño) → viaja
+		// como SetByCaller por elemento → el ExecCalc aplica resistencia/crítico/parry
+		// y lo deposita aquí como output modifier → HandleElementalBuildup (en este
+		// archivo) comprueba el umbral y dispara → TickBuildupDecay (CharacterBase)
+		// las vacía con el tiempo, más rápido cuanta más resistencia.
+		//
+		// Escala 0-100 fija para las 4 (el "aguante" de cada personaje no se expresa
+		// subiendo el umbral, sino con su resistencia: menos intake + más decay —
+		// una sola estadística gobierna todo el estado, más legible para el jugador).
+		UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_FireBuildup, Category = "Buildup Attributes") FGameplayAttributeData FireBuildup;   ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, FireBuildup)
+		UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_StormBuildup, Category = "Buildup Attributes") FGameplayAttributeData StormBuildup;  ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, StormBuildup)
+		UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_WaterBuildup, Category = "Buildup Attributes") FGameplayAttributeData WaterBuildup;  ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, WaterBuildup)
+		UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_NatureBuildup, Category = "Buildup Attributes") FGameplayAttributeData NatureBuildup; ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, NatureBuildup)
 
 		// ===== ATRIBUTOS VITALES =====
 		UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_Health, Category = "Vital Attributes") FGameplayAttributeData Health;   ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, Health)
@@ -164,6 +199,17 @@ public:
 	UFUNCTION() void OnRep_StormResistance(const FGameplayAttributeData& OldStormResistance) const;
 	UFUNCTION() void OnRep_NatureResistance(const FGameplayAttributeData& OldNatureResistance) const;
 
+	UFUNCTION() void OnRep_FireBuildup(const FGameplayAttributeData& OldFireBuildup) const;
+	UFUNCTION() void OnRep_StormBuildup(const FGameplayAttributeData& OldStormBuildup) const;
+	UFUNCTION() void OnRep_WaterBuildup(const FGameplayAttributeData& OldWaterBuildup) const;
+	UFUNCTION() void OnRep_NatureBuildup(const FGameplayAttributeData& OldNatureBuildup) const;
+
+	// Umbral al que una barra de buildup dispara su efecto de estado. Constante y
+	// compartido por las 4 barras (ver el razonamiento sobre la escala 0-100 arriba).
+	// Público: lo leen el ExecCalc (no lo necesita hoy, pero es la fuente de verdad),
+	// HandleElementalBuildup y cualquier UI de barras futura (porcentaje = valor/umbral).
+	static constexpr float BuildupThreshold = 100.f;
+
 	// --- OnRep Vitales ---
 	UFUNCTION() void OnRep_Health(const FGameplayAttributeData& OldHealth) const;
 	UFUNCTION() void OnRep_Mana(const FGameplayAttributeData& OldMana) const;
@@ -184,15 +230,38 @@ private:
 	// IncomingXP (detección de subida de nivel, relleno de vida/maná, AddToXP).
 	void HandleIncomingXP(const FEffectProperties& Props);
 
-	// Llamada desde HandleIncomingDamage cuando el context indica un debuff exitoso
-	// (ExecCalc_Damage → DetermineDebuff, clases 307-309 escriben ese resultado en el
-	// context). Construye un UGameplayEffect DINÁMICAMENTE en C++ (no un asset de
-	// Blueprint) con la duración/período/daño de este golpe concreto, le concede el tag
-	// de debuff correspondiente al elemento (Fuego→Burn, etc. — ver ElementToDebuff en
-	// FPantheliaGameplayTags) y lo aplica al target. Implementación completa en el .cpp
-	// (clase 310) — ahí se explican las adaptaciones de API frente al curso original
-	// (tags de GE deprecados desde 5.3, stacking en API inestable en 5.7+).
-	void Debuff(const FEffectProperties& Props);
+	// === SISTEMA DE BUILDUP: DISPARO POR UMBRAL (reemplaza al dado del curso) ===
+	//
+	// HandleElementalBuildup: rama de PostGameplayEffectExecute para cada atributo
+	// XBuildup. Se ejecuta SOLO cuando el buildup entra por el ExecCalc (un golpe) —
+	// el decay escribe la base directamente y no pasa por aquí, así que el umbral
+	// jamás se re-dispara al vaciarse la barra. Clampea, comprueba BuildupThreshold
+	// y, si la barra se llenó, la resetea a 0 y dispara TriggerElementalStatus.
+	void HandleElementalBuildup(const FGameplayEffectModCallbackData& Data, EPantheliaElement Element);
+
+	// TriggerElementalStatus: el PUNTO DE DESPACHO de los efectos de estado — el
+	// único sitio del código donde "la barra se llenó" se convierte en gameplay.
+	// HOY: los 4 elementos aplican el DoT genérico (ApplyElementalDebuff) como
+	// payload provisional. Los payloads por elemento del diseño (Gameplay_Mechanics,
+	// "Efectos de estado") se montan AQUÍ encima, sin tocar nada más del pipeline:
+	//   Quemadura (Fuego):     DoT ✓ (ya es el payload correcto) + sinergia futura
+	//                          "golpear al quemado con fuego cura al atacante".
+	//   Electrocución (Storm): detonación al llenarse (daño + postura + restaura
+	//                          vida/maná al usuario cercano) — NO es un DoT.
+	//   Saturación (Agua):     estado de debilidad que reduce drásticamente la
+	//                          resistencia mágica — NO es un DoT.
+	//   Veneno (Naturaleza):   DoT (payload provisional válido; diseño por cerrar).
+	void TriggerElementalStatus(const FEffectProperties& Props, EPantheliaElement Element,
+		const FGameplayEffectSpec& TriggeringSpec);
+
+	// ApplyElementalDebuff: construye y aplica el GE dinámico del estado (tag de
+	// identidad + DoT opcional), con caché de definiciones (ver CachedDebuffEffects).
+	// Refactor de la antigua Debuff(Props): ya NO lee sus parámetros del context del
+	// golpe (esa ruta murió con el dado) — los recibe explícitos desde el disparador.
+	// Con Damage <= 0 aplica un estado SOLO-TAG (sin DoT ni Period) — necesario para
+	// estados que no dañan por segundo, como la futura Saturación.
+	void ApplyElementalDebuff(const FEffectProperties& Props, const FGameplayTag& DebuffTag,
+		float Damage, float Duration, float Frequency);
 
 	// === CACHÉ DE DEFINICIONES DINÁMICAS DE DEBUFF (fix auditoría post-315) ===
 	//

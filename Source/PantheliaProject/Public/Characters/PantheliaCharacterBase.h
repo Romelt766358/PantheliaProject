@@ -95,6 +95,7 @@ public:
 	// Reinicia el timer de regeneración de postura.
 	// Llamado por el AttributeSet cada vez que se recibe daño de postura.
 	virtual void ResetPoiseRegenTimer() override;
+	virtual void NotifyElementalBuildupReceived() override;
 
 protected:
 	virtual void BeginPlay() override;
@@ -190,7 +191,7 @@ protected:
 	// Construction Script — un parche por Blueprint, no una solución que escale.
 	//
 	// SOLUCIÓN: esta función centraliza la pregunta "¿cuál es el arma de verdad, ahora
-	// mismo, para ESTE personaje?" en un solo sitio de C++, para que Die(), 
+	// mismo, para ESTE personaje?" en un solo sitio de C++, para que Die(),
 	// MulticastHandleDeath() y Dissolve() no tengan que decidirlo cada uno por su cuenta
 	// (evita 3 copias de la misma lógica, y que se desincronicen si un día cambia).
 	// Devuelve UPrimitiveComponent* (no USkeletalMeshComponent*) porque es la clase base
@@ -233,6 +234,18 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Panthelia|Combat|Poise")
 	float PoiseRegenDelay = 2.5f;
 
+	// --- DECAY DE LAS BARRAS DE BUILDUP ELEMENTAL ---
+	// Velocidad BASE (unidades por segundo, sobre la escala 0-100 de las barras) a la
+	// que caen las barras de acumulación cuando dejas de golpear. La velocidad REAL
+	// por elemento escala con la resistencia del propio personaje (decisión cerrada):
+	//   DecayPorSegundo = BuildupDecayRate × (1 + Resistencia/100)
+	// → a resistencia 0, cae a la base; a resistencia 100, al doble. Con la base en
+	// 6: una barra llena tarda ~16s en vaciarse sin resistencia, ~8s con 100 — en la
+	// franja de sensación de Elden Ring (la presión de "casi lo prendo" se mantiene
+	// entre golpes, pero no para siempre). Editable por Blueprint para tuning.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Panthelia|Combat|Buildup")
+	float BuildupDecayRate = 6.f;
+
 	// Arquetipo de este personaje (Warrior, Ranger, Elementalist).
 	// Movido desde PantheliaEnemy a CharacterBase para que el jugador también
 	// tenga clase (AMainCharacter lo sobreescribe a Elementalist en su constructor).
@@ -256,6 +269,21 @@ private:
 
 	// Se llama cada 0.1s mientras regenera — añade PoiseRegenRate * 0.1 a Poise.
 	void TickPoiseRegen();
+
+	// Timer del decay de las barras de buildup elemental. Lo (re)arranca
+	// NotifyElementalBuildupReceived (llamado por el AttributeSet al recibir buildup)
+	// y se auto-detiene cuando las 4 barras llegan a 0 — sin coste cuando no hay
+	// estado acumulado. A diferencia de la postura, NO hay delay inicial: en Elden
+	// Ring las barras de estado empiezan a caer inmediatamente (la "gracia" del
+	// sistema es la carrera entre tu ritmo de golpeo y el decay constante).
+	FTimerHandle BuildupDecayTimerHandle;
+
+	// Se llama cada 0.1s mientras alguna barra tenga valor — resta
+	// (BuildupDecayRate × (1 + Res/100)) × 0.1 a cada barra con contenido, escribiendo
+	// la base directamente (SetNumericAttributeBase vía los setters del AttributeSet,
+	// mismo mecanismo que TickPoiseRegen). Escribir la base directa NO dispara
+	// PostGameplayEffectExecute — por diseño: vaciar la barra jamás re-evalúa el umbral.
+	void TickBuildupDecay();
 
 protected:
 

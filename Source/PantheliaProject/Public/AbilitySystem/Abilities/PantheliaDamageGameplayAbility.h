@@ -18,7 +18,7 @@
  *   UGameplayAbility
  *   └── UPantheliaGameplayAbility (StartupInputTag)
  *       └── UPantheliaDamageGameplayAbility (DamageTypes, PoiseDamage, AttributeScalings,
- *           DamageEffectClass, DebuffChance/Damage/Frequency/Duration, DeathImpulseMagnitude,
+ *           DamageEffectClass, DebuffDamage/Frequency/Duration, BuildupAmounts, DeathImpulseMagnitude,
  *           KnockbackChance/ForceMagnitude, LaunchChance/ForceMagnitude/PitchOverride)
  *           └── UPantheliaProjectileSpell
  *
@@ -68,19 +68,18 @@ public:
 	// (arriba), que ya usan el mismo patrón y ya alimentan la tubería de escalado por
 	// nivel de ability existente (ver State_GAS.md).
 	//
-	// Valor por defecto igual al del curso (Chance=20, Damage=5, Frequency=1, Duration=5);
-	// cada ability que sí quiera debuff los sobreescribe en su Blueprint.
+	// Valor por defecto igual al del curso (Damage=5, Frequency=1, Duration=5);
+	// cada ability que sí quiera efecto de estado los sobreescribe en su Blueprint.
 	//
-	// NOTA (pendiente, ver clase 303/304): DebuffChance asume el modelo del curso
-	// (tirada de azar al golpear). Panthelia usa un modelo de acumulación (buildup) en
-	// su lugar — el rol final de este campo se decide cuando implementemos ese disparador,
-	// no ahora. Se deja declarado porque no molesta y puede seguir siendo útil.
+	// DECISIÓN CERRADA (sistema de buildup): DebuffChance fue ELIMINADO junto con el
+	// dado del curso. El disparador de los efectos de estado en Panthelia es el UMBRAL
+	// de acumulación (ver BuildupAmounts abajo), sin azar — como en Elden Ring/Lies of
+	// P, lo único aleatorio del combate es el crítico. Estos 3 campos definen QUÉ
+	// hace el estado cuando la barra que ESTE golpe llenó se dispara (el golpe que
+	// remata la barra define el estado): daño por tick, frecuencia y duración.
 
-	// Probabilidad (0-100) de aplicar el debuff en este golpe. Rol pendiente de confirmar.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Damage|Debuff")
-	FScalableFloat DebuffChance = FScalableFloat(20.f);
-
-	// Daño que tiquea el debuff cada DebuffFrequency segundos mientras está activo.
+	// Daño que tiquea el estado cada DebuffFrequency segundos mientras está activo.
+	// Con 0: estado SOLO-TAG (sin DoT) — lo que usará Saturación.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Damage|Debuff")
 	FScalableFloat DebuffDamage = FScalableFloat(5.f);
 
@@ -92,13 +91,33 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Damage|Debuff")
 	FScalableFloat DebuffDuration = FScalableFloat(5.f);
 
+	// --- BUILDUP ELEMENTAL (sistema de umbral — el disparador real de los estados) ---
+	//
+	// CUÁNTO llena ESTA ability la barra de estado de la víctima, POR TIPO DE DAÑO
+	// (misma clave que DamageTypes — coherencia total con el sistema multi-tipo).
+	// La ability lo colapsa a nivel de elemento vía DamageTypeToElement y lo
+	// transporta como SetByCaller (ver ApplyDamageScalingToSpec, PASO 11); el
+	// ExecCalc aplica resistencia/crítico/parry y lo deposita en la barra del target.
+	//
+	// DECISIÓN DE DISEÑO (cerrada): daño y buildup son INDEPENDIENTES a propósito —
+	// aquí vive la identidad de cada ataque: un tajo pesado de fuego puede hacer
+	// mucho daño y poco buildup, y una llovizna de chispas lo contrario (poco daño,
+	// mucho buildup). Escala 0-100: la barra se llena en 100, así que un valor de 25
+	// significa "4 golpes limpios llenan la barra" (antes de resistencias).
+	//
+	// SIN ENTRADA para un tipo de daño = 0 buildup de ese tipo (daño "puro" que no
+	// acumula estado). FScalableFloat: escalable por nivel de ability vía curva,
+	// como todo parámetro de combate del proyecto.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Damage|Buildup")
+	TMap<FGameplayTag, FScalableFloat> BuildupAmounts;
+
 	// --- IMPULSO DE MUERTE (clase 312) ---
 	// Magnitud del impulso físico que se aplica al ragdoll cuando ESTA ability da el
 	// golpe que mata. Da más "peso" a la muerte (el cuerpo sale despedido/rebota en vez
 	// de simplemente desplomarse) — puramente cosmético, no afecta ninguna mecánica.
 	//
 	// FScalableFloat en vez de float simple (el curso usa float simple): mismo motivo que
-	// DebuffChance/Damage/Frequency/Duration arriba — sin curva asignada se comporta
+	// DebuffDamage/Frequency/Duration arriba — sin curva asignada se comporta
 	// igual que un float normal (solo rellenas "Value"), pero queda listo para que el
 	// árbol de habilidades lo escale por nivel el día que se quiera, sin tocar C++.
 	//
@@ -123,8 +142,10 @@ public:
 	// controlable pero es "lanzado" por el aire un instante (LaunchCharacter, no
 	// AddImpulse — ver la nota completa en HandleIncomingDamage sobre por qué).
 	//
-	// KnockbackChance funciona igual que DebuffChance: probabilidad (0-100) de que ESTE
-	// golpe concreto dispare el knockback. Por defecto 0 — a diferencia de DebuffChance
+	// KnockbackChance: probabilidad (0-100) de que ESTE golpe concreto dispare el
+	// knockback. (Nota: knockback/launch SÍ conservan su dado — son reacciones físicas
+	// puntuales, no efectos de estado; el buildup solo jubiló el azar de los estados
+	// elementales.) Por defecto 0 — a diferencia del viejo DebuffChance
 	// (que algunas abilities querrán con probabilidad por defecto), el knockback es algo
 	// que se "activa a propósito" por ability, no algo que casi todas las abilities
 	// deberían tener un poco. La transcripción original lo señala explícitamente: la

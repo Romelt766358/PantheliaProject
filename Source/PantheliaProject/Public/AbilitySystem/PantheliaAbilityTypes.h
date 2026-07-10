@@ -43,7 +43,7 @@ class UGameplayEffect;
 // aquí es correcto, no una simplificación que sacrifique nada.
 //
 // Los 4 campos Debuff* (Chance/Damage/Duration/Frequency) vienen de la clase 304
-// (ver DebuffChance/Damage/Frequency/Duration en UPantheliaDamageGameplayAbility) y
+// (ver DebuffDamage/Frequency/Duration en UPantheliaDamageGameplayAbility) y
 // viajan aquí para poder asignarse como SetByCaller en el GE que se aplique.
 //
 // NO se implementa (todavía) una función "MakeFromClassDefaults" que copie esto
@@ -90,11 +90,9 @@ struct FDamageEffectParams
     UPROPERTY()
     float BaseDamage = 0.f;
 
-    // --- Parámetros de debuff (clase 304) ---
-    // Probabilidad (0-100) de aplicar el debuff. Rol pendiente de confirmar
-    // (ver nota en FPantheliaGameplayTags sobre azar vs. buildup).
-    UPROPERTY()
-    float DebuffChance = 0.f;
+    // --- Parámetros de efecto de estado (clase 304, actualizado por buildup) ---
+    // DebuffChance fue ELIMINADO (decisión cerrada): los estados no tienen azar —
+    // se disparan por umbral de acumulación (buildup), como en Elden Ring/Lies of P.
 
     // Daño que tiquea el debuff cada DebuffFrequency segundos.
     UPROPERTY()
@@ -112,7 +110,7 @@ struct FDamageEffectParams
     // Magnitud del impulso físico a aplicar si este golpe resulta fatal. Float simple
     // (no FScalableFloat, a diferencia del campo equivalente en la ability): este struct
     // representa valores YA EVALUADOS en tiempo de ejecución, no curvas — mismo motivo
-    // por el que BaseDamage/DebuffChance arriba también son floats simples.
+    // por el que BaseDamage y los parámetros de debuff arriba también son floats simples.
     //
     // Igual que el resto de campos de este struct para daño secundario/debuff (ver la
     // nota de diseño al principio del struct): nadie lo rellena ni lo lee todavía. Ver
