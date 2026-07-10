@@ -8,6 +8,25 @@
 #include "PantheliaGameplayAbility.generated.h"
 
 /**
+ * EPantheliaAbilityInputActivationPolicy
+ *
+ * Define cómo responde una ability al InputTag que tiene asignado:
+ *   - OnInputTriggered: una pulsación real produce un único intento de activación.
+ *   - WhileInputActive: se vuelve a intentar mientras el input permanezca presionado.
+ *
+ * Todas las abilities actuales de Panthelia usan OnInputTriggered. WhileInputActive
+ * queda reservado para canalizaciones o acciones continuas futuras. El tap-vs-hold
+ * del ataque pesado sigue siendo lógica interna de esa ability, no una política de
+ * activación repetida.
+ */
+UENUM(BlueprintType)
+enum class EPantheliaAbilityInputActivationPolicy : uint8
+{
+	OnInputTriggered,
+	WhileInputActive
+};
+
+/**
  * FAbilityAttributeScaling
  *
  * Define un escalado opcional de daño basado en un atributo secundario o vital del caster.
@@ -64,4 +83,10 @@ public:
 	// Input tag con el que esta ability empieza el juego asociada.
 	UPROPERTY(EditDefaultsOnly, Category = "Input")
 	FGameplayTag StartupInputTag;
+
+	// Política de activación asociada al input. Por defecto, una pulsación real genera
+	// un único intento de activación y mantener el botón NO repite la ability.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Input")
+	EPantheliaAbilityInputActivationPolicy InputActivationPolicy =
+		EPantheliaAbilityInputActivationPolicy::OnInputTriggered;
 };

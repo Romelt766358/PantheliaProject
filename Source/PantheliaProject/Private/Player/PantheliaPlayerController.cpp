@@ -88,13 +88,18 @@ UPantheliaAbilitySystemComponent* APantheliaPlayerController::GetASC()
 
 void APantheliaPlayerController::AbilityInputTagPressed(FGameplayTag InputTag)
 {
-	// Edge-triggered: se llama UNA vez por pulsacion real (no cada frame como Held).
-	// Lo usamos para el buffer de combo: si el jugador pulsa ataque durante la ventana
-	// de combo de un ataque en curso, se guarda para encadenar el siguiente golpe.
-	// El ASC busca la ability de ataque activa y le marca el buffer.
+	// Edge-triggered: se llama UNA vez por pulsación real (no cada frame como Held).
 	if (GetASC() == nullptr) return;
 
+	// El buffer se procesa ANTES del intento de activación. Este orden es crítico:
+	// si activáramos primero el ataque inicial, NotifyComboInputPressed lo encontraría
+	// ya activo y esa misma primera pulsación podría dejar bufferizado el golpe siguiente.
 	GetASC()->NotifyComboInputPressed(InputTag);
+
+	// Activación normal de abilities OnInputTriggered: una pulsación = un intento.
+	// Mantener el botón no las repetirá al terminar porque Held solo procesa la política
+	// WhileInputActive, reservada para canalizaciones futuras.
+	GetASC()->AbilityInputTagPressed(InputTag);
 }
 
 void APantheliaPlayerController::AbilityInputTagReleased(FGameplayTag InputTag)

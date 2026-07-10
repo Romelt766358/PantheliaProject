@@ -158,10 +158,15 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "GAS|Abilities")
 	bool SetAbilityLevel(const FGameplayTag& AbilityTag, int32 NewLevel);
 
+	// Llamado desde el PlayerController cuando el input se PULSA (edge-triggered, una
+	// vez por pulsación real). Notifica el press a GAS e intenta activar únicamente las
+	// abilities configuradas con la política OnInputTriggered.
+	void AbilityInputTagPressed(const FGameplayTag& InputTag);
+
 	// Llamado desde el PlayerController cada frame que el input está presionado.
-	// Busca abilities con este InputTag en sus DynamicAbilityTags y:
-	//   1. Les notifica que su input está presionado (AbilitySpecInputPressed).
-	//   2. Las activa si no estaban activas (TryActivateAbility).
+	// Solo intenta activar abilities configuradas con WhileInputActive. No vuelve a
+	// notificar AbilitySpecInputPressed cada frame: esa notificación pertenece al edge
+	// real y se procesa en AbilityInputTagPressed.
 	void AbilityInputTagHeld(const FGameplayTag& InputTag);
 
 	// Llamado desde el PlayerController cuando el input es soltado.

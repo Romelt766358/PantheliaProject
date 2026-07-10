@@ -251,34 +251,57 @@ bool UPantheliaAbilitySystemComponent::SetAbilityLevel(const FGameplayTag& Abili
 	return true;
 }
 
-void UPantheliaAbilitySystemComponent::AbilityInputTagHeld(const FGameplayTag& InputTag)
+void UPantheliaAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag& InputTag)
 {
-	// Si el tag no es válido no hay nada que buscar.
-	// IMPORTANTE: la condición es !IsValid() para retornar cuando es inválido.
-	// (Error común: poner IsValid() sin la negación, lo que haría lo contrario.)
+	// Edge-triggered: esta función se llama una sola vez por pulsación real. Aquí vive
+	// la activación normal de todas las abilities actuales de Panthelia.
 	if (!InputTag.IsValid()) return;
 
-	// Iteramos todas las abilities que este ASC puede activar.
-	// Necesitamos referencia no-const porque AbilitySpecInputPressed modifica la spec.
 	for (FGameplayAbilitySpec& AbilitySpec : GetActivatableAbilities())
 	{
-		// Buscamos abilities cuyo GetDynamicSpecSourceTags contenga exactamente este InputTag.
-		// HasTagExact no acepta tags padre — solo match exacto. Esto es intencional:
-		// no queremos que "InputTag.Spell" active abilities de "InputTag.Spell.1".
-		// GetDynamicSpecSourceTags() reemplaza a DynamicAbilityTags (deprecado en UE5.3+).
-		if (AbilitySpec.GetDynamicSpecSourceTags().HasTagExact(InputTag))
-		{
-			// Le notificamos a la ability que su input está siendo presionado.
-			// La ability puede usar esto para lógica interna (override de InputPressed).
-			AbilitySpecInputPressed(AbilitySpec);
+		// Match exacto: InputTag.Spell no debe activar InputTag.Spell.1.
+		if (!AbilitySpec.GetDynamicSpecSourceTags().HasTagExact(InputTag)) continue;
 
-			// Solo intentamos activar si no está ya activa.
-			// Sin este check activaríamos la ability cada frame mientras se mantiene el input,
-			// lo cual puede causar problemas según el tipo de ability.
-			if (!AbilitySpec.IsActive())
-			{
-				TryActivateAbility(AbilitySpec.Handle);
-			}
+		// Notificar el press real una sola vez. GAS mantiene con esto el estado interno
+		// de input de la spec y puede reenviar el evento a una ability ya activa.
+		AbilitySpecInputPressed(AbilitySpec);
+
+		const UPantheliaGameplayAbility* PantheliaAbility =
+			Cast<UPantheliaGameplayAbility>(AbilitySpec.Ability);
+
+		// Toda ability del proyecto debería heredar de UPantheliaGameplayAbility. Si una
+		// clase externa no lo hace, no inventamos una política implícita ni la activamos
+		// por esta ruta.
+		if (!PantheliaAbility) continue;
+
+		if (PantheliaAbility->InputActivationPolicy ==
+			EPantheliaAbilityInputActivationPolicy::OnInputTriggered &&
+			!AbilitySpec.IsActive())
+		{
+			TryActivateAbility(AbilitySpec.Handle);
+		}
+	}
+}
+
+void UPantheliaAbilitySystemComponent::AbilityInputTagHeld(const FGameplayTag& InputTag)
+{
+	// Held se ejecuta cada frame. Solo las abilities que declaren explícitamente
+	// WhileInputActive pueden reintentar su activación desde esta ruta.
+	if (!InputTag.IsValid()) return;
+
+	for (FGameplayAbilitySpec& AbilitySpec : GetActivatableAbilities())
+	{
+		if (!AbilitySpec.GetDynamicSpecSourceTags().HasTagExact(InputTag)) continue;
+
+		const UPantheliaGameplayAbility* PantheliaAbility =
+			Cast<UPantheliaGameplayAbility>(AbilitySpec.Ability);
+		if (!PantheliaAbility) continue;
+
+		if (PantheliaAbility->InputActivationPolicy ==
+			EPantheliaAbilityInputActivationPolicy::WhileInputActive &&
+			!AbilitySpec.IsActive())
+		{
+			TryActivateAbility(AbilitySpec.Handle);
 		}
 	}
 }
