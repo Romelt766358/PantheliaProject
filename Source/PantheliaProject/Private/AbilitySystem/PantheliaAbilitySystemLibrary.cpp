@@ -13,6 +13,7 @@
 #include "Abilities/GameplayAbility.h"
 // Necesario para el static cast a FPantheliaGameplayEffectContext
 #include "AbilitySystem/PantheliaAbilityTypes.h"
+#include "AbilitySystem/PantheliaAttributeSet.h"
 // Necesario para GetPlayerLevel() en GiveStartupAbilities
 #include "Interfaces/CombatInterface.h"
 // Necesario para FOverlapResult en GetLivePlayersWithinRadius
@@ -27,6 +28,7 @@
 // (post-315, i-frames genéricos) — mismo patrón que UPantheliaAttributeSet::Debuff (clase 310).
 #include "GameplayEffect.h"
 #include "GameplayEffectComponents/TargetTagsGameplayEffectComponent.h"
+#include "UObject/UObjectGlobals.h"
 
 UOverlayWidgetController* UPantheliaAbilitySystemLibrary::GetOverlayWidgetController(const UObject* WorldContextObject)
 {
@@ -506,6 +508,129 @@ void UPantheliaAbilitySystemLibrary::GrantTemporaryGameplayTag(UAbilitySystemCom
 	ASC->ApplyGameplayEffectSpecToSelf(Spec);
 }
 
+bool UPantheliaAbilitySystemLibrary::ApplyGrievousWounds(
+	UAbilitySystemComponent* SourceASC,
+	UAbilitySystemComponent* TargetASC,
+	float BaseReductionPercent,
+	float BaseDuration,
+	FGameplayTag SourceTag,
+	bool bApplyDurationBonus)
+{
+	if (!SourceASC || !TargetASC || BaseReductionPercent <= 0.f)
+	{
+		return false;
+	}
+
+	const FPantheliaGameplayTags& GameplayTags = FPantheliaGameplayTags::Get();
+	if (!SourceTag.IsValid() || !SourceTag.MatchesTag(GameplayTags.Effects_GrievousWounds))
+	{
+		SourceTag = GameplayTags.Effects_GrievousWounds_Direct;
+	}
+
+	float IntensityBonus = 0.f;
+	float DurationBonus = 0.f;
+	if (const UPantheliaAttributeSet* SourceAttributes = SourceASC->GetSet<UPantheliaAttributeSet>())
+	{
+		IntensityBonus = FMath::Max(SourceAttributes->GetGrievousWoundsIntensityBonus(), 0.f);
+		if (bApplyDurationBonus)
+		{
+			DurationBonus = FMath::Max(SourceAttributes->GetGrievousWoundsDurationBonus(), 0.f);
+		}
+	}
+
+	const float FinalReduction = FMath::Clamp(BaseReductionPercent + IntensityBonus, 0.f, 100.f);
+	const float FinalDuration = FMath::Max(BaseDuration + DurationBonus, 4.f);
+	if (FinalReduction <= 0.f)
+	{
+		return false;
+	}
+
+	// Cada subtipo se refresca de forma independiente. Direct no borra Poison y
+	// Poison no borra Direct; al curar se usa la magnitud más alta entre ambos.
+	FGameplayTagContainer SameSourceTags;
+	SameSourceTags.AddTag(SourceTag);
+	TargetASC->RemoveActiveEffectsWithGrantedTags(SameSourceTags);
+
+	// Una definición por target y subtipo. La duración/magnitud viven en el spec
+	// como SetByCaller, por lo que la definición puede reutilizarse sin crear un
+	// UObject nuevo en cada golpe durante sesiones largas. El Outer es el ASC del
+	// target: evita colisiones globales entre personajes y comparte su ciclo de vida.
+	FString SafeSourceName = SourceTag.ToString();
+	SafeSourceName.ReplaceInline(TEXT("."), TEXT("_"));
+	const FName EffectName(*FString::Printf(
+		TEXT("DynamicGrievousWounds_%s"), *SafeSourceName));
+
+	UGameplayEffect* Effect = FindObjectFast<UGameplayEffect>(TargetASC, EffectName);
+	if (!Effect)
+	{
+		Effect = NewObject<UGameplayEffect>(TargetASC, EffectName);
+		Effect->DurationPolicy = EGameplayEffectDurationType::HasDuration;
+
+		FSetByCallerFloat DurationSetByCaller;
+		DurationSetByCaller.DataTag = GameplayTags.Debuff_Duration;
+		Effect->DurationMagnitude =
+			FGameplayEffectModifierMagnitude(DurationSetByCaller);
+
+		FInheritedTagContainer GrantedTags;
+		GrantedTags.AddTag(GameplayTags.Effects_GrievousWounds);
+		GrantedTags.AddTag(SourceTag);
+		if (SourceTag.MatchesTagExact(GameplayTags.Effects_GrievousWounds_Poison))
+		{
+			// Permite que un cleanse de Debuff.Poison retire simultáneamente su antiheal.
+			GrantedTags.AddTag(GameplayTags.Debuff_Poison);
+		}
+		UTargetTagsGameplayEffectComponent& TagComponent =
+			Effect->AddComponent<UTargetTagsGameplayEffectComponent>();
+		TagComponent.SetAndApplyTargetTagChanges(GrantedTags);
+	}
+
+	FGameplayEffectContextHandle Context = SourceASC->MakeEffectContext();
+	Context.AddSourceObject(SourceASC->GetAvatarActor());
+	FGameplayEffectSpec Spec(Effect, Context, 1.f);
+	Spec.SetSetByCallerMagnitude(GameplayTags.Debuff_Duration, FinalDuration);
+	Spec.SetSetByCallerMagnitude(GameplayTags.Debuff_GrievousWoundsMagnitude, FinalReduction);
+	TargetASC->ApplyGameplayEffectSpecToSelf(Spec);
+
+	UE_LOG(LogPanthelia, Log,
+		TEXT("[GRIEVOUS] Source '%s' -> Target '%s' | %.1f%% | %.2fs | Tag %s"),
+		SourceASC->GetAvatarActor() ? *SourceASC->GetAvatarActor()->GetName() : TEXT("null"),
+		TargetASC->GetAvatarActor() ? *TargetASC->GetAvatarActor()->GetName() : TEXT("null"),
+		FinalReduction, FinalDuration, *SourceTag.ToString());
+	return true;
+}
+
+float UPantheliaAbilitySystemLibrary::GetActiveGrievousWoundsPercent(UAbilitySystemComponent* TargetASC)
+{
+	if (!TargetASC)
+	{
+		return 0.f;
+	}
+
+	float StrongestReduction = 0.f;
+	if (const UPantheliaAttributeSet* TargetAttributes = TargetASC->GetSet<UPantheliaAttributeSet>())
+	{
+		// Compatibilidad con GEs/blueprints antiguos que aún modifiquen el atributo.
+		StrongestReduction = FMath::Clamp(TargetAttributes->GetGrievousWounds(), 0.f, 100.f);
+	}
+
+	const FPantheliaGameplayTags& GameplayTags = FPantheliaGameplayTags::Get();
+	FGameplayTagContainer GrievousTags;
+	GrievousTags.AddTag(GameplayTags.Effects_GrievousWounds);
+	const FGameplayEffectQuery Query = FGameplayEffectQuery::MakeQuery_MatchAnyOwningTags(GrievousTags);
+
+	for (const FActiveGameplayEffectHandle& Handle : TargetASC->GetActiveEffects(Query))
+	{
+		if (const FActiveGameplayEffect* ActiveEffect = TargetASC->GetActiveGameplayEffect(Handle))
+		{
+			const float EffectReduction = ActiveEffect->Spec.GetSetByCallerMagnitude(
+				GameplayTags.Debuff_GrievousWoundsMagnitude, false, 0.f);
+			StrongestReduction = FMath::Max(StrongestReduction, EffectReduction);
+		}
+	}
+
+	return FMath::Clamp(StrongestReduction, 0.f, 100.f);
+}
+
 // ============================================================
 // APLICACIÓN DE DAÑO SECUNDARIO/DEBUFF (clase 305)
 // ============================================================
@@ -561,6 +686,10 @@ FGameplayEffectContextHandle UPantheliaAbilitySystemLibrary::ApplyDamageEffect(
 		SpecHandle, GameplayTags.Debuff_Duration, DamageEffectParams.DebuffDuration);
 	UAbilitySystemBlueprintLibrary::AssignTagSetByCallerMagnitude(
 		SpecHandle, GameplayTags.Debuff_Frequency, DamageEffectParams.DebuffFrequency);
+	UAbilitySystemBlueprintLibrary::AssignTagSetByCallerMagnitude(
+		SpecHandle, GameplayTags.CombatTricks_GrievousWoundsPercent, DamageEffectParams.GrievousWoundsPercent);
+	UAbilitySystemBlueprintLibrary::AssignTagSetByCallerMagnitude(
+		SpecHandle, GameplayTags.CombatTricks_GrievousWoundsDuration, DamageEffectParams.GrievousWoundsDuration);
 
 	// A diferencia de CauseDamage() (que usa ApplyGameplayEffectSpecToTarget desde el
 	// SourceASC), aquí aplicamos directamente al TargetASC con ApplyGameplayEffectSpecToSelf.

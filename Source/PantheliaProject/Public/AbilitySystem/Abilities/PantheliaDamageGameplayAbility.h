@@ -78,6 +78,18 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Damage|Buildup")
 	TMap<FGameplayTag, FScalableFloat> BuildupAmounts;
 
+	// --- HERIDAS GRAVES INMEDIATAS ---
+	// Cualquier golpe o tick de esta ability que cause daño aplica el antiheal sin
+	// barra de buildup. 0 desactiva la mecánica. La duración runtime nunca baja de
+	// 4 segundos y además recibe los bonuses del árbol/equipamiento del source.
+	// Parry, armaduras reactivas u otros sistemas que no hereden de esta ability
+	// pueden usar UPantheliaAbilitySystemLibrary::ApplyGrievousWounds directamente.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Damage|Grievous Wounds", meta = (ClampMin = "0.0", ClampMax = "100.0"))
+	FScalableFloat GrievousWoundsPercent = FScalableFloat(0.f);
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Damage|Grievous Wounds", meta = (ClampMin = "0.0"))
+	FScalableFloat GrievousWoundsDuration = FScalableFloat(4.f);
+
 	// --- IMPULSO DE MUERTE (clase 312) ---
 	// Magnitud del impulso físico que se aplica al ragdoll cuando ESTA ability da el
 	// golpe que mata. Da más "peso" a la muerte (el cuerpo sale despedido/rebota en vez

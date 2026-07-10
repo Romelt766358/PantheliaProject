@@ -153,6 +153,15 @@ void UPantheliaDamageGameplayAbility::ApplyDamageScalingToSpec(
 	// el spec del golpe. TriggerElementalStatus los obtiene de la configuración
 	// global y del Status Power del source cuando la barra llega a 100.
 
+	// PASO 6.5: Heridas Graves inmediatas. Se asigna siempre para que cualquier
+	// ruta de daño (proyectil, melee, WeaponTrace o tick) comparta el mismo spec.
+	UAbilitySystemBlueprintLibrary::AssignTagSetByCallerMagnitude(
+		SpecHandle, GameplayTags.CombatTricks_GrievousWoundsPercent,
+		GrievousWoundsPercent.GetValueAtLevel(GetAbilityLevel()));
+	UAbilitySystemBlueprintLibrary::AssignTagSetByCallerMagnitude(
+		SpecHandle, GameplayTags.CombatTricks_GrievousWoundsDuration,
+		GrievousWoundsDuration.GetValueAtLevel(GetAbilityLevel()));
+
 	// PASO 7 (clase 313): Asignar la magnitud del impulso de muerte al SetByCaller.
 	// Por qué un SetByCaller y no directamente el context (a diferencia del VECTOR final,
 	// que sí se escribe directo al context — ver PantheliaProjectile.cpp): aquí, en la

@@ -157,10 +157,21 @@ public:
 		UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_StormCurrentHealthDamagePercent, Category = "Status Damage Attributes") FGameplayAttributeData StormCurrentHealthDamagePercent; ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, StormCurrentHealthDamagePercent)
 		UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_StormMissingHealthDamagePercent, Category = "Status Damage Attributes") FGameplayAttributeData StormMissingHealthDamagePercent; ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, StormMissingHealthDamagePercent)
 
-		// Intensidad de Heridas Graves ACTIVA sobre la víctima. Es un porcentaje
-		// acumulable por Gameplay Effects y se clampea a 0-100. Veneno aporta 30%
-		// por defecto desde DA_ElementalStatusConfig.
+		// Compatibilidad legacy para GEs antiguos que escribían la intensidad activa
+		// directamente como atributo. El sistema moderno guarda la intensidad en cada
+		// efecto y usa la fuente más fuerte; este valor no se suma entre fuentes.
 		UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_GrievousWounds, Category = "Debuff Attributes") FGameplayAttributeData GrievousWounds; ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, GrievousWounds)
+
+		// Activación OnHit concedida por armas, armaduras, accesorios o buffs. Si
+		// OnHitPercent > 0, cualquier spec que cause daño aplica Heridas Graves aunque
+		// la ability concreta tenga su campo en 0. Varias fuentes usan el valor mayor.
+		UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_GrievousWoundsOnHitPercent, Category = "Debuff Attributes") FGameplayAttributeData GrievousWoundsOnHitPercent; ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, GrievousWoundsOnHitPercent)
+		UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_GrievousWoundsOnHitDuration, Category = "Debuff Attributes") FGameplayAttributeData GrievousWoundsOnHitDuration; ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, GrievousWoundsOnHitDuration)
+
+		// Bonificaciones del atacante para el sistema inmediato reutilizable. La
+		// intensidad se suma en puntos porcentuales; la duración, en segundos.
+		UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_GrievousWoundsIntensityBonus, Category = "Debuff Attributes") FGameplayAttributeData GrievousWoundsIntensityBonus; ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, GrievousWoundsIntensityBonus)
+		UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_GrievousWoundsDurationBonus, Category = "Debuff Attributes") FGameplayAttributeData GrievousWoundsDurationBonus; ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, GrievousWoundsDurationBonus)
 
 		// ===== BARRAS DE ACUMULACIÓN ELEMENTAL (BUILDUP) =====
 		// El sistema de efectos de estado soulslike (Gameplay_Mechanics, "Efectos de
@@ -245,6 +256,10 @@ public:
 	UFUNCTION() void OnRep_StormCurrentHealthDamagePercent(const FGameplayAttributeData& OldStormCurrentHealthDamagePercent) const;
 	UFUNCTION() void OnRep_StormMissingHealthDamagePercent(const FGameplayAttributeData& OldStormMissingHealthDamagePercent) const;
 	UFUNCTION() void OnRep_GrievousWounds(const FGameplayAttributeData& OldGrievousWounds) const;
+	UFUNCTION() void OnRep_GrievousWoundsOnHitPercent(const FGameplayAttributeData& OldValue) const;
+	UFUNCTION() void OnRep_GrievousWoundsOnHitDuration(const FGameplayAttributeData& OldValue) const;
+	UFUNCTION() void OnRep_GrievousWoundsIntensityBonus(const FGameplayAttributeData& OldValue) const;
+	UFUNCTION() void OnRep_GrievousWoundsDurationBonus(const FGameplayAttributeData& OldValue) const;
 
 	UFUNCTION() void OnRep_FireBuildup(const FGameplayAttributeData& OldFireBuildup) const;
 	UFUNCTION() void OnRep_StormBuildup(const FGameplayAttributeData& OldStormBuildup) const;
@@ -271,7 +286,7 @@ private:
 	// IncomingDamage (parry/bloqueo, reducción de vida, muerte, XP) vivía inline en un solo
 	// bloque enorme. Se separa en su propia función por la misma razón que Health/Mana/Stamina
 	// ya tenían la suya: cada meta atributo hace UNA cosa clara, no una maraña de ifs.
-	void HandleIncomingDamage(const FEffectProperties& Props);
+	void HandleIncomingDamage(const FEffectProperties& Props, const FGameplayEffectSpec& EffectSpec);
 
 	// Extraído de PostGameplayEffectExecute (clase 309): toda la reacción al meta atributo
 	// IncomingXP (detección de subida de nivel, relleno de vida/maná, AddToXP).
@@ -314,9 +329,9 @@ private:
 	void ApplyInstantElementalDamage(const FEffectProperties& Props, const FGameplayTag& DebuffTag,
 		float Damage);
 
-	// Aplica el antiheal de Veneno mediante un GE separado del DoT. Debe ser un
-	// efecto distinto porque un GE periódico ejecutaría el modifier de reducción
-	// en cada tick en vez de mantenerlo estable durante toda la duración.
+	// Aplica la variante ligada a Veneno a través del helper global reutilizable.
+	// Usa Effects.GrievousWounds.Poison para poder limpiarla/refrescarla sin tocar
+	// Heridas Graves directas procedentes de armas, hechizos, parry o bosses.
 	void ApplyGrievousWounds(const FEffectProperties& Props, float Duration, float ReductionPercent);
 
 	// === CACHÉ DE DEFINICIONES DINÁMICAS DE ESTADO ===

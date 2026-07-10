@@ -70,6 +70,13 @@ struct FPantheliaElementalStatusDefinition
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Scaling")
 	float DurationPercentPerStatusPower = 0.f;
 
+	// Todo payload ofensivo elemental es daño mágico y debe poder escalar con
+	// Attributes.Secondary.MagicDamage. Este ratio se suma al daño plano ANTES
+	// del multiplicador de Status Power: 0.25 = +0.25 de daño por cada punto de
+	// MagicDamage. Se configura por estado en el Data Asset, nunca por ability.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Scaling|Magic Damage", meta = (ClampMin = "0.0"))
+	float FlatDamagePerMagicDamage = 0.f;
+
 	// ===== DAÑO POR PORCENTAJE DE VIDA DESBLOQUEABLE =====
 	// Estos coeficientes NO activan la mecánica por sí solos. El árbol o el
 	// equipamiento deben aportar un porcentaje base mayor que 0 mediante los
@@ -90,6 +97,19 @@ struct FPantheliaElementalStatusDefinition
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Health Percentage Damage", meta = (ClampMin = "0.0"))
 	float MissingHealthPercentPerStatusPower = 0.f;
+
+	// Escalado AP de los componentes porcentuales. Los valores son PUNTOS
+	// PORCENTUALES añadidos por cada punto de MagicDamage. Ejemplo: 0.005 y
+	// 100 MagicDamage añaden 0.5% a la rama ya desbloqueada por el árbol.
+	// Igual que con Status Power, estos coeficientes no desbloquean la rama solos.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Health Percentage Damage|Magic Damage", meta = (ClampMin = "0.0"))
+	float MaxHealthPercentPerMagicDamage = 0.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Health Percentage Damage|Magic Damage", meta = (ClampMin = "0.0"))
+	float CurrentHealthPercentPerMagicDamage = 0.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Health Percentage Damage|Magic Damage", meta = (ClampMin = "0.0"))
+	float MissingHealthPercentPerMagicDamage = 0.f;
 
 	// ===== HERIDAS GRAVES =====
 	// Veneno puede aplicar un segundo Gameplay Effect de duración que reduce la

@@ -237,6 +237,28 @@ public:
 	static void GrantTemporaryGameplayTag(UAbilitySystemComponent* ASC, FGameplayTag Tag, float Duration);
 
 	// ============================================================
+	// HERIDAS GRAVES — API INMEDIATA Y REUTILIZABLE
+	// ============================================================
+	// No usa buildup. Puede llamarla cualquier sistema: abilities, ticks, armas,
+	// armaduras reactivas, parry o lógica de bosses. El runtime garantiza al menos
+	// 4 segundos. SourceTag permite separar la variante directa de la ligada a Veneno.
+	// bApplyDurationBonus=false se usa para Veneno, porque su antiheal debe terminar
+	// exactamente con el propio estado; la intensidad sí recibe bonus del source.
+	UFUNCTION(BlueprintCallable, Category = "PantheliaAbilitySystemLibrary|GameplayEffects|GrievousWounds")
+	static bool ApplyGrievousWounds(
+		UAbilitySystemComponent* SourceASC,
+		UAbilitySystemComponent* TargetASC,
+		float BaseReductionPercent,
+		float BaseDuration,
+		FGameplayTag SourceTag,
+		bool bApplyDurationBonus = true);
+
+	// Devuelve la reducción efectiva más alta entre todas las fuentes activas.
+	// Heridas Graves no suma porcentajes de varias fuentes: la más intensa gana.
+	UFUNCTION(BlueprintPure, Category = "PantheliaAbilitySystemLibrary|GameplayEffects|GrievousWounds")
+	static float GetActiveGrievousWoundsPercent(UAbilitySystemComponent* TargetASC);
+
+	// ============================================================
 	// APLICACIÓN DE DAÑO SECUNDARIO/DEBUFF (clase 305)
 	// ============================================================
 	// Aplica un Gameplay Effect de daño usando un FDamageEffectParams ya construido

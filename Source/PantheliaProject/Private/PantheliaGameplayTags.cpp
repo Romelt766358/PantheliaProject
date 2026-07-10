@@ -66,7 +66,19 @@ void FPantheliaGameplayTags::InitializeNativeGameplayTags()
 
 	GameplayTags.Attributes_Secondary_GrievousWounds = Manager.AddNativeGameplayTag(
 		FName("Attributes.Secondary.GrievousWounds"),
-		FString("Porcentaje de curacion recibida que se niega mientras Heridas Graves esta activo."));
+		FString("Porcentaje manual/legacy de curacion negada por Heridas Graves."));
+	GameplayTags.Attributes_Debuff_GrievousWounds_OnHitPercent = Manager.AddNativeGameplayTag(
+		FName("Attributes.Debuff.GrievousWounds.OnHitPercent"),
+		FString("Porcentaje base que armas/equipamiento aplican en cualquier golpe o tick de daño."));
+	GameplayTags.Attributes_Debuff_GrievousWounds_OnHitDuration = Manager.AddNativeGameplayTag(
+		FName("Attributes.Debuff.GrievousWounds.OnHitDuration"),
+		FString("Duracion base de las Heridas Graves OnHit concedidas por equipo."));
+	GameplayTags.Attributes_Debuff_GrievousWounds_IntensityBonus = Manager.AddNativeGameplayTag(
+		FName("Attributes.Debuff.GrievousWounds.IntensityBonus"),
+		FString("Bonificacion del source a la intensidad de Heridas Graves."));
+	GameplayTags.Attributes_Debuff_GrievousWounds_DurationBonus = Manager.AddNativeGameplayTag(
+		FName("Attributes.Debuff.GrievousWounds.DurationBonus"),
+		FString("Segundos adicionales del source a Heridas Graves directas."));
 
 	// --- META ATRIBUTOS ---
 	// Tag usado como SetByCallerTag en GE_EventBasedEffect para transportar la XP ganada.
@@ -309,7 +321,8 @@ void FPantheliaGameplayTags::InitializeNativeGameplayTags()
 	GameplayTags.Effects_GetUp = Manager.AddNativeGameplayTag(FName("Effects.GetUp"), FString("Tag de activacion de GA_GetUp. La dispara Landed() al aterrizar desde State.Airborne."));
 	GameplayTags.Effects_HeavyKnockback = Manager.AddNativeGameplayTag(FName("Effects.HeavyKnockback"), FString("Tag de activacion de GA_HeavyKnockback (Nivel 2). La dispara HandleIncomingDamage."));
 	GameplayTags.Effects_GrievousWounds = Manager.AddNativeGameplayTag(FName("Effects.GrievousWounds"), FString("Raiz de todos los efectos de Heridas Graves. Reduce curacion recibida."));
-	GameplayTags.Effects_GrievousWounds_Poison = Manager.AddNativeGameplayTag(FName("Effects.GrievousWounds.Poison"), FString("Heridas Graves aplicadas especificamente por Veneno."));
+	GameplayTags.Effects_GrievousWounds_Direct = Manager.AddNativeGameplayTag(FName("Effects.GrievousWounds.Direct"), FString("Heridas Graves inmediatas aplicadas por golpes, ticks, armas, hechizos, parry o bosses."));
+	GameplayTags.Effects_GrievousWounds_Poison = Manager.AddNativeGameplayTag(FName("Effects.GrievousWounds.Poison"), FString("Heridas Graves ligadas a la duracion de Veneno."));
 
 	// --- TAGS DE DEBUFF (efectos de estado negativos elementales) ---
 	// Un debuff por elemento (ver el header para la decisión de diseño completa). La raíz
@@ -378,6 +391,12 @@ void FPantheliaGameplayTags::InitializeNativeGameplayTags()
 	GameplayTags.CombatTricks_DeathImpulseMagnitude = Manager.AddNativeGameplayTag(
 		FName("CombatTricks.DeathImpulseMagnitude"),
 		FString("SetByCaller: magnitud del impulso físico a aplicar si esta ability da el golpe que mata."));
+	GameplayTags.CombatTricks_GrievousWoundsPercent = Manager.AddNativeGameplayTag(
+		FName("CombatTricks.GrievousWounds.Percent"),
+		FString("Porcentaje base de Heridas Graves que aplica inmediatamente un golpe o tick."));
+	GameplayTags.CombatTricks_GrievousWoundsDuration = Manager.AddNativeGameplayTag(
+		FName("CombatTricks.GrievousWounds.Duration"),
+		FString("Duracion base de Heridas Graves directas. El runtime garantiza minimo 4 segundos."));
 
 	// Knockback (clase 315)
 	GameplayTags.CombatTricks_KnockbackForceMagnitude = Manager.AddNativeGameplayTag(

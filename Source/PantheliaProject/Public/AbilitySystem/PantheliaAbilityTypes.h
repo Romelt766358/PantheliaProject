@@ -106,6 +106,14 @@ struct FDamageEffectParams
     UPROPERTY()
     float DebuffFrequency = 0.f;
 
+    // Heridas Graves inmediatas para rutas de daño secundario que construyen este
+    // struct en vez de UPantheliaDamageGameplayAbility. 0 = no aplica.
+    UPROPERTY()
+    float GrievousWoundsPercent = 0.f;
+
+    UPROPERTY()
+    float GrievousWoundsDuration = 4.f;
+
     // --- Impulso de muerte (clase 312) ---
     // Magnitud del impulso físico a aplicar si este golpe resulta fatal. Float simple
     // (no FScalableFloat, a diferencia del campo equivalente en la ability): este struct

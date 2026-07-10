@@ -55,6 +55,8 @@ UPantheliaAttributeSet::UPantheliaAttributeSet()
 	InitFireMaxHealthDamagePercent(0.f); InitNatureMaxHealthDamagePercent(0.f);
 	InitStormCurrentHealthDamagePercent(0.f); InitStormMissingHealthDamagePercent(0.f);
 	InitGrievousWounds(0.f);
+	InitGrievousWoundsOnHitPercent(0.f); InitGrievousWoundsOnHitDuration(0.f);
+	InitGrievousWoundsIntensityBonus(0.f); InitGrievousWoundsDurationBonus(0.f);
 
 	// Barras de buildup elemental (inicialmente 0 — vacías). Solo las llena el
 	// ExecCalc con golpes elementales; solo las vacía el decay o el disparo del estado.
@@ -107,7 +109,10 @@ UPantheliaAttributeSet::UPantheliaAttributeSet()
 	TagsToAttributes.Add(Tags.Attributes_StatusDamage_Nature_MaxHealthPercent, GetNatureMaxHealthDamagePercentAttribute);
 	TagsToAttributes.Add(Tags.Attributes_StatusDamage_Storm_CurrentHealthPercent, GetStormCurrentHealthDamagePercentAttribute);
 	TagsToAttributes.Add(Tags.Attributes_StatusDamage_Storm_MissingHealthPercent, GetStormMissingHealthDamagePercentAttribute);
-	TagsToAttributes.Add(Tags.Attributes_Secondary_GrievousWounds, GetGrievousWoundsAttribute);
+	TagsToAttributes.Add(Tags.Attributes_Debuff_GrievousWounds_OnHitPercent, GetGrievousWoundsOnHitPercentAttribute);
+	TagsToAttributes.Add(Tags.Attributes_Debuff_GrievousWounds_OnHitDuration, GetGrievousWoundsOnHitDurationAttribute);
+	TagsToAttributes.Add(Tags.Attributes_Debuff_GrievousWounds_IntensityBonus, GetGrievousWoundsIntensityBonusAttribute);
+	TagsToAttributes.Add(Tags.Attributes_Debuff_GrievousWounds_DurationBonus, GetGrievousWoundsDurationBonusAttribute);
 
 	// Barras de buildup elemental — registradas desde el primer día para que la
 	// futura UI de barras de estado del enemigo se bindee por tag sin tocar C++.
@@ -156,6 +161,10 @@ void UPantheliaAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty
 	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, StormCurrentHealthDamagePercent, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, StormMissingHealthDamagePercent, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, GrievousWounds, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, GrievousWoundsOnHitPercent, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, GrievousWoundsOnHitDuration, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, GrievousWoundsIntensityBonus, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, GrievousWoundsDurationBonus, COND_None, REPNOTIFY_Always);
 
 	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, FireBuildup, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, StormBuildup, COND_None, REPNOTIFY_Always);
@@ -197,6 +206,10 @@ void UPantheliaAttributeSet::PreAttributeChange(const FGameplayAttribute& Attrib
 	else if (Attribute == GetStormCurrentHealthDamagePercentAttribute()) NewValue = FMath::Clamp(NewValue, 0.f, 100.f);
 	else if (Attribute == GetStormMissingHealthDamagePercentAttribute()) NewValue = FMath::Clamp(NewValue, 0.f, 100.f);
 	else if (Attribute == GetGrievousWoundsAttribute()) NewValue = FMath::Clamp(NewValue, 0.f, 100.f);
+	else if (Attribute == GetGrievousWoundsOnHitPercentAttribute()) NewValue = FMath::Clamp(NewValue, 0.f, 100.f);
+	else if (Attribute == GetGrievousWoundsOnHitDurationAttribute()) NewValue = FMath::Max(NewValue, 0.f);
+	else if (Attribute == GetGrievousWoundsIntensityBonusAttribute()) NewValue = FMath::Max(NewValue, 0.f);
+	else if (Attribute == GetGrievousWoundsDurationBonusAttribute()) NewValue = FMath::Max(NewValue, 0.f);
 
 	// Barras de buildup: clamp 0..BuildupThreshold. El disparo del umbral NO vive
 	// aquí (PreAttributeChange no debe tener lógica de juego, solo clamps) — vive en
@@ -330,7 +343,7 @@ void UPantheliaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModC
 	else if (Data.EvaluatedData.Attribute == GetPoiseAttribute())    SetPoise(FMath::Clamp(GetPoise(), 0.f, GetMaxPoise()));
 	else if (Data.EvaluatedData.Attribute == GetIncomingDamageAttribute())
 	{
-		HandleIncomingDamage(Props);
+		HandleIncomingDamage(Props, Data.EffectSpec);
 	}
 	else if (Data.EvaluatedData.Attribute == GetIncomingHealingAttribute())
 	{
@@ -412,7 +425,7 @@ void UPantheliaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModC
 // (no dentro del "if LocalIncomingDamage > 0") porque un debuff se resuelve por su propio
 // SetByCaller de tipo de daño en el spec — es información independiente de si el daño
 // PRINCIPAL de este golpe en particular fue > 0.
-void UPantheliaAttributeSet::HandleIncomingDamage(const FEffectProperties& Props)
+void UPantheliaAttributeSet::HandleIncomingDamage(const FEffectProperties& Props, const FGameplayEffectSpec& EffectSpec)
 {
 	const float LocalIncomingDamage = GetIncomingDamage();
 	SetIncomingDamage(0.f);
@@ -569,6 +582,57 @@ void UPantheliaAttributeSet::HandleIncomingDamage(const FEffectProperties& Props
 			}
 		}
 	}
+
+	// Heridas Graves directas: cualquier golpe/tick que realmente causó daño puede
+	// aplicarlas inmediatamente. Un parry perfecto las niega junto con el golpe.
+	const FPantheliaGameplayTags& GameplayTags = FPantheliaGameplayTags::Get();
+	const float SpecGrievousPercent = EffectSpec.GetSetByCallerMagnitude(
+		GameplayTags.CombatTricks_GrievousWoundsPercent, false, 0.f);
+	const float SpecGrievousDuration = EffectSpec.GetSetByCallerMagnitude(
+		GameplayTags.CombatTricks_GrievousWoundsDuration, false, 4.f);
+
+	float EquipmentGrievousPercent = 0.f;
+	float EquipmentGrievousDuration = 0.f;
+	if (Props.SourceASC)
+	{
+		EquipmentGrievousPercent = Props.SourceASC->GetNumericAttribute(
+			GetGrievousWoundsOnHitPercentAttribute());
+		EquipmentGrievousDuration = Props.SourceASC->GetNumericAttribute(
+			GetGrievousWoundsOnHitDurationAttribute());
+	}
+
+	// Intensidad y duración se eligen como una pareja. Tomar el máximo de cada
+	// columna por separado podría combinar el porcentaje de un arma con la duración
+	// de una ability distinta, creando una fuente que nunca existió realmente.
+	float RequestedGrievousPercent = SpecGrievousPercent;
+	float RequestedGrievousDuration = SpecGrievousDuration;
+	if (EquipmentGrievousPercent > SpecGrievousPercent)
+	{
+		RequestedGrievousPercent = EquipmentGrievousPercent;
+		RequestedGrievousDuration = EquipmentGrievousDuration;
+	}
+	else if (FMath::IsNearlyEqual(EquipmentGrievousPercent, SpecGrievousPercent) &&
+		EquipmentGrievousPercent > 0.f)
+	{
+		RequestedGrievousDuration = FMath::Max(
+			SpecGrievousDuration, EquipmentGrievousDuration);
+	}
+
+	const FPantheliaGameplayEffectContext* PantheliaContext =
+		static_cast<const FPantheliaGameplayEffectContext*>(Props.EffectContextHandle.Get());
+	const bool bWasPerfectParry = PantheliaContext && PantheliaContext->WasParried();
+	const bool bTargetIsDead = IsValid(Props.TargetAvatarActor) &&
+		Props.TargetAvatarActor->Implements<UCombatInterface>() &&
+		ICombatInterface::Execute_IsDead(Props.TargetAvatarActor);
+
+	if (LocalIncomingDamage > 0.f && RequestedGrievousPercent > 0.f &&
+		!bWasPerfectParry && !bTargetIsDead)
+	{
+		UPantheliaAbilitySystemLibrary::ApplyGrievousWounds(
+			Props.SourceASC, Props.TargetASC,
+			RequestedGrievousPercent, RequestedGrievousDuration,
+			GameplayTags.Effects_GrievousWounds_Direct, true);
+	}
 }
 
 // ============================================================
@@ -650,7 +714,8 @@ void UPantheliaAttributeSet::HandleIncomingHealing(const FEffectProperties& Prop
 
 	if (RawHealing <= 0.f) return;
 
-	const float HealingReductionPercent = FMath::Clamp(GetGrievousWounds(), 0.f, 100.f);
+	const float HealingReductionPercent =
+		UPantheliaAbilitySystemLibrary::GetActiveGrievousWoundsPercent(Props.TargetASC);
 	const float FinalHealing = RawHealing * (1.f - HealingReductionPercent / 100.f);
 
 	const float OldHealth = GetHealth();
@@ -764,12 +829,16 @@ void UPantheliaAttributeSet::TriggerElementalStatus(const FEffectProperties& Pro
 		ClassInfo->ElementalStatusConfig->FindStatusDefinition(Element, true);
 	if (!Definition) return;
 
-	// El source puede aumentar la potencia mediante árbol/equipamiento. Leemos el
-	// atributo por el mapa ElementToStatusPower para que añadir consumidores futuros
-	// no requiera otro switch duplicado.
+	// El source puede aumentar la potencia mediante árbol/equipamiento. Además,
+	// todo daño ofensivo de Quemadura, Veneno y Electrocución pasa por MagicDamage:
+	// los estados son payloads mágicos globales, aunque los haya detonado un arma.
 	float StatusPower = 0.f;
+	float MagicDamage = 0.f;
 	if (Props.SourceASC)
 	{
+		MagicDamage = FMath::Max(
+			Props.SourceASC->GetNumericAttribute(GetMagicDamageAttribute()), 0.f);
+
 		if (const FGameplayTag* StatusPowerTag = GameplayTags.ElementToStatusPower.Find(Element))
 		{
 			if (const auto* AttributeGetter = TagsToAttributes.Find(*StatusPowerTag))
@@ -787,7 +856,9 @@ void UPantheliaAttributeSet::TriggerElementalStatus(const FEffectProperties& Pro
 		0.f,
 		1.f + (StatusPower * Definition->DurationPercentPerStatusPower / 100.f));
 
-	const float FinalMagnitude = FMath::Max(Definition->BaseMagnitude * MagnitudeMultiplier, 0.f);
+	const float MagicDamageContribution = MagicDamage * Definition->FlatDamagePerMagicDamage;
+	const float FinalMagnitude = FMath::Max(
+		(Definition->BaseMagnitude + MagicDamageContribution) * MagnitudeMultiplier, 0.f);
 	const float FinalDuration = FMath::Max(Definition->BaseDuration * DurationMultiplier, 0.f);
 	const float TickFrequency = FMath::Max(Definition->TickFrequency, 0.f);
 
@@ -825,18 +896,31 @@ void UPantheliaAttributeSet::TriggerElementalStatus(const FEffectProperties& Pro
 		}
 	}
 
-	auto CalculateUnlockedPercent = [StatusPower](float BasePercent, float PercentPerStatusPower)
+	auto CalculateUnlockedPercent = [StatusPower, MagicDamage](
+		float BasePercent,
+		float PercentPerStatusPower,
+		float PercentPerMagicDamage)
 	{
 		if (BasePercent <= 0.f) return 0.f;
-		return FMath::Clamp(BasePercent + (StatusPower * PercentPerStatusPower), 0.f, 100.f);
+		return FMath::Clamp(
+			BasePercent +
+			(StatusPower * PercentPerStatusPower) +
+			(MagicDamage * PercentPerMagicDamage),
+			0.f, 100.f);
 	};
 
 	const float FinalMaxHealthPercent = CalculateUnlockedPercent(
-		BaseMaxHealthPercent, Definition->MaxHealthPercentPerStatusPower);
+		BaseMaxHealthPercent,
+		Definition->MaxHealthPercentPerStatusPower,
+		Definition->MaxHealthPercentPerMagicDamage);
 	const float FinalCurrentHealthPercent = CalculateUnlockedPercent(
-		BaseCurrentHealthPercent, Definition->CurrentHealthPercentPerStatusPower);
+		BaseCurrentHealthPercent,
+		Definition->CurrentHealthPercentPerStatusPower,
+		Definition->CurrentHealthPercentPerMagicDamage);
 	const float FinalMissingHealthPercent = CalculateUnlockedPercent(
-		BaseMissingHealthPercent, Definition->MissingHealthPercentPerStatusPower);
+		BaseMissingHealthPercent,
+		Definition->MissingHealthPercentPerStatusPower,
+		Definition->MissingHealthPercentPerMagicDamage);
 
 	// Snapshot al momento de detonar el estado. Para DoT, el porcentaje de vida
 	// máxima queda fijado durante esa aplicación; si MaxHealth cambia a mitad del
@@ -861,12 +945,19 @@ void UPantheliaAttributeSet::TriggerElementalStatus(const FEffectProperties& Pro
 	{
 		case EPantheliaElementalStatusPayload::DamageOverTime:
 		{
+			// Si el estado aplica Heridas Graves (Veneno), ambos efectos comparten
+			// exactamente la misma duración. Se garantiza el mínimo global de 4s
+			// elevando la duración del propio Veneno, no dejando antiheal huérfano.
+			const float AppliedDuration = FinalGrievousWoundsPercent > 0.f
+				? FMath::Max(FinalDuration, 4.f)
+				: FinalDuration;
+
 			// Quemadura/Veneno: el componente porcentual se suma a CADA tick.
 			// El porcentaje base vive en el atributo concedido por el perk; el daño
 			// plano y los coeficientes globales viven en el Data Asset.
 			const float FinalTickDamage = FinalMagnitude + PercentageHealthDamage;
 			ApplyElementalDebuff(
-				Props, *DebuffTagPtr, FinalTickDamage, FinalDuration, TickFrequency);
+				Props, *DebuffTagPtr, FinalTickDamage, AppliedDuration, TickFrequency);
 
 			const bool bTargetDiedFromInitialTick =
 				IsValid(Props.TargetAvatarActor) &&
@@ -875,7 +966,7 @@ void UPantheliaAttributeSet::TriggerElementalStatus(const FEffectProperties& Pro
 
 			if (FinalGrievousWoundsPercent > 0.f && !bTargetDiedFromInitialTick)
 			{
-				ApplyGrievousWounds(Props, FinalDuration, FinalGrievousWoundsPercent);
+				ApplyGrievousWounds(Props, AppliedDuration, FinalGrievousWoundsPercent);
 			}
 			break;
 		}
@@ -917,10 +1008,10 @@ void UPantheliaAttributeSet::TriggerElementalStatus(const FEffectProperties& Pro
 	}
 
 	UE_LOG(LogPanthelia, Log,
-		TEXT("[STATUS] '%s' en '%s' | Flat %.2f | StatusPower %.2f | MaxHP %.3f%% | CurrentHP %.3f%% | MissingHP %.3f%% | PercentDamage %.2f | Dur %.2f | Freq %.2f | Grievous %.1f%%"),
+		TEXT("[STATUS] '%s' en '%s' | Flat %.2f | MagicDamage %.2f (contrib %.2f) | StatusPower %.2f | MaxHP %.3f%% | CurrentHP %.3f%% | MissingHP %.3f%% | PercentDamage %.2f | Dur %.2f | Freq %.2f | Grievous %.1f%%"),
 		*DebuffTagPtr->ToString(),
 		Props.TargetCharacter ? *Props.TargetCharacter->GetName() : TEXT("null"),
-		FinalMagnitude, StatusPower,
+		FinalMagnitude, MagicDamage, MagicDamageContribution, StatusPower,
 		FinalMaxHealthPercent, FinalCurrentHealthPercent, FinalMissingHealthPercent,
 		PercentageHealthDamage, FinalDuration, TickFrequency, FinalGrievousWoundsPercent);
 }
@@ -1117,60 +1208,15 @@ void UPantheliaAttributeSet::ApplyGrievousWounds(
 	float Duration,
 	float ReductionPercent)
 {
-	if (!Props.SourceASC || !Props.TargetASC || Duration <= 0.f || ReductionPercent <= 0.f) return;
+	if (!Props.SourceASC || !Props.TargetASC) return;
 
-	const FPantheliaGameplayTags& GameplayTags = FPantheliaGameplayTags::Get();
-	const FName CacheKey(TEXT("DynamicGrievousWounds_Poison"));
-
-	TObjectPtr<UGameplayEffect>& CachedEffect = CachedDebuffEffects.FindOrAdd(CacheKey);
-	if (!CachedEffect)
-	{
-		UGameplayEffect* Effect = NewObject<UGameplayEffect>(this, CacheKey);
-		Effect->DurationPolicy = EGameplayEffectDurationType::HasDuration;
-
-		FSetByCallerFloat DurationSetByCaller;
-		DurationSetByCaller.DataTag = GameplayTags.Debuff_Duration;
-		Effect->DurationMagnitude = FGameplayEffectModifierMagnitude(DurationSetByCaller);
-
-		// El efecto concede también Debuff.Poison para que un cleanse de Veneno
-		// elimine simultáneamente el DoT y sus Heridas Graves.
-		FInheritedTagContainer TagContainer;
-		TagContainer.AddTag(GameplayTags.Debuff_Poison);
-		TagContainer.AddTag(GameplayTags.Effects_GrievousWounds);
-		TagContainer.AddTag(GameplayTags.Effects_GrievousWounds_Poison);
-		UTargetTagsGameplayEffectComponent& TagComponent =
-			Effect->AddComponent<UTargetTagsGameplayEffectComponent>();
-		TagComponent.SetAndApplyTargetTagChanges(TagContainer);
-
-		const int32 Index = Effect->Modifiers.Num();
-		Effect->Modifiers.SetNum(Index + 1);
-		FGameplayModifierInfo& ModifierInfo = Effect->Modifiers[Index];
-
-		FSetByCallerFloat GrievousSetByCaller;
-		GrievousSetByCaller.DataTag = GameplayTags.Debuff_GrievousWoundsMagnitude;
-		ModifierInfo.ModifierMagnitude = FGameplayEffectModifierMagnitude(GrievousSetByCaller);
-		ModifierInfo.ModifierOp = EGameplayModOp::Additive;
-		ModifierInfo.Attribute = UPantheliaAttributeSet::GetGrievousWoundsAttribute();
-
-		CachedEffect = Effect;
-	}
-
-	FGameplayEffectContextHandle EffectContextHandle = Props.SourceASC->MakeEffectContext();
-	EffectContextHandle.AddSourceObject(Props.SourceAvatarActor);
-
-	FGameplayEffectSpec MutableSpec(CachedEffect, EffectContextHandle, 1.f);
-	MutableSpec.SetSetByCallerMagnitude(GameplayTags.Debuff_Duration, Duration);
-	MutableSpec.SetSetByCallerMagnitude(
-		GameplayTags.Debuff_GrievousWoundsMagnitude,
-		FMath::Clamp(ReductionPercent, 0.f, 100.f));
-
-	// Refresca únicamente el antiheal procedente de Veneno. Otras fuentes futuras
-	// bajo Effects.GrievousWounds permanecen intactas y pueden acumular su magnitud.
-	FGameplayTagContainer ExistingPoisonGrievousTag;
-	ExistingPoisonGrievousTag.AddTag(GameplayTags.Effects_GrievousWounds_Poison);
-	Props.TargetASC->RemoveActiveEffectsWithGrantedTags(ExistingPoisonGrievousTag);
-
-	Props.TargetASC->ApplyGameplayEffectSpecToSelf(MutableSpec);
+	UPantheliaAbilitySystemLibrary::ApplyGrievousWounds(
+		Props.SourceASC,
+		Props.TargetASC,
+		ReductionPercent,
+		Duration,
+		FPantheliaGameplayTags::Get().Effects_GrievousWounds_Poison,
+		false); // la duración debe seguir exactamente al Veneno
 }
 
 // ===== OnRep Primarios =====
@@ -1213,6 +1259,10 @@ void UPantheliaAttributeSet::OnRep_NatureMaxHealthDamagePercent(const FGameplayA
 void UPantheliaAttributeSet::OnRep_StormCurrentHealthDamagePercent(const FGameplayAttributeData& O) const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, StormCurrentHealthDamagePercent, O); }
 void UPantheliaAttributeSet::OnRep_StormMissingHealthDamagePercent(const FGameplayAttributeData& O) const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, StormMissingHealthDamagePercent, O); }
 void UPantheliaAttributeSet::OnRep_GrievousWounds(const FGameplayAttributeData& O) const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, GrievousWounds, O); }
+void UPantheliaAttributeSet::OnRep_GrievousWoundsOnHitPercent(const FGameplayAttributeData& O) const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, GrievousWoundsOnHitPercent, O); }
+void UPantheliaAttributeSet::OnRep_GrievousWoundsOnHitDuration(const FGameplayAttributeData& O) const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, GrievousWoundsOnHitDuration, O); }
+void UPantheliaAttributeSet::OnRep_GrievousWoundsIntensityBonus(const FGameplayAttributeData& O) const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, GrievousWoundsIntensityBonus, O); }
+void UPantheliaAttributeSet::OnRep_GrievousWoundsDurationBonus(const FGameplayAttributeData& O) const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, GrievousWoundsDurationBonus, O); }
 
 void UPantheliaAttributeSet::OnRep_FireBuildup(const FGameplayAttributeData& O) const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, FireBuildup, O); }
 void UPantheliaAttributeSet::OnRep_StormBuildup(const FGameplayAttributeData& O) const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, StormBuildup, O); }

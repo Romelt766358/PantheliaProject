@@ -83,8 +83,17 @@ public:
 	FGameplayTag Attributes_StatusDamage_Storm_CurrentHealthPercent;
 	FGameplayTag Attributes_StatusDamage_Storm_MissingHealthPercent;
 
-	// Intensidad total de reducción de curación activa sobre la víctima.
+	// Intensidad manual/legacy de reducción de curación activa sobre la víctima.
+	// El sistema inmediato moderno también lee las magnitudes de los efectos con
+	// Effects.GrievousWounds y usa la más alta (no suma varias fuentes).
 	FGameplayTag Attributes_Secondary_GrievousWounds;
+
+	// Bonificaciones ofensivas del SOURCE para cualquier aplicación directa de
+	// Heridas Graves. Árbol/equipamiento las modifican con GE Infinite Add.
+	FGameplayTag Attributes_Debuff_GrievousWounds_OnHitPercent;
+	FGameplayTag Attributes_Debuff_GrievousWounds_OnHitDuration;
+	FGameplayTag Attributes_Debuff_GrievousWounds_IntensityBonus;
+	FGameplayTag Attributes_Debuff_GrievousWounds_DurationBonus;
 
 	// --- META ATRIBUTOS ---
 	// Tags usados como SetByCaller en los GEs que modifican meta atributos del AttributeSet.
@@ -268,6 +277,7 @@ public:
 	// identifica solo la instancia aplicada por Veneno para refrescarla sin borrar
 	// otras fuentes futuras de antiheal.
 	FGameplayTag Effects_GrievousWounds;
+	FGameplayTag Effects_GrievousWounds_Direct;
 	FGameplayTag Effects_GrievousWounds_Poison;
 
 	// --- TAGS DE DEBUFF (efectos de estado negativos elementales) ---
@@ -341,7 +351,7 @@ public:
 	FGameplayTag Debuff_Damage;      // SetByCaller interno: magnitud por tick del estado
 	FGameplayTag Debuff_Duration;    // SetByCaller interno: duración del estado
 	FGameplayTag Debuff_Frequency;   // identidad documental; el Period vive en la definición cacheada
-	FGameplayTag Debuff_GrievousWoundsMagnitude; // SetByCaller: porcentaje de curación negada
+	FGameplayTag Debuff_GrievousWoundsMagnitude; // SetByCaller interno: porcentaje de curación negada
 
 	// --- TAGS DE "COMBAT TRICKS" GENÉRICOS (clase 313) ---
 	// Raíz nueva para parámetros SetByCaller de ability que NO son ni un tipo de daño
@@ -350,6 +360,11 @@ public:
 	// cuánto impulso físico aplicar si esta ability da el golpe que mata. Futuros
 	// parámetros de este estilo (Sección 25: Combat Tricks) irían aquí también.
 	FGameplayTag CombatTricks_DeathImpulseMagnitude;
+
+	// Heridas Graves inmediatas configurables por cualquier spec de daño. Si la
+	// magnitud es > 0, cada impacto/tick que cause daño aplica o refresca el efecto.
+	FGameplayTag CombatTricks_GrievousWoundsPercent;
+	FGameplayTag CombatTricks_GrievousWoundsDuration;
 
 	// Knockback (clase 315): igual naturaleza que DeathImpulseMagnitude — un escalar
 	// único por ability, sin relación con el tipo de daño. Se activa cuando el golpe
