@@ -191,6 +191,29 @@ void APantheliaCharacterBase::Die(const FVector& DeathImpulse)
 	GetWorldTimerManager().ClearTimer(PoiseRegenTimerHandle);
 	GetWorldTimerManager().ClearTimer(BuildupDecayTimerHandle);
 
+	// Limpieza de estado de combate. Es especialmente importante para el jugador:
+	// su ASC vive en PlayerState y sobrevive al Pawn, así que sin esta limpieza una
+	// barra parcial, una Quemadura activa o State.Airborne podrían reaparecer tras
+	// el futuro respawn. En enemigos también es correcto y evita ticks innecesarios.
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+	{
+		ASC->SetNumericAttributeBase(UPantheliaAttributeSet::GetFireBuildupAttribute(), 0.f);
+		ASC->SetNumericAttributeBase(UPantheliaAttributeSet::GetStormBuildupAttribute(), 0.f);
+		ASC->SetNumericAttributeBase(UPantheliaAttributeSet::GetWaterBuildupAttribute(), 0.f);
+		ASC->SetNumericAttributeBase(UPantheliaAttributeSet::GetNatureBuildupAttribute(), 0.f);
+
+		FGameplayTagContainer ElementalStatusTags;
+		const FPantheliaGameplayTags& Tags = FPantheliaGameplayTags::Get();
+		ElementalStatusTags.AddTag(Tags.Debuff_Burn);
+		ElementalStatusTags.AddTag(Tags.Debuff_Shock);
+		ElementalStatusTags.AddTag(Tags.Debuff_Saturation);
+		ElementalStatusTags.AddTag(Tags.Debuff_Poison);
+		ASC->RemoveActiveEffectsWithGrantedTags(ElementalStatusTags);
+
+		// Si murió durante un launch, Landed() ya no tiene por qué ejecutarse.
+		ASC->SetLooseGameplayTagCount(Tags.State_Airborne, 0);
+	}
+
 	// Corrección post-314: antes esto era siempre FinalWeaponMesh->DetachFromComponent(...).
 	// Ahora se desprende el arma REAL de este personaje (ver ResolveDeathWeaponMesh en el
 	// header para la explicación completa de por qué hace falta esta indirección).

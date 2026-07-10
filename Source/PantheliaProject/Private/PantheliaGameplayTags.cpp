@@ -36,6 +36,20 @@ void FPantheliaGameplayTags::InitializeNativeGameplayTags()
 	GameplayTags.Attributes_Resistance_Storm = Manager.AddNativeGameplayTag(FName("Attributes.Resistance.Storm"), FString("Resistencia al daño de Tormenta (Damage.Physical.Air + Damage.Magical.Lightning)."));
 	GameplayTags.Attributes_Resistance_Nature = Manager.AddNativeGameplayTag(FName("Attributes.Resistance.Nature"), FString("Resistencia al daño de Naturaleza (Damage.Physical.Earth + Damage.Magical.Poison)."));
 
+	// --- PODER DE ESTADOS ELEMENTALES ---
+	GameplayTags.Attributes_StatusPower_Fire = Manager.AddNativeGameplayTag(
+		FName("Attributes.StatusPower.Fire"),
+		FString("Poder ofensivo de Quemadura. Lo modifican arbol y equipamiento."));
+	GameplayTags.Attributes_StatusPower_Storm = Manager.AddNativeGameplayTag(
+		FName("Attributes.StatusPower.Storm"),
+		FString("Poder ofensivo de Electrocucion. Lo modifican arbol y equipamiento."));
+	GameplayTags.Attributes_StatusPower_Water = Manager.AddNativeGameplayTag(
+		FName("Attributes.StatusPower.Water"),
+		FString("Poder ofensivo de Saturacion. Lo modifican arbol y equipamiento."));
+	GameplayTags.Attributes_StatusPower_Nature = Manager.AddNativeGameplayTag(
+		FName("Attributes.StatusPower.Nature"),
+		FString("Poder ofensivo de Veneno. Lo modifican arbol y equipamiento."));
+
 
 	// --- META ATRIBUTOS ---
 	// Tag usado como SetByCallerTag en GE_EventBasedEffect para transportar la XP ganada.
@@ -315,10 +329,16 @@ void FPantheliaGameplayTags::InitializeNativeGameplayTags()
 	GameplayTags.ElementToResistance.Add(EPantheliaElement::Water, GameplayTags.Attributes_Resistance_Water);
 	GameplayTags.ElementToResistance.Add(EPantheliaElement::Nature, GameplayTags.Attributes_Resistance_Nature);
 
+	// Mapa elemento → Status Power del source.
+	GameplayTags.ElementToStatusPower.Add(EPantheliaElement::Fire, GameplayTags.Attributes_StatusPower_Fire);
+	GameplayTags.ElementToStatusPower.Add(EPantheliaElement::Storm, GameplayTags.Attributes_StatusPower_Storm);
+	GameplayTags.ElementToStatusPower.Add(EPantheliaElement::Water, GameplayTags.Attributes_StatusPower_Water);
+	GameplayTags.ElementToStatusPower.Add(EPantheliaElement::Nature, GameplayTags.Attributes_StatusPower_Nature);
+
 	// --- TAGS DE PARÁMETROS DE DEBUFF (SetByCaller, clase 304) ---
 	// Ver la explicación completa en el header. Se registran como hojas sueltas bajo la
 	// raíz Debuff (ya registrada arriba); nunca se conceden a un ASC, solo transportan
-	// magnitudes dentro de un FGameplayEffectSpec.
+	// magnitudes dentro del spec del GameplayEffect de estado.
 	// NOTA: Debuff.Chance fue ELIMINADO (decisión cerrada del sistema de buildup): el
 	// disparador de los estados es el umbral de acumulación, sin azar. Ver el header.
 	GameplayTags.Debuff_Damage = Manager.AddNativeGameplayTag(

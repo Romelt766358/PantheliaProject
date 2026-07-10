@@ -8,6 +8,8 @@
 #include "AbilitySystem/PantheliaAbilitySystemLibrary.h"
 #include "AbilitySystem/PantheliaAbilityTypes.h"
 #include "AbilitySystem/PantheliaAbilitySystemComponent.h"
+#include "AbilitySystem/Data/PantheliaCharacterClassInfo.h"
+#include "AbilitySystem/Data/PantheliaElementalStatusConfig.h"
 // Necesario para AddToXP() y GetEnemyKillCount() / RecordEnemyKill() en el bloque IncomingXP
 #include "Player/PantheliaPlayerState.h"
 // Necesario para GetBaseXPReward() y GetEnemyID() en SendXPEvent
@@ -43,6 +45,11 @@ UPantheliaAttributeSet::UPantheliaAttributeSet()
 	// Resilience en GE_SecondaryAttributes debe eliminarse en el editor (Etapa 3).
 	InitFireResistance(0.f); InitWaterResistance(0.f);
 	InitStormResistance(0.f); InitNatureResistance(0.f);
+
+	// Potencia ofensiva de los estados (porcentaje adicional). Empieza en 0 y
+	// la modifican árbol/equipamiento mediante GameplayEffects Infinite Add.
+	InitFireStatusPower(0.f); InitStormStatusPower(0.f);
+	InitWaterStatusPower(0.f); InitNatureStatusPower(0.f);
 
 	// Barras de buildup elemental (inicialmente 0 — vacías). Solo las llena el
 	// ExecCalc con golpes elementales; solo las vacía el decay o el disparo del estado.
@@ -84,6 +91,12 @@ UPantheliaAttributeSet::UPantheliaAttributeSet()
 	TagsToAttributes.Add(Tags.Attributes_Resistance_Storm, GetStormResistanceAttribute);
 	TagsToAttributes.Add(Tags.Attributes_Resistance_Nature, GetNatureResistanceAttribute);
 
+	// Potencia de estado del atacante — visible para UI, árbol y equipamiento.
+	TagsToAttributes.Add(Tags.Attributes_StatusPower_Fire, GetFireStatusPowerAttribute);
+	TagsToAttributes.Add(Tags.Attributes_StatusPower_Storm, GetStormStatusPowerAttribute);
+	TagsToAttributes.Add(Tags.Attributes_StatusPower_Water, GetWaterStatusPowerAttribute);
+	TagsToAttributes.Add(Tags.Attributes_StatusPower_Nature, GetNatureStatusPowerAttribute);
+
 	// Barras de buildup elemental — registradas desde el primer día para que la
 	// futura UI de barras de estado del enemigo se bindee por tag sin tocar C++.
 	TagsToAttributes.Add(Tags.Attributes_Buildup_Fire, GetFireBuildupAttribute);
@@ -121,6 +134,11 @@ void UPantheliaAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty
 	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, StormResistance, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, NatureResistance, COND_None, REPNOTIFY_Always);
 
+	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, FireStatusPower, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, StormStatusPower, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, WaterStatusPower, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, NatureStatusPower, COND_None, REPNOTIFY_Always);
+
 	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, FireBuildup, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, StormBuildup, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, WaterBuildup, COND_None, REPNOTIFY_Always);
@@ -146,6 +164,13 @@ void UPantheliaAttributeSet::PreAttributeChange(const FGameplayAttribute& Attrib
 	else if (Attribute == GetWaterResistanceAttribute())  NewValue = FMath::Clamp(NewValue, 0.f, 100.f);
 	else if (Attribute == GetStormResistanceAttribute())  NewValue = FMath::Clamp(NewValue, 0.f, 100.f);
 	else if (Attribute == GetNatureResistanceAttribute()) NewValue = FMath::Clamp(NewValue, 0.f, 100.f);
+	// Status Power puede acumularse sin cap superior fijo: el balance vive en los
+	// GEs del árbol/equipamiento. Sí impedimos valores negativos, que invertirían
+	// el payload y podrían convertir daño en curación accidental.
+	else if (Attribute == GetFireStatusPowerAttribute())   NewValue = FMath::Max(NewValue, 0.f);
+	else if (Attribute == GetStormStatusPowerAttribute())  NewValue = FMath::Max(NewValue, 0.f);
+	else if (Attribute == GetWaterStatusPowerAttribute())  NewValue = FMath::Max(NewValue, 0.f);
+	else if (Attribute == GetNatureStatusPowerAttribute()) NewValue = FMath::Max(NewValue, 0.f);
 
 	// Barras de buildup: clamp 0..BuildupThreshold. El disparo del umbral NO vive
 	// aquí (PreAttributeChange no debe tener lógica de juego, solo clamps) — vive en
@@ -248,6 +273,18 @@ void UPantheliaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModC
 		Props.TargetAvatarActor->Implements<UCombatInterface>() &&
 		ICombatInterface::Execute_IsDead(Props.TargetAvatarActor))
 	{
+		// Un ExecCalc puede producir varios output modifiers. Si IncomingDamage mata
+		// primero, los outputs posteriores todavía llegan uno a uno a este callback.
+		// Limpiamos el atributo evaluado antes de salir para que un cadáver no conserve
+		// buildup/meta valores que puedan reaparecer tras un respawn con ASC persistente.
+		const FGameplayAttribute& EvaluatedAttribute = Data.EvaluatedData.Attribute;
+		if (EvaluatedAttribute == GetFireBuildupAttribute()) SetFireBuildup(0.f);
+		else if (EvaluatedAttribute == GetStormBuildupAttribute()) SetStormBuildup(0.f);
+		else if (EvaluatedAttribute == GetWaterBuildupAttribute()) SetWaterBuildup(0.f);
+		else if (EvaluatedAttribute == GetNatureBuildupAttribute()) SetNatureBuildup(0.f);
+		else if (EvaluatedAttribute == GetIncomingDamageAttribute()) SetIncomingDamage(0.f);
+		else if (EvaluatedAttribute == GetIncomingPoiseDamageAttribute()) SetIncomingPoiseDamage(0.f);
+		else if (EvaluatedAttribute == GetIncomingXPAttribute()) SetIncomingXP(0.f);
 		return;
 	}
 
@@ -572,20 +609,18 @@ void UPantheliaAttributeSet::HandleIncomingXP(const FEffectProperties& Props)
 }
 
 // ============================================================
-// Debuff (clase 310) — creación dinámica de un GameplayEffect en C++
+// ESTADOS ELEMENTALES — GameplayEffects dinámicos cacheados
 // ============================================================
-// A diferencia de todo lo hecho hasta ahora, aquí NO usamos un GE ya configurado en un
-// Blueprint (como DamageEffectClass) — lo CONSTRUIMOS desde cero en C++, en tiempo de
-// ejecución. Un UGameplayEffect es normalmente un asset inmutable creado en el editor,
-// pero como cualquier UObject también se puede crear "de la nada" con NewObject. Hace
-// falta aquí porque cada debuff necesita su Duration/Period/Modifier ajustados a los 3
-// números concretos de ESTE golpe (DebuffDamage/Duration/Frequency, ya guardados en el
-// context desde la clase 309) — no tiene sentido crear un asset Blueprint por cada
-// combinación posible de esos 3 números.
+// La definición de diseño (magnitud base, duración, frecuencia y tipo de payload)
+// vive en DA_ElementalStatusConfig. Aquí solo se materializa esa definición como
+// un GameplayEffect runtime cuando la barra alcanza el umbral.
 //
-// LIMITACIÓN IMPORTANTE (viene del motor, no es un descuido nuestro): los GE creados así
-// en C++ no soportan replicación de red correctamente. Como el proyecto es sin
-// multiplayer (regla del proyecto), esto no nos afecta.
+// El GE se construye una vez por AttributeSet/tag/frecuencia y se reutiliza.
+// Los valores finales de cada aplicación viajan por SetByCaller después de aplicar
+// el Status Power del atacante; un proc nuevo reemplaza al anterior por tag.
+//
+// LIMITACIÓN DEL MOTOR: los GameplayEffects creados en runtime no son una solución
+// apropiada para replicación. Panthelia es single-player, así que no afecta al diseño.
 // ============================================================
 // SISTEMA DE BUILDUP — disparo por umbral (reemplaza al dado del curso)
 // ============================================================
@@ -639,71 +674,102 @@ void UPantheliaAttributeSet::HandleElementalBuildup(const FGameplayEffectModCall
 
 	if (bTriggered)
 	{
-		TriggerElementalStatus(Props, Element, Data.EffectSpec);
+		TriggerElementalStatus(Props, Element);
 	}
 }
 
-void UPantheliaAttributeSet::TriggerElementalStatus(const FEffectProperties& Props, EPantheliaElement Element,
-	const FGameplayEffectSpec& TriggeringSpec)
+void UPantheliaAttributeSet::TriggerElementalStatus(const FEffectProperties& Props, EPantheliaElement Element)
 {
 	const FPantheliaGameplayTags& GameplayTags = FPantheliaGameplayTags::Get();
 
-	// Tag de identidad del estado, por la vía canónica ElementToDebuff (una fuente
-	// de verdad, 4 entradas — ver PantheliaGameplayTags.h).
+	// Identidad del estado (Debuff.Burn/Shock/Saturation/Poison).
 	const FGameplayTag* DebuffTagPtr = GameplayTags.ElementToDebuff.Find(Element);
-	if (!DebuffTagPtr || !DebuffTagPtr->IsValid()) return;
-
-	// Los parámetros del estado los define EL GOLPE QUE LLENÓ LA BARRA: sus
-	// SetByCaller Debuff.Damage/Duration/Frequency (transportados desde la clase 304,
-	// asignados siempre por ApplyDamageScalingToSpec). Es la lectura soulslike
-	// natural: el veneno que te remata define cómo de fuerte es el envenenamiento.
-	const float Damage    = TriggeringSpec.GetSetByCallerMagnitude(GameplayTags.Debuff_Damage, false, 0.f);
-	const float Duration  = TriggeringSpec.GetSetByCallerMagnitude(GameplayTags.Debuff_Duration, false, 0.f);
-	const float Frequency = TriggeringSpec.GetSetByCallerMagnitude(GameplayTags.Debuff_Frequency, false, 1.f);
-
-	// === PUNTO DE DESPACHO POR ELEMENTO ===
-	// HOY los 4 elementos aplican el DoT genérico como payload provisional. Los
-	// payloads reales del diseño (Gameplay_Mechanics, "Efectos de estado") se
-	// implementan AQUÍ, caso por caso, sin tocar nada más del pipeline:
-	switch (Element)
+	if (!DebuffTagPtr || !DebuffTagPtr->IsValid())
 	{
-		case EPantheliaElement::Fire:
-			// Quemadura: el DoT ya ES el payload correcto del diseño.
-			// TODO (diseño): sinergia "golpear al quemado con arma de fuego cura al
-			// atacante" — vive en el ExecCalc/HandleIncomingDamage consultando
-			// Debuff.Burn en el target, no aquí.
-			ApplyElementalDebuff(Props, *DebuffTagPtr, Damage, Duration, Frequency);
+		UE_LOG(LogPanthelia, Warning,
+			TEXT("[STATUS] El elemento %d no tiene tag en ElementToDebuff."),
+			static_cast<uint8>(Element));
+		return;
+	}
+
+	// La definición del estado es GLOBAL. Ya no se lee daño/duración/frecuencia del
+	// spec del último golpe, por lo que todas las fuentes del mismo elemento disparan
+	// la misma Quemadura/Electrocución/Saturación/Veneno base.
+	const UPantheliaCharacterClassInfo* ClassInfo =
+		UPantheliaAbilitySystemLibrary::GetCharacterClassInfo(Props.TargetAvatarActor);
+	if (!ClassInfo || !ClassInfo->ElementalStatusConfig)
+	{
+		UE_LOG(LogPanthelia, Error,
+			TEXT("[STATUS] Falta ElementalStatusConfig en DA_CharacterClassInfo. No se puede disparar '%s'."),
+			*DebuffTagPtr->ToString());
+		return;
+	}
+
+	const FPantheliaElementalStatusDefinition* Definition =
+		ClassInfo->ElementalStatusConfig->FindStatusDefinition(Element, true);
+	if (!Definition) return;
+
+	// El source puede aumentar la potencia mediante árbol/equipamiento. Leemos el
+	// atributo por el mapa ElementToStatusPower para que añadir consumidores futuros
+	// no requiera otro switch duplicado.
+	float StatusPower = 0.f;
+	if (Props.SourceASC)
+	{
+		if (const FGameplayTag* StatusPowerTag = GameplayTags.ElementToStatusPower.Find(Element))
+		{
+			if (const auto* AttributeGetter = TagsToAttributes.Find(*StatusPowerTag))
+			{
+				StatusPower = FMath::Max(
+					Props.SourceASC->GetNumericAttribute((*AttributeGetter)()), 0.f);
+			}
+		}
+	}
+
+	const float MagnitudeMultiplier = FMath::Max(
+		0.f,
+		1.f + (StatusPower * Definition->MagnitudePercentPerStatusPower / 100.f));
+	const float DurationMultiplier = FMath::Max(
+		0.f,
+		1.f + (StatusPower * Definition->DurationPercentPerStatusPower / 100.f));
+
+	const float FinalMagnitude = FMath::Max(Definition->BaseMagnitude * MagnitudeMultiplier, 0.f);
+	const float FinalDuration = FMath::Max(Definition->BaseDuration * DurationMultiplier, 0.f);
+	const float TickFrequency = FMath::Max(Definition->TickFrequency, 0.f);
+
+	switch (Definition->PayloadType)
+	{
+		case EPantheliaElementalStatusPayload::DamageOverTime:
+			ApplyElementalDebuff(
+				Props, *DebuffTagPtr, FinalMagnitude, FinalDuration, TickFrequency);
 			break;
 
-		case EPantheliaElement::Storm:
-			// TODO (diseño): Electrocución es una DETONACIÓN al llenarse (daño +
-			// daño de postura + restaura vida/maná al usuario si está cerca), NO un
-			// DoT. Payload provisional: DoT genérico, para que el sistema sea
-			// testeable de punta a punta desde hoy.
-			ApplyElementalDebuff(Props, *DebuffTagPtr, Damage, Duration, Frequency);
+		case EPantheliaElementalStatusPayload::BurstDamage:
+			// Electrocución necesita un payload instantáneo propio (daño/postura y
+			// posibles recompensas al source). No aplicamos un DoT falso mientras tanto.
+			UE_LOG(LogPanthelia, Warning,
+				TEXT("[STATUS] '%s' alcanzó el umbral, pero BurstDamage aún no está implementado."),
+				*DebuffTagPtr->ToString());
 			break;
 
-		case EPantheliaElement::Water:
-			// TODO (diseño): Saturación es una DEBILIDAD (reduce drásticamente la
-			// resistencia mágica durante la duración), NO un DoT. Cuando se
-			// implemente: ApplyElementalDebuff con Damage=0 (estado solo-tag) + un
-			// GE Infinite/Duration con el modificador de MagicResistance.
-			ApplyElementalDebuff(Props, *DebuffTagPtr, Damage, Duration, Frequency);
-			break;
-
-		case EPantheliaElement::Nature:
-			// Veneno: DoT (payload provisional válido; números por cerrar en diseño).
-			ApplyElementalDebuff(Props, *DebuffTagPtr, Damage, Duration, Frequency);
+		case EPantheliaElementalStatusPayload::AttributeDebuff:
+			// Saturación necesita un GE de duración que reduzca atributos defensivos.
+			// Se deja explícitamente pendiente en vez de sustituirlo por daño periódico.
+			UE_LOG(LogPanthelia, Warning,
+				TEXT("[STATUS] '%s' alcanzó el umbral, pero AttributeDebuff aún no está implementado."),
+				*DebuffTagPtr->ToString());
 			break;
 
 		default:
+			UE_LOG(LogPanthelia, Warning,
+				TEXT("[STATUS] Payload desconocido para '%s'."), *DebuffTagPtr->ToString());
 			break;
 	}
 
-	UE_LOG(LogPanthelia, Log, TEXT("[BUILDUP] Barra de '%s' LLENA en '%s' — estado disparado (dmg %.1f / dur %.1f / freq %.1f)."),
+	UE_LOG(LogPanthelia, Log,
+		TEXT("[STATUS] '%s' disparado en '%s' | Base %.1f | StatusPower %.1f | Final %.1f | Dur %.1f | Freq %.1f"),
 		*DebuffTagPtr->ToString(),
 		Props.TargetCharacter ? *Props.TargetCharacter->GetName() : TEXT("null"),
-		Damage, Duration, Frequency);
+		Definition->BaseMagnitude, StatusPower, FinalMagnitude, FinalDuration, TickFrequency);
 }
 
 void UPantheliaAttributeSet::ApplyElementalDebuff(const FEffectProperties& Props, const FGameplayTag& DebuffTag,
@@ -715,7 +781,7 @@ void UPantheliaAttributeSet::ApplyElementalDebuff(const FEffectProperties& Props
 	if (Duration <= 0.f)
 	{
 		UE_LOG(LogPanthelia, Warning,
-			TEXT("[DEBUFF] Duracion invalida (%.2f) para '%s' — no se aplica. Revisa DebuffDuration en la ability que lleno la barra."),
+			TEXT("[DEBUFF] Duracion invalida (%.2f) para '%s' — no se aplica. Revisa BaseDuration en DA_ElementalStatusConfig."),
 			Duration, *DebuffTag.ToString());
 		return;
 	}
@@ -732,7 +798,7 @@ void UPantheliaAttributeSet::ApplyElementalDebuff(const FEffectProperties& Props
 	if (bIsDoT && Frequency <= 0.f)
 	{
 		UE_LOG(LogPanthelia, Warning,
-			TEXT("[DEBUFF] Frecuencia invalida (%.2f) para el DoT de '%s' — no se aplica. Revisa DebuffFrequency en la ability."),
+			TEXT("[DEBUFF] Frecuencia invalida (%.2f) para el DoT de '%s' — no se aplica. Revisa TickFrequency en DA_ElementalStatusConfig."),
 			Frequency, *DebuffTag.ToString());
 		return;
 	}
@@ -757,10 +823,10 @@ void UPantheliaAttributeSet::ApplyElementalDebuff(const FEffectProperties& Props
 	TObjectPtr<UGameplayEffect>& CachedEffect = CachedDebuffEffects.FindOrAdd(CacheKey);
 	if (!CachedEffect)
 	{
-		// Primera vez que se necesita esta combinación: se construye la definición
-		// UNA vez y queda cacheada para toda la partida. El nombre descriptivo sirve
-		// en el debugger de GAS (showdebug abilitysystem) y es único por construcción.
-		UGameplayEffect* Effect = NewObject<UGameplayEffect>(GetTransientPackage(), CacheKey);
+		// Primera vez que ESTE AttributeSet necesita esta combinación: se construye
+		// una definición y queda cacheada. Usar this como Outer evita colisiones entre
+		// personajes que creen el mismo CacheKey dentro de GetTransientPackage.
+		UGameplayEffect* Effect = NewObject<UGameplayEffect>(this, CacheKey);
 
 		// Duración: el estado dura un tiempo (no es instantáneo ni infinito).
 		Effect->DurationPolicy = EGameplayEffectDurationType::HasDuration;
@@ -783,20 +849,11 @@ void UPantheliaAttributeSet::ApplyElementalDebuff(const FEffectProperties& Props
 			Effect->AddComponent<UTargetTagsGameplayEffectComponent>();
 		TagComponent.SetAndApplyTargetTagChanges(TagContainer);
 
-		// --- STACKING: activo, con fecha de caducidad conocida (confirmado, no especulación) ---
-		//
-		// CONFIRMADO tras compilar: estas dos líneas compilan en UE 5.8 con un warning
-		// C4996 ("Stacking Type will be made private, Please use GetStackingType —
-		// actualiza tu código antes de subir de versión"). El SetStackingType() de
-		// reemplazo está marcado solo-editor — hoy no existe forma "a prueba de futuro"
-		// de fijar el stacking en un GE creado en runtime. El día que actualices de
-		// UE 5.8, ESTA es la primera línea que revisar si el proyecto deja de compilar.
-		//
-		// Con la definición cacheada, el stacking FUNCIONA de verdad: dos Quemaduras
-		// seguidas sobre el mismo enemigo son "el mismo efecto" para GAS (misma
-		// definición) → la segunda refresca a la primera en vez de correr en paralelo.
-		Effect->StackingType = EGameplayEffectStackingType::AggregateBySource;
-		Effect->StackLimitCount = 1;
+		// No configuramos StackingType en la definición dinámica. Esa propiedad está
+		// deprecada para escritura directa en UE 5.8 y, además, AggregateBySource
+		// permitiría Quemaduras paralelas de atacantes distintos. La unicidad se
+		// resuelve de forma determinista justo antes de aplicar: se elimina cualquier
+		// estado activo con este tag y se aplica el spec nuevo.
 
 		if (bIsDoT)
 		{
@@ -847,6 +904,14 @@ void UPantheliaAttributeSet::ApplyElementalDebuff(const FEffectProperties& Props
 	MutableSpec.SetSetByCallerMagnitude(GameplayTags.Debuff_Duration, Duration);
 	MutableSpec.SetSetByCallerMagnitude(GameplayTags.Debuff_Damage, Damage);
 
+	// Un solo estado elemental de cada tipo puede estar activo por target. Quitamos
+	// el anterior por tag antes de aplicar el nuevo: esto refresca duración, actualiza
+	// la magnitud si cambió el Status Power y evita stacks paralelos incluso cuando
+	// diferentes enemigos contribuyen a la misma barra del jugador.
+	FGameplayTagContainer ExistingStatusTag;
+	ExistingStatusTag.AddTag(DebuffTag);
+	Props.TargetASC->RemoveActiveEffectsWithGrantedTags(ExistingStatusTag);
+
 	// IMPORTANTE (evita un bucle infinito): este context NUEVO no lleva buildup ni
 	// flags de estado. Cuando el DoT tiquee daño (cada Period), disparará su propio
 	// PostGameplayEffectExecute → HandleIncomingDamage — pero ese golpe interno no
@@ -884,6 +949,12 @@ void UPantheliaAttributeSet::OnRep_FireResistance(const FGameplayAttributeData& 
 void UPantheliaAttributeSet::OnRep_WaterResistance(const FGameplayAttributeData& O)  const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, WaterResistance, O); }
 void UPantheliaAttributeSet::OnRep_StormResistance(const FGameplayAttributeData& O)  const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, StormResistance, O); }
 void UPantheliaAttributeSet::OnRep_NatureResistance(const FGameplayAttributeData& O) const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, NatureResistance, O); }
+
+// ===== OnRep Potencia de estados =====
+void UPantheliaAttributeSet::OnRep_FireStatusPower(const FGameplayAttributeData& O) const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, FireStatusPower, O); }
+void UPantheliaAttributeSet::OnRep_StormStatusPower(const FGameplayAttributeData& O) const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, StormStatusPower, O); }
+void UPantheliaAttributeSet::OnRep_WaterStatusPower(const FGameplayAttributeData& O) const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, WaterStatusPower, O); }
+void UPantheliaAttributeSet::OnRep_NatureStatusPower(const FGameplayAttributeData& O) const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, NatureStatusPower, O); }
 
 void UPantheliaAttributeSet::OnRep_FireBuildup(const FGameplayAttributeData& O) const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, FireBuildup, O); }
 void UPantheliaAttributeSet::OnRep_StormBuildup(const FGameplayAttributeData& O) const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, StormBuildup, O); }

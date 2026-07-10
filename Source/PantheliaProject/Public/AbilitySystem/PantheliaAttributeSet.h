@@ -19,7 +19,6 @@ class UGameplayEffect;
 // referencia, así que basta con declararlas (los .cpp que las usan ya incluyen
 // GameplayEffectExtension.h / GameplayEffect.h con las definiciones completas).
 struct FGameplayEffectModCallbackData;
-struct FGameplayEffectSpec;
 
 #define ATTRIBUTE_ACCESSORS(ClassName, PropertyName) \
 	GAMEPLAYATTRIBUTE_PROPERTY_GETTER(ClassName, PropertyName) \
@@ -132,6 +131,20 @@ public:
 		UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_StormResistance, Category = "Resistance Attributes") FGameplayAttributeData StormResistance;  ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, StormResistance)
 		UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_NatureResistance, Category = "Resistance Attributes") FGameplayAttributeData NatureResistance; ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, NatureResistance)
 
+		// ===== POTENCIA DE ESTADOS ELEMENTALES =====
+		// Estos atributos pertenecen al ATACANTE y modifican la definición GLOBAL del
+		// estado cuando una barra se llena. La ability solo aporta buildup: Firebolt,
+		// un arma o cualquier otra fuente de Fuego disparan la misma Quemadura base.
+		//
+		// El árbol y el equipamiento los modifican mediante GameplayEffects Infinite
+		// con operación Add. Son porcentajes: 25 FireStatusPower = +25% de magnitud
+		// cuando DA_ElementalStatusConfig usa 1% por punto. Pueden acumularse varias
+		// veces de forma natural porque GAS agrega todos los modifiers activos.
+		UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_FireStatusPower, Category = "Status Power Attributes") FGameplayAttributeData FireStatusPower; ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, FireStatusPower)
+		UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_StormStatusPower, Category = "Status Power Attributes") FGameplayAttributeData StormStatusPower; ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, StormStatusPower)
+		UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_WaterStatusPower, Category = "Status Power Attributes") FGameplayAttributeData WaterStatusPower; ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, WaterStatusPower)
+		UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_NatureStatusPower, Category = "Status Power Attributes") FGameplayAttributeData NatureStatusPower; ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, NatureStatusPower)
+
 		// ===== BARRAS DE ACUMULACIÓN ELEMENTAL (BUILDUP) =====
 		// El sistema de efectos de estado soulslike (Gameplay_Mechanics, "Efectos de
 		// estado"): cada golpe elemental SUMA aquí; al llegar a BuildupThreshold (100),
@@ -199,6 +212,12 @@ public:
 	UFUNCTION() void OnRep_StormResistance(const FGameplayAttributeData& OldStormResistance) const;
 	UFUNCTION() void OnRep_NatureResistance(const FGameplayAttributeData& OldNatureResistance) const;
 
+	// --- OnRep Potencia de estados ---
+	UFUNCTION() void OnRep_FireStatusPower(const FGameplayAttributeData& OldFireStatusPower) const;
+	UFUNCTION() void OnRep_StormStatusPower(const FGameplayAttributeData& OldStormStatusPower) const;
+	UFUNCTION() void OnRep_WaterStatusPower(const FGameplayAttributeData& OldWaterStatusPower) const;
+	UFUNCTION() void OnRep_NatureStatusPower(const FGameplayAttributeData& OldNatureStatusPower) const;
+
 	UFUNCTION() void OnRep_FireBuildup(const FGameplayAttributeData& OldFireBuildup) const;
 	UFUNCTION() void OnRep_StormBuildup(const FGameplayAttributeData& OldStormBuildup) const;
 	UFUNCTION() void OnRep_WaterBuildup(const FGameplayAttributeData& OldWaterBuildup) const;
@@ -239,20 +258,15 @@ private:
 	// y, si la barra se llenó, la resetea a 0 y dispara TriggerElementalStatus.
 	void HandleElementalBuildup(const FGameplayEffectModCallbackData& Data, EPantheliaElement Element);
 
-	// TriggerElementalStatus: el PUNTO DE DESPACHO de los efectos de estado — el
-	// único sitio del código donde "la barra se llenó" se convierte en gameplay.
-	// HOY: los 4 elementos aplican el DoT genérico (ApplyElementalDebuff) como
-	// payload provisional. Los payloads por elemento del diseño (Gameplay_Mechanics,
-	// "Efectos de estado") se montan AQUÍ encima, sin tocar nada más del pipeline:
-	//   Quemadura (Fuego):     DoT ✓ (ya es el payload correcto) + sinergia futura
-	//                          "golpear al quemado con fuego cura al atacante".
-	//   Electrocución (Storm): detonación al llenarse (daño + postura + restaura
-	//                          vida/maná al usuario cercano) — NO es un DoT.
-	//   Saturación (Agua):     estado de debilidad que reduce drásticamente la
-	//                          resistencia mágica — NO es un DoT.
-	//   Veneno (Naturaleza):   DoT (payload provisional válido; diseño por cerrar).
-	void TriggerElementalStatus(const FEffectProperties& Props, EPantheliaElement Element,
-		const FGameplayEffectSpec& TriggeringSpec);
+	// TriggerElementalStatus: el PUNTO DE DESPACHO de los efectos de estado.
+	// Consulta DA_ElementalStatusConfig para obtener la definición GLOBAL del
+	// elemento y aplica el Status Power del source. La ability que dio el último
+	// golpe ya no puede cambiar daño, duración ni frecuencia del estado.
+	//
+	// DamageOverTime está implementado para Quemadura/Veneno. BurstDamage y
+	// AttributeDebuff quedan como payloads explícitos pendientes, sin fingir un DoT
+	// provisional que después pudiera confundirse con diseño definitivo.
+	void TriggerElementalStatus(const FEffectProperties& Props, EPantheliaElement Element);
 
 	// ApplyElementalDebuff: construye y aplica el GE dinámico del estado (tag de
 	// identidad + DoT opcional), con caché de definiciones (ver CachedDebuffEffects).
@@ -263,39 +277,23 @@ private:
 	void ApplyElementalDebuff(const FEffectProperties& Props, const FGameplayTag& DebuffTag,
 		float Damage, float Duration, float Frequency);
 
-	// === CACHÉ DE DEFINICIONES DINÁMICAS DE DEBUFF (fix auditoría post-315) ===
+	// === CACHÉ DE DEFINICIONES DINÁMICAS DE ESTADO ===
 	//
-	// POR QUÉ EXISTE — dos bugs de la versión anterior de Debuff() que este caché
-	// resuelve A LA VEZ:
+	// El Data Asset contiene los datos de diseño; este mapa guarda las definiciones
+	// UGameplayEffect construidas en runtime para no crear un UObject en cada proc.
+	// La clave incluye tag y frecuencia porque Period es propiedad fija del GE.
 	//
-	// 1. EL STACKING NO FUNCIONABA. Debuff() creaba un UGameplayEffect NUEVO con
-	//    NewObject en cada debuff exitoso y le configuraba StackingType =
-	//    AggregateBySource + StackLimitCount = 1. Pero el stacking de GAS agrupa por
-	//    DEFINICIÓN de efecto (el objeto UGameplayEffect concreto): dos Quemaduras
-	//    seguidas creaban DOS definiciones distintas, GAS no las consideraba "el
-	//    mismo efecto", y corrían EN PARALELO — exactamente lo que el stacking
-	//    intentaba evitar. Con una ÚNICA definición cacheada por tipo de debuff,
-	//    las aplicaciones repetidas SÍ agregan: la segunda Quemadura refresca la
-	//    duración de la primera en vez de sumarse.
+	// Cada definición usa ESTE AttributeSet como Outer. Por eso dos personajes pueden
+	// tener un objeto con el mismo CacheKey sin colisionar en GetTransientPackage.
 	//
-	// 2. COLISIÓN DE NOMBRES. NewObject con el MISMO FName en el MISMO outer
-	//    (GetTransientPackage) mientras el objeto anterior con ese nombre sigue vivo
-	//    (su debuff de 5s aún activo) es terreno indefinido del motor — puede
-	//    reemplazar/reconstruir el objeto in situ con un efecto activo apuntándole.
-	//    Con el caché, el objeto se crea UNA vez y se reutiliza: nunca se recrea un
-	//    nombre ocupado.
+	// La unicidad del estado activo no depende del stacking del GE: antes de aplicar
+	// un estado se elimina cualquier efecto que conceda su tag exacto y se aplica el
+	// spec nuevo. Esto garantiza un solo Burn/Shock/Saturation/Poison por target,
+	// actualiza magnitud/duración y evita la API de StackingType deprecada en UE 5.8.
 	//
-	// La clave del mapa incluye el tag de debuff Y la frecuencia (Period): el Period
-	// es una propiedad fija de la definición (no puede ser SetByCaller), así que dos
-	// abilities con frecuencias distintas del mismo debuff necesitan definiciones
-	// distintas — y NO deben stackear entre sí de todas formas (tiquean a ritmos
-	// diferentes). Daño y duración, en cambio, SÍ viajan como SetByCaller en el spec
-	// (ver Debuff() en el .cpp), así que no fragmentan el caché.
-	//
-	// UPROPERTY(Transient): Transient porque es puro estado runtime (jamás se
-	// serializa a disco); UPROPERTY porque sin él el garbage collector podría
-	// llevarse una definición cacheada cuando ningún efecto activo la referencie —
-	// y la siguiente Quemadura usaría un puntero muerto.
+	// UPROPERTY(Transient): estado puro de runtime; UPROPERTY mantiene las
+	// definiciones vivas frente al garbage collector.
+
 	UPROPERTY(Transient)
 	TMap<FName, TObjectPtr<UGameplayEffect>> CachedDebuffEffects;
 

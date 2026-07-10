@@ -9,6 +9,7 @@
 class UGameplayEffect;
 class UGameplayAbility;
 class UCurveTable;
+class UPantheliaElementalStatusConfig;
 
 UENUM(BlueprintType)
 enum class EPantheliaCharacterClass : uint8
@@ -62,6 +63,12 @@ public:
     // Abilities otorgadas a TODOS los enemigos al inicializarse (GA_HitReact, etc.)
     UPROPERTY(EditDefaultsOnly, Category = "Common Class Defaults")
     TArray<TSubclassOf<UGameplayAbility>> CommonAbilities;
+
+    // Configuración global de los cuatro estados elementales. La ability solo
+    // declara cuánto buildup aporta; el daño/duración/frecuencia del estado se
+    // leen de este Data Asset, independientemente del golpe que llenó la barra.
+    UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Elemental Status")
+    TObjectPtr<UPantheliaElementalStatusConfig> ElementalStatusConfig;
 
     // Curve Table con los coeficientes escalables por nivel usados en ExecCalc_Damage.
     // Curvas incluidas:

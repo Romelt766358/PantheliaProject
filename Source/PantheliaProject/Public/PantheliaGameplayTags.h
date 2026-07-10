@@ -65,6 +65,15 @@ public:
 	FGameplayTag Attributes_Resistance_Storm;    // Mitiga Damage.Physical.Air + Damage.Magical.Lightning
 	FGameplayTag Attributes_Resistance_Nature;   // Mitiga Damage.Physical.Earth + Damage.Magical.Poison
 
+	// --- PODER DE ESTADOS ELEMENTALES ---
+	// Atributos ofensivos del SOURCE. Cada punto representa, por defecto, +1% a
+	// la magnitud del estado de ese elemento. El árbol y el equipamiento los
+	// modifican mediante Gameplay Effects Infinite; las abilities no los fijan.
+	FGameplayTag Attributes_StatusPower_Fire;
+	FGameplayTag Attributes_StatusPower_Storm;
+	FGameplayTag Attributes_StatusPower_Water;
+	FGameplayTag Attributes_StatusPower_Nature;
+
 	// --- META ATRIBUTOS ---
 	// Tags usados como SetByCaller en los GEs que modifican meta atributos del AttributeSet.
 	// Estos atributos no se muestran en la UI ni se replican — son temporales en el servidor.
@@ -292,12 +301,15 @@ public:
 	// resistencia, más rápido cae la barra.
 	TMap<EPantheliaElement, FGameplayTag> ElementToResistance;
 
+	// Mapa elemento → atributo Status Power del source. Lo usa el despachador
+	// central al calcular la magnitud final del estado detonado.
+	TMap<EPantheliaElement, FGameplayTag> ElementToStatusPower;
+
 	// --- TAGS DE PARÁMETROS DE DEBUFF (SetByCaller, clase 304) ---
 	// Distintos de los tags de arriba (Debuff_Burn, etc.): aquellos son tags de IDENTIDAD
 	// (identifican QUÉ debuff es — se conceden al target mientras dura). Estos son tags
-	// de TRANSPORTE (SetByCaller): solo existen para que UPantheliaDamageGameplayAbility
-	// escriba sus 4 parámetros (Chance, Damage, Frequency, Duration) dentro de un
-	// FGameplayEffectSpec y el ExecCalc/GE correspondiente los pueda leer por tag. Nunca
+	// de TRANSPORTE (SetByCaller): los usa el GameplayEffect dinámico del estado
+	// para recibir su magnitud y duración desde la configuración global. Nunca
 	// se conceden a ningún ASC — son claves de diccionario, igual que Attributes_Meta_IncomingXP
 	// ya hace dentro de la raíz "Attributes". No son padre-hijo entre sí: son 4 tags hoja
 	// independientes bajo la raíz Debuff (que ya existe arriba).
@@ -308,9 +320,9 @@ public:
 	// (DetermineDebuff) — en los Souls, los golpes o pegan o no pegan; lo único con
 	// azar es el crítico. Ver los tags CombatTricks_Buildup_* más abajo, que son el
 	// transporte del sistema real.
-	FGameplayTag Debuff_Damage;      // daño que tiquea cada Debuff_Frequency segundos
-	FGameplayTag Debuff_Duration;    // segundos que dura el debuff activo
-	FGameplayTag Debuff_Frequency;   // cada cuántos segundos tiquea Debuff_Damage (= "Period" del GE)
+	FGameplayTag Debuff_Damage;      // SetByCaller interno: magnitud por tick del estado
+	FGameplayTag Debuff_Duration;    // SetByCaller interno: duración del estado
+	FGameplayTag Debuff_Frequency;   // identidad documental; el Period vive en la definición cacheada
 
 	// --- TAGS DE "COMBAT TRICKS" GENÉRICOS (clase 313) ---
 	// Raíz nueva para parámetros SetByCaller de ability que NO son ni un tipo de daño

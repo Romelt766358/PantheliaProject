@@ -73,7 +73,7 @@ void UPantheliaDamageGameplayAbility::ApplyDamageScalingToSpec(
 	// 3. Multiplicador = (DañoBase + Escalado) / DañoBase
 	// 4. Distribuir el multiplicador proporcionalmente entre los tipos
 	// 5. Asignar cada tipo escalado al SetByCaller
-	// 6. Asignar los parámetros de debuff al SetByCaller (clase 306)
+	// 6. Reservado: los parámetros del estado viven en la configuración global
 	// 7. Asignar la magnitud del impulso de muerte al SetByCaller (clase 313)
 	// 8. Asignar los parámetros de knockback al SetByCaller (clase 315)
 	// 9. Asignar los parámetros de launch/Nivel 3 al SetByCaller (post-315)
@@ -149,21 +149,9 @@ void UPantheliaDamageGameplayAbility::ApplyDamageScalingToSpec(
 			SpecHandle, GameplayTags.Damage_Poise, ScaledPoiseDamage);
 	}
 
-	// PASO 6 (clase 306, actualizado por el sistema de buildup): Asignar los 3
-	// parámetros del efecto de estado al SetByCaller. Se asignan SIEMPRE (aunque
-	// valgan 0) para que cualquier lector con Spec.GetSetByCallerMagnitude() los
-	// encuentre sin comprobar existencia y decida por valor.
-	//
-	// El consumidor real ya existe: TriggerElementalStatus (AttributeSet) los lee del
-	// spec DEL GOLPE QUE LLENÓ LA BARRA — el golpe que remata la barra define cómo es
-	// el estado (daño por tick, frecuencia, duración). Debuff.Chance fue ELIMINADO
-	// junto con el dado: el disparador es el umbral de buildup (PASO 11, abajo).
-	UAbilitySystemBlueprintLibrary::AssignTagSetByCallerMagnitude(
-		SpecHandle, GameplayTags.Debuff_Damage, DebuffDamage.GetValueAtLevel(GetAbilityLevel()));
-	UAbilitySystemBlueprintLibrary::AssignTagSetByCallerMagnitude(
-		SpecHandle, GameplayTags.Debuff_Duration, DebuffDuration.GetValueAtLevel(GetAbilityLevel()));
-	UAbilitySystemBlueprintLibrary::AssignTagSetByCallerMagnitude(
-		SpecHandle, GameplayTags.Debuff_Frequency, DebuffFrequency.GetValueAtLevel(GetAbilityLevel()));
+	// PASO 6: reservado. Los parámetros del estado elemental ya no viajan en
+	// el spec del golpe. TriggerElementalStatus los obtiene de la configuración
+	// global y del Status Power del source cuando la barra llega a 100.
 
 	// PASO 7 (clase 313): Asignar la magnitud del impulso de muerte al SetByCaller.
 	// Por qué un SetByCaller y no directamente el context (a diferencia del VECTOR final,
@@ -171,9 +159,8 @@ void UPantheliaDamageGameplayAbility::ApplyDamageScalingToSpec(
 	// ability, solo conocemos la MAGNITUD (un escalar). La DIRECCIÓN del impulso depende
 	// de dónde y cómo impacta el golpe — algo que la ability, en este punto del pipeline,
 	// todavía no sabe (el proyectil ni siquiera ha volado todavía). Por eso el escalar
-	// viaja como SetByCaller (mismo mecanismo que los 4 de debuff arriba), y quien SÍ
-	// conoce la dirección en el momento del impacto (el proyectil, y en el futuro
-	// melee/weapon trace) lo lee de vuelta, calcula el vector final, y lo escribe
+	// viaja como SetByCaller. Quien SÍ conoce la dirección en el momento del
+	// impacto (proyectil o WeaponTrace) lo lee, calcula el vector final y lo escribe
 	// directamente en el context con UPantheliaAbilitySystemLibrary::SetDeathImpulse.
 	UAbilitySystemBlueprintLibrary::AssignTagSetByCallerMagnitude(
 		SpecHandle, GameplayTags.CombatTricks_DeathImpulseMagnitude,

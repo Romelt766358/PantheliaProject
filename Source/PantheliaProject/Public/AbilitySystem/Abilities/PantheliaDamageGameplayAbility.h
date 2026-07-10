@@ -18,7 +18,7 @@
  *   UGameplayAbility
  *   └── UPantheliaGameplayAbility (StartupInputTag)
  *       └── UPantheliaDamageGameplayAbility (DamageTypes, PoiseDamage, AttributeScalings,
- *           DamageEffectClass, DebuffDamage/Frequency/Duration, BuildupAmounts, DeathImpulseMagnitude,
+ *           DamageEffectClass, BuildupAmounts, DeathImpulseMagnitude,
  *           KnockbackChance/ForceMagnitude, LaunchChance/ForceMagnitude/PitchOverride)
  *           └── UPantheliaProjectileSpell
  *
@@ -53,43 +53,10 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Damage")
 	FScalableFloat PoiseDamage;
 
-	// --- PARÁMETROS DE DEBUFF (clase 304, adaptado) ---
-	// Los 4 parámetros que definirán el debuff que esta ability puede infligir (Quemadura,
-	// Electrocución, Saturación o Veneno, según el elemento — ver ElementToDebuff en
-	// FPantheliaGameplayTags). Esta clase SOLO declara los campos; todavía no hay lógica
-	// que los lea ni los aplique (eso llega en clases posteriores).
-	//
-	// FScalableFloat en vez de float simple (el curso usa float simple para ahorrar
-	// trabajo): un FScalableFloat sin curva asignada se comporta EXACTAMENTE igual que
-	// un float — solo rellenas su campo "Value" en los Details y listo, cero trabajo
-	// extra. Pero si en el futuro el árbol de habilidades quiere que "Quemadura haga más
-	// daño cuanto más se sube el hechizo", basta con asignarle una Curve Table a este
-	// campo desde el Blueprint, sin tocar C++. Coherente con PoiseDamage y DamageTypes
-	// (arriba), que ya usan el mismo patrón y ya alimentan la tubería de escalado por
-	// nivel de ability existente (ver State_GAS.md).
-	//
-	// Valor por defecto igual al del curso (Damage=5, Frequency=1, Duration=5);
-	// cada ability que sí quiera efecto de estado los sobreescribe en su Blueprint.
-	//
-	// DECISIÓN CERRADA (sistema de buildup): DebuffChance fue ELIMINADO junto con el
-	// dado del curso. El disparador de los efectos de estado en Panthelia es el UMBRAL
-	// de acumulación (ver BuildupAmounts abajo), sin azar — como en Elden Ring/Lies of
-	// P, lo único aleatorio del combate es el crítico. Estos 3 campos definen QUÉ
-	// hace el estado cuando la barra que ESTE golpe llenó se dispara (el golpe que
-	// remata la barra define el estado): daño por tick, frecuencia y duración.
-
-	// Daño que tiquea el estado cada DebuffFrequency segundos mientras está activo.
-	// Con 0: estado SOLO-TAG (sin DoT) — lo que usará Saturación.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Damage|Debuff")
-	FScalableFloat DebuffDamage = FScalableFloat(5.f);
-
-	// Cada cuántos segundos tiquea DebuffDamage (equivale al "Period" del GE periódico).
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Damage|Debuff")
-	FScalableFloat DebuffFrequency = FScalableFloat(1.f);
-
-	// Duración total en segundos durante la que el debuff permanece activo.
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Damage|Debuff")
-	FScalableFloat DebuffDuration = FScalableFloat(5.f);
+	// Los parámetros del estado elemental (daño, duración y frecuencia) NO viven
+	// en la ability. Se definen una sola vez en DA_ElementalStatusConfig y se
+	// escalan con los atributos Status Power del source. Así, cualquier ataque
+	// que llene la misma barra dispara el mismo estado base.
 
 	// --- BUILDUP ELEMENTAL (sistema de umbral — el disparador real de los estados) ---
 	//
@@ -116,23 +83,14 @@ public:
 	// golpe que mata. Da más "peso" a la muerte (el cuerpo sale despedido/rebota en vez
 	// de simplemente desplomarse) — puramente cosmético, no afecta ninguna mecánica.
 	//
-	// FScalableFloat en vez de float simple (el curso usa float simple): mismo motivo que
-	// DebuffDamage/Frequency/Duration arriba — sin curva asignada se comporta
+	// FScalableFloat en vez de float simple: sin curva asignada se comporta
 	// igual que un float normal (solo rellenas "Value"), pero queda listo para que el
 	// árbol de habilidades lo escale por nivel el día que se quiera, sin tocar C++.
 	//
-	// AÚN NO HACE NADA (a propósito): esta clase solo declara el campo. Falta todavía
-	// el mecanismo para llevar este valor hasta donde se aplica el impulso físico de
-	// verdad — la propia transcripción original lo deja explícitamente pendiente
-	// ("lo haremos en el próximo video"), porque la DIRECCIÓN del impulso depende de
-	// dónde y cómo impactó el golpe (algo que todavía no sabemos en este punto del
-	// pipeline). Cuando implementemos esa clase con su transcripción real, lo más
-	// probable es que este valor se propague con un SetByCaller más en
-	// ApplyDamageScalingToSpec — el mismo mecanismo que ya usan los 4 parámetros de
-	// debuff (clase 306) — porque, igual que ellos, es un valor único por ability, no
-	// depende de qué tipo de daño sea (a diferencia de DamageTypes, que sí puede tener
-	// varias entradas). No lo implemento todavía por no adelantarme sin la transcripción
-	// que lo confirme.
+	// Este escalar viaja por SetByCaller dentro del spec. El proyectil o el
+	// WeaponTrace, que sí conocen la dirección real del impacto, lo convierten en
+	// el vector final de impulso y lo guardan en el Effect Context antes del daño.
+
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Damage")
 	FScalableFloat DeathImpulseMagnitude = FScalableFloat(60.f);
 

@@ -529,6 +529,24 @@ void UExecCalc_Damage::Execute_Implementation(
     TotalDamage = bCriticalHit ? 1.5f * TotalDamage + CritDamage : TotalDamage;
     UPantheliaAbilitySystemLibrary::SetIsCriticalHit(EffectContextHandle, bCriticalHit);
 
+    // --- ESCRIBIR IncomingDamage PRIMERO ---
+    // El orden de los output modifiers importa para los callbacks del AttributeSet:
+    // primero se resuelve el golpe directo y su posible muerte; después postura y
+    // buildup. Si el golpe mata, el guard de PostGameplayEffectExecute limpia los
+    // outputs posteriores en vez de permitir que un cadáver proque un estado.
+    OutExecutionOutput.AddOutputModifier(FGameplayModifierEvaluatedData(
+        UPantheliaAttributeSet::GetIncomingDamageAttribute(),
+        EGameplayModOp::Additive, TotalDamage));
+
+    // --- DAÑO A POSTURA ---
+    const float BasePoiseDamage = Spec.GetSetByCallerMagnitude(Tags.Damage_Poise, false);
+    if (BasePoiseDamage > 0.f)
+    {
+        OutExecutionOutput.AddOutputModifier(FGameplayModifierEvaluatedData(
+            UPantheliaAttributeSet::GetIncomingPoiseDamageAttribute(),
+            EGameplayModOp::Additive, BasePoiseDamage));
+    }
+
     // ================================================================
     // BUILDUP ELEMENTAL (sistema de umbral — reemplaza al dado del debuff)
     // ================================================================
@@ -601,17 +619,4 @@ void UExecCalc_Damage::Execute_Implementation(
         }
     }
 
-    // --- DAÑO A POSTURA ---
-    const float BasePoiseDamage = Spec.GetSetByCallerMagnitude(Tags.Damage_Poise, false);
-    if (BasePoiseDamage > 0.f)
-    {
-        OutExecutionOutput.AddOutputModifier(FGameplayModifierEvaluatedData(
-            UPantheliaAttributeSet::GetIncomingPoiseDamageAttribute(),
-            EGameplayModOp::Additive, BasePoiseDamage));
-    }
-
-    // --- ESCRIBIR IncomingDamage ---
-    OutExecutionOutput.AddOutputModifier(FGameplayModifierEvaluatedData(
-        UPantheliaAttributeSet::GetIncomingDamageAttribute(),
-        EGameplayModOp::Additive, TotalDamage));
 }
