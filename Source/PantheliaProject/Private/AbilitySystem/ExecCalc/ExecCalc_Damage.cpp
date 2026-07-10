@@ -8,9 +8,12 @@
 #include "Interfaces/CombatInterface.h"
 #include "PantheliaGameplayTags.h"
 #include "PantheliaElementTypes.h"
+#include "PantheliaLogChannels.h"
 #include "Combat/PantheliaEquipmentComponent.h"
 #include "Combat/PantheliaWeaponDefinition.h"
 #include "AbilitySystem/PantheliaAbilityTypes.h"
+#include "AbilitySystemBlueprintLibrary.h"
+#include "Abilities/GameplayAbilityTypes.h"
 
 // ============================================================
 // PantheliaDamageStatics
@@ -269,31 +272,63 @@ void UExecCalc_Damage::Execute_Implementation(
     const FGameplayTagContainer* SourceTags = Spec.CapturedSourceTags.GetAggregatedTags();
     const FGameplayTagContainer* TargetTags = Spec.CapturedTargetTags.GetAggregatedTags();
 
-    // --- I-FRAMES GENÉRICOS (post-315, a petición) ---
-    // Si el target tiene el tag de invulnerabilidad activo (concedido por
-    // UPantheliaAbilitySystemLibrary::GrantTemporaryInvulnerability — hoy usado por
-    // GA_GetUp al levantarse tras un lanzamiento aéreo; en el futuro también por
-    // GA_Dodge), el daño es CERO, sin excepciones. Este chequeo va ANTES de absolutamente
-    // todo lo demás (resistencias, crítico, parry, debuff...) — durante los i-frames,
-    // nada de eso debería importar: el golpe simplemente no cuenta. HasTagExact (no
-    // HasTag): buscamos el tag exacto, no una jerarquía de padres/hijos — no hay
-    // sub-tags de State.Invulnerable que debieran coincidir también.
+    // --- INVULNERABILIDAD ABSOLUTA E I-FRAMES DE EVASIÓN ---
+    // La jerarquía separa dos conceptos:
+    //   State.Invulnerable exacto       -> inmunidad absoluta (GetUp hoy).
+    //   State.Invulnerable.Dodge/Jump   -> i-frames de evasión.
     //
-    // Pedimos el singleton aquí, localmente: el "Tags" que se usa más abajo en esta
-    // misma función se declara más adelante (justo antes del loop de daño) — no está
-    // disponible todavía en este punto tan temprano. FPantheliaGameplayTags::Get() es
-    // barato (un singleton ya construido, no hace trabajo real) así que pedirlo dos
-    // veces en la misma función no tiene coste — este archivo ya lo hace en otro punto.
-    // DECISIÓN DE DISEÑO CERRADA (auditoría post-315): los i-frames bloquean SOLO el
-    // daño que pasa por este ExecCalc (golpes directos). Los ticks periódicos de los
-    // debuffs (Quemadura, etc.) modifican IncomingDamage directamente SIN pasar por
-    // aquí, y por tanto NO los bloquea la invulnerabilidad — a propósito, igual que
-    // en Elden Ring un DoT ya aplicado sigue tiqueando aunque ruedes. Si algún día se
-    // quisiera lo contrario, el sitio sería un chequeo del tag al inicio de
-    // HandleIncomingDamage en el AttributeSet, no aquí.
-    if (TargetTags && TargetTags->HasTagExact(FPantheliaGameplayTags::Get().State_Invulnerable))
+    // HasTag comprueba la raíz jerárquica y detecta tanto el padre como sus hijos.
+    // HasTagExact distingue después la inmunidad absoluta del padre. Unavoidable solo
+    // atraviesa los hijos de evasión; nunca atraviesa el padre exacto.
+    //
+    // Este chequeo sigue afectando SOLO al daño directo que pasa por ExecCalc_Damage.
+    // Los ticks de DoT ya aplicados modifican IncomingDamage por otra ruta y continúan
+    // tiqueando durante una evasión, por decisión de diseño.
+    const FPantheliaGameplayTags& InvulnerabilityTags = FPantheliaGameplayTags::Get();
+    if (TargetTags && TargetTags->HasTag(InvulnerabilityTags.State_Invulnerable))
     {
-        return;
+        // El padre exacto gana incluso si, por una situación excepcional, también hay
+        // un hijo activo. Es invulnerabilidad absoluta: ningún tipo de daño la atraviesa.
+        if (TargetTags->HasTagExact(InvulnerabilityTags.State_Invulnerable))
+        {
+            return;
+        }
+
+        const EPantheliaDodgeResponse DodgeResponse =
+            UPantheliaAbilitySystemLibrary::GetDodgeResponse(EffectContextHandle);
+
+        if (DodgeResponse != EPantheliaDodgeResponse::Unavoidable)
+        {
+            // Solo el hijo exacto del dodge puede generar el evento crudo. Jump y
+            // cualquier otra evasión futura anulan el golpe sin premiar un perfecto.
+            if (DodgeResponse == EPantheliaDodgeResponse::Dodgeable &&
+                TargetTags->HasTagExact(InvulnerabilityTags.State_Invulnerable_Dodge) &&
+                IsValid(SourceAvatar) && IsValid(TargetAvatar) &&
+                SourceAvatar != TargetAvatar &&
+                UPantheliaAbilitySystemLibrary::IsNotFriend(SourceAvatar, TargetAvatar))
+            {
+                FGameplayEventData Payload;
+                Payload.EventTag = InvulnerabilityTags.Event_Dodge_HitAvoided;
+                Payload.Instigator = SourceAvatar;
+                Payload.Target = TargetAvatar;
+                Payload.ContextHandle = EffectContextHandle;
+
+                UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(
+                    TargetAvatar,
+                    InvulnerabilityTags.Event_Dodge_HitAvoided,
+                    Payload);
+
+                UE_LOG(LogPanthelia, Log,
+                    TEXT("[DODGE] HitAvoided crudo | Atacante: %s | Objetivo: %s"),
+                    *SourceAvatar->GetName(), *TargetAvatar->GetName());
+            }
+
+            // Dodgeable y AvoidableNoReward quedan anulados antes de resistencias,
+            // crítico, parry, postura, buildup o cualquier otro resultado del golpe.
+            return;
+        }
+
+        // Unavoidable continúa por el pipeline normal y atraviesa solo esta evasión.
     }
 
     FAggregatorEvaluateParameters EvalParams;

@@ -28,6 +28,7 @@ bool FPantheliaGameplayEffectContext::NetSerialize(FArchive& Ar, UPackageMap* Ma
     //   bit 11 — KnockbackForce (FVector, solo si no es el vector cero)
     //   bit 12 — LaunchForce (FVector, solo si no es el vector cero)
     //   bit 13 — bKnockbackIsHeavy (bool, solo si true)
+    //   bit 14 — DodgeResponse (2 bits, solo si difiere de AvoidableNoReward)
     // ----------------------------------------------------------------
 
     uint32 RepBits = 0;
@@ -104,10 +105,17 @@ bool FPantheliaGameplayEffectContext::NetSerialize(FArchive& Ar, UPackageMap* Ma
         {
             RepBits |= 1 << 13;
         }
+
+        // AvoidableNoReward es el default seguro del context. Solo transportamos
+        // el enum cuando un productor explícito eligió Dodgeable o Unavoidable.
+        if (DodgeResponse != EPantheliaDodgeResponse::AvoidableNoReward)
+        {
+            RepBits |= 1 << 14;
+        }
     }
 
-    // 14 bits usados en total (antes 13 — Nivel 2 añade bKnockbackIsHeavy).
-    Ar.SerializeBits(&RepBits, 14);
+    // 15 bits usados en total (el bit 14 indica si se serializa DodgeResponse).
+    Ar.SerializeBits(&RepBits, 15);
 
     if (RepBits & (1 << 0))
     {
@@ -192,6 +200,38 @@ bool FPantheliaGameplayEffectContext::NetSerialize(FArchive& Ar, UPackageMap* Ma
     if (RepBits & (1 << 13))
     {
         Ar << bKnockbackIsHeavy;
+    }
+
+    // DodgeResponse tiene tres valores, por lo que dos bits son suficientes.
+    // Ante un valor corrupto/desconocido caemos al default seguro: se puede
+    // evitar con i-frames, pero no concede perfecto.
+    if (RepBits & (1 << 14))
+    {
+        uint8 DodgeResponseValue = static_cast<uint8>(DodgeResponse);
+        Ar.SerializeBits(&DodgeResponseValue, 2);
+
+        if (Ar.IsLoading())
+        {
+            switch (DodgeResponseValue)
+            {
+                case static_cast<uint8>(EPantheliaDodgeResponse::Dodgeable):
+                    DodgeResponse = EPantheliaDodgeResponse::Dodgeable;
+                    break;
+
+                case static_cast<uint8>(EPantheliaDodgeResponse::Unavoidable):
+                    DodgeResponse = EPantheliaDodgeResponse::Unavoidable;
+                    break;
+
+                case static_cast<uint8>(EPantheliaDodgeResponse::AvoidableNoReward):
+                default:
+                    DodgeResponse = EPantheliaDodgeResponse::AvoidableNoReward;
+                    break;
+            }
+        }
+    }
+    else if (Ar.IsLoading())
+    {
+        DodgeResponse = EPantheliaDodgeResponse::AvoidableNoReward;
     }
 
     // Al cargar, reconstruir InstigatorAbilitySystemComponent desde el Instigator.

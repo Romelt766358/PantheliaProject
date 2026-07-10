@@ -186,6 +186,10 @@ public:
 	// activaría TODAS las abilities de ataque a la vez.
 	FGameplayTag Abilities_Attack_Ranged;
 
+	// Abilities.Dodge: identifica la ability base de esquive/dash. Ninguna ability
+	// externa debe cancelarla; GA_Dodge sí podrá cancelar Abilities.Attack.
+	FGameplayTag Abilities_Dodge;
+
 	// --- TAGS DE ABILITIES: BOSSES ---
 	// Abilities.Boss.* son hojas específicas para jefes. El BossProfile debe apuntar
 	// preferiblemente a una hoja exacta, no a un tag padre, para evitar que
@@ -307,6 +311,12 @@ public:
 	// la marca anti-recursión de daños proc secundarios cuando llegue el sistema.
 	FGameplayTag Event_Combat_Hit_BurningTarget;
 	FGameplayTag Event_Combat_Hit_PoisonedTarget;
+
+	// Contrato de eventos del dodge. HitAvoided es interno/crudo (puede ocurrir
+	// varias veces en un mismo dash); Perfect es el evento público confirmado una
+	// sola vez por activación para Corazones, árbol, bosses, UI y telemetría.
+	FGameplayTag Event_Dodge_HitAvoided;
+	FGameplayTag Event_Dodge_Perfect;
 	FGameplayTag Effects_Damage;
 	FGameplayTag Effects_Damage_Secondary;
 
@@ -471,14 +481,19 @@ public:
 	FGameplayTag State_Block_Physical;
 	FGameplayTag State_Block_Magic;
 
-	// --- i-frames genéricos (post-315, a petición) ---
-	// Tag de invulnerabilidad temporal. NO es específico de ninguna ability — cualquier
-	// sistema (GA_GetUp al levantarse tras un lanzamiento aéreo, y en el futuro GA_Dodge)
-	// puede concederlo brevemente vía UPantheliaAbilitySystemLibrary::GrantTemporaryInvulnerability()
-	// para volverse inmune a todo daño mientras dure. ExecCalc_Damage lo comprueba al
-	// principio de Execute_Implementation, antes de calcular nada — si el target lo
-	// tiene, el daño es cero, sin excepciones ni casos especiales por tipo de daño.
+	// --- INVULNERABILIDAD E I-FRAMES DE EVASIÓN ---
+	// El PADRE EXACTO State.Invulnerable representa invulnerabilidad absoluta
+	// (GetUp hoy; cinemáticas/respawn/transiciones futuras). Ni Unavoidable lo atraviesa.
+	// Los hijos representan ventanas de evasión: anulan daño normal, pero pueden ser
+	// atravesados por fuentes marcadas Unavoidable. Nunca conceder el padre desde dodge
+	// o salto, ni conceder un hijo desde un sistema de inmunidad absoluta.
 	FGameplayTag State_Invulnerable;
+	FGameplayTag State_Invulnerable_Dodge;
+	FGameplayTag State_Invulnerable_Jump;
+
+	// Estado runtime de GA_Dodge. GAS lo concede mediante ActivationOwnedTags y lo
+	// retira al terminar la ability. Los ataques lo usarán como ActivationBlockedTag.
+	FGameplayTag State_Dodge_Active;
 
 	// Marca que el personaje está en el aire por un lanzamiento (Nivel 3 de knockback,
 	// post-315). Dos usos: (1) tag de bloqueo para GA_HitReact — un HitReact normal no
@@ -510,6 +525,10 @@ public:
 	FGameplayTag GameplayCue_Parry_Physical_Block;   // Bloqueo fisico imperfecto
 	FGameplayTag GameplayCue_Parry_Magic_Perfect;    // Parry magico perfecto
 	FGameplayTag GameplayCue_Parry_Magic_Block;      // Bloqueo magico imperfecto
+
+	// Feedback audiovisual del esquive perfecto. La simulación se comunica mediante
+	// Event.Dodge.Perfect; este Cue solo presenta VFX/SFX/flash/afterimage.
+	FGameplayTag GameplayCue_Dodge_Perfect;
 
 	// Cue de impacto melee. Disparado desde el WeaponTraceComponent al detectar un hit.
 	// Asset: GC_MeleeImpact (GameplayCueNotify_Static). Ver State_Combat.md.

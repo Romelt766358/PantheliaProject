@@ -182,6 +182,33 @@ void UPantheliaAbilitySystemLibrary::SetIsCriticalHit(
 	}
 }
 
+EPantheliaDodgeResponse UPantheliaAbilitySystemLibrary::GetDodgeResponse(
+	const FGameplayEffectContextHandle& EffectContextHandle)
+{
+	const FPantheliaGameplayEffectContext* PantheliaContext =
+		static_cast<const FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+
+	if (PantheliaContext)
+	{
+		return PantheliaContext->GetDodgeResponse();
+	}
+
+	return EPantheliaDodgeResponse::AvoidableNoReward;
+}
+
+void UPantheliaAbilitySystemLibrary::SetDodgeResponse(
+	FGameplayEffectContextHandle& EffectContextHandle,
+	EPantheliaDodgeResponse InDodgeResponse)
+{
+	FPantheliaGameplayEffectContext* PantheliaContext =
+		static_cast<FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+
+	if (PantheliaContext)
+	{
+		PantheliaContext->SetDodgeResponse(InDodgeResponse);
+	}
+}
+
 // ============================================================
 // LECTURA DEL RESULTADO DE DEBUFF (clase 307-308)
 // ============================================================
@@ -457,11 +484,12 @@ void UPantheliaAbilitySystemLibrary::GrantTemporaryInvulnerability(UAbilitySyste
 	GrantTemporaryGameplayTag(ASC, FPantheliaGameplayTags::Get().State_Invulnerable, Duration);
 }
 
-void UPantheliaAbilitySystemLibrary::GrantTemporaryGameplayTag(UAbilitySystemComponent* ASC, FGameplayTag Tag, float Duration)
+FActiveGameplayEffectHandle UPantheliaAbilitySystemLibrary::GrantTemporaryGameplayTag(
+	UAbilitySystemComponent* ASC, FGameplayTag Tag, float Duration)
 {
 	if (!ASC || !Tag.IsValid() || Duration <= 0.f)
 	{
-		return;
+		return FActiveGameplayEffectHandle();
 	}
 
 	// Mismo patrón de creación dinámica que UPantheliaAttributeSet::Debuff (clase 310),
@@ -505,7 +533,7 @@ void UPantheliaAbilitySystemLibrary::GrantTemporaryGameplayTag(UAbilitySystemCom
 	// FGameplayEffectSpec es un struct normal, reservarlo en el heap sería una fuga de
 	// memoria sin ningún beneficio real.
 	FGameplayEffectSpec Spec(Effect, EffectContextHandle, 1.f);
-	ASC->ApplyGameplayEffectSpecToSelf(Spec);
+	return ASC->ApplyGameplayEffectSpecToSelf(Spec);
 }
 
 bool UPantheliaAbilitySystemLibrary::ApplyGrievousWounds(
@@ -657,6 +685,8 @@ FGameplayEffectContextHandle UPantheliaAbilitySystemLibrary::ApplyDamageEffect(
 	// MakeDamageSpec() de UPantheliaDamageGameplayAbility.
 	FGameplayEffectContextHandle EffectContextHandle = SourceASC->MakeEffectContext();
 	EffectContextHandle.AddSourceObject(SourceASC->GetAvatarActor());
+	UPantheliaAbilitySystemLibrary::SetDodgeResponse(
+		EffectContextHandle, DamageEffectParams.DodgeResponse);
 
 	const FGameplayEffectSpecHandle SpecHandle = SourceASC->MakeOutgoingSpec(
 		DamageEffectParams.DamageGameplayEffectClass, DamageEffectParams.AbilityLevel, EffectContextHandle);

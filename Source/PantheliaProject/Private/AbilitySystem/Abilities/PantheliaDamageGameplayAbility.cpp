@@ -5,6 +5,7 @@
 #include "AbilitySystemComponent.h"
 #include "PantheliaGameplayTags.h"
 #include "AbilitySystem/PantheliaAttributeSet.h"
+#include "AbilitySystem/PantheliaAbilitySystemLibrary.h"
 
 FGameplayEffectSpecHandle UPantheliaDamageGameplayAbility::MakeDamageSpec()
 {
@@ -64,6 +65,13 @@ void UPantheliaDamageGameplayAbility::ApplyDamageScalingToSpec(
 	if (!SpecHandle.IsValid() || !SourceASC) return;
 
 	const FPantheliaGameplayTags& GameplayTags = FPantheliaGameplayTags::Get();
+
+	// ESCRIBIR SIEMPRE la política de dodge en el context compartido del spec.
+	// Este método es el punto común de melee enemigo, proyectiles y ataques con arma;
+	// escribir aquí evita que una ruta olvide declarar su comportamiento y también
+	// resetea correctamente un context reutilizado por varios targets.
+	FGameplayEffectContextHandle EffectContextHandle = SpecHandle.Data->GetContext();
+	UPantheliaAbilitySystemLibrary::SetDodgeResponse(EffectContextHandle, DodgeResponse);
 
 	// ----------------------------------------------------------------
 	// ESCALADO POR ATRIBUTOS (spec §1.7)

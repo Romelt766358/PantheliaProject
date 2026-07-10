@@ -12,6 +12,29 @@ class UAbilitySystemComponent;
 class UGameplayEffect;
 
 // ============================================================
+// EPantheliaDodgeResponse
+// ============================================================
+// Declara cómo responde una fuente de daño a los i-frames de evasión.
+// El valor por defecto del CONTEXT es AvoidableNoReward para que cualquier
+// daño que no pase por una ability explícitamente configurada pueda evitarse
+// con i-frames sin producir esquives perfectos gratuitos.
+// ============================================================
+UENUM(BlueprintType)
+enum class EPantheliaDodgeResponse : uint8
+{
+    // Golpe leíble: los i-frames lo anulan y State.Invulnerable.Dodge puede
+    // convertirlo en Event.Dodge.HitAvoided.
+    Dodgeable UMETA(DisplayName = "Dodgeable"),
+
+    // Los i-frames lo anulan, pero nunca concede recompensa de esquive perfecto.
+    AvoidableNoReward UMETA(DisplayName = "Avoidable No Reward"),
+
+    // Atraviesa los hijos de evasión State.Invulnerable.Dodge / .Jump, pero
+    // respeta el padre exacto State.Invulnerable (inmunidad absoluta).
+    Unavoidable UMETA(DisplayName = "Unavoidable")
+};
+
+// ============================================================
 // FDamageEffectParams
 // ============================================================
 //
@@ -89,6 +112,12 @@ struct FDamageEffectParams
     // Magnitud del daño para DamageType, ya evaluada/escalada por quien construye el struct.
     UPROPERTY()
     float BaseDamage = 0.f;
+
+    // Política frente a i-frames para esta ruta de daño secundario. El default
+    // conservador evita que suelos, procs o ticks creados sin una ability concreta
+    // produzcan esquives perfectos gratuitos.
+    UPROPERTY()
+    EPantheliaDodgeResponse DodgeResponse = EPantheliaDodgeResponse::AvoidableNoReward;
 
     // --- Parámetros de efecto de estado (clase 304, actualizado por buildup) ---
     // DebuffChance fue ELIMINADO (decisión cerrada): los estados no tienen azar —
@@ -254,6 +283,9 @@ public:
     // significa "knockback normal", que es el caso común).
     bool IsKnockbackHeavy() const { return bKnockbackIsHeavy; }
 
+    // Política de este paquete de daño frente a los i-frames de evasión.
+    EPantheliaDodgeResponse GetDodgeResponse() const { return DodgeResponse; }
+
     // Setters — usados en ExecCalc_Damage para escribir el resultado del golpe
     void SetIsCriticalHit(bool bInIsCriticalHit) { bIsCriticalHit = bInIsCriticalHit; }
 
@@ -314,6 +346,11 @@ public:
     void SetKnockbackIsHeavy(bool bInHeavy)
     {
         bKnockbackIsHeavy = bInHeavy;
+    }
+
+    void SetDodgeResponse(EPantheliaDodgeResponse InDodgeResponse)
+    {
+        DodgeResponse = InDodgeResponse;
     }
 
     // GAS requiere que las subclases sobreescriban GetScriptStruct().
@@ -410,6 +447,12 @@ protected:
     // GA_HeavyKnockback).
     UPROPERTY()
     bool bKnockbackIsHeavy = false;
+
+    // Default deliberadamente conservador: el daño solo puede premiar esquive
+    // perfecto cuando un productor explícito (normalmente una damage ability)
+    // escribe Dodgeable en el context antes de crear/aplicar el spec.
+    UPROPERTY()
+    EPantheliaDodgeResponse DodgeResponse = EPantheliaDodgeResponse::AvoidableNoReward;
 };
 
 // ============================================================

@@ -190,6 +190,12 @@ void FPantheliaGameplayTags::InitializeNativeGameplayTags()
 	// active melee y ranged a la vez cuando el enemigo tiene ambas abilities.
 	GameplayTags.Abilities_Attack_Ranged = Manager.AddNativeGameplayTag(FName("Abilities.Attack.Ranged"), FString("Activa la ability de ataque a distancia/mágico del enemigo."));
 
+	// Ability de esquive/dash. Se mantiene separada de Abilities.Attack para que el
+	// dodge pueda cancelar ataques sin que los ataques puedan cancelar el dodge.
+	GameplayTags.Abilities_Dodge = Manager.AddNativeGameplayTag(
+		FName("Abilities.Dodge"),
+		FString("Ability de esquive/dash. Ninguna ability externa debe cancelarla."));
+
 	// --- TAGS DE ABILITIES: BOSSES ---
 	// Hojas específicas para acciones de jefes. BossProfile.ActionDefinitions debe usar
 	// estas hojas exactas como AbilityTag cuando una acción necesita ejecutar una
@@ -349,6 +355,12 @@ void FPantheliaGameplayTags::InitializeNativeGameplayTags()
 	GameplayTags.State_ElementalHeart_Nature = Manager.AddNativeGameplayTag(FName("State.ElementalHeart.Nature"), FString("Corazon de Naturaleza equipado."));
 	GameplayTags.Event_Combat_Hit_BurningTarget = Manager.AddNativeGameplayTag(FName("Event.Combat.Hit.BurningTarget"), FString("Evento futuro: daño a un objetivo con Debuff.Burn."));
 	GameplayTags.Event_Combat_Hit_PoisonedTarget = Manager.AddNativeGameplayTag(FName("Event.Combat.Hit.PoisonedTarget"), FString("Evento futuro: daño a un objetivo con Debuff.Poison."));
+	GameplayTags.Event_Dodge_HitAvoided = Manager.AddNativeGameplayTag(
+		FName("Event.Dodge.HitAvoided"),
+		FString("Evento interno/crudo: un golpe Dodgeable fue anulado por State.Invulnerable.Dodge."));
+	GameplayTags.Event_Dodge_Perfect = Manager.AddNativeGameplayTag(
+		FName("Event.Dodge.Perfect"),
+		FString("Evento público confirmado una sola vez por dash perfecto."));
 	GameplayTags.Effects_Damage = Manager.AddNativeGameplayTag(FName("Effects.Damage"), FString("Raiz de marcas internas para paquetes de daño."));
 	GameplayTags.Effects_Damage_Secondary = Manager.AddNativeGameplayTag(FName("Effects.Damage.Secondary"), FString("Marca futura anti-recursion para daños proc secundarios."));
 
@@ -490,10 +502,19 @@ void FPantheliaGameplayTags::InitializeNativeGameplayTags()
 	GameplayTags.State_Block_Physical = Manager.AddNativeGameplayTag(FName("State.Block.Physical"), FString("Bloqueo fisico imperfecto sostenido (tras la ventana de parry)."));
 	GameplayTags.State_Block_Magic = Manager.AddNativeGameplayTag(FName("State.Block.Magic"), FString("Bloqueo magico imperfecto sostenido (tras la ventana de parry)."));
 
-	// --- i-frames genéricos (post-315, a petición) ---
+	// --- INVULNERABILIDAD ABSOLUTA E I-FRAMES DE EVASIÓN ---
 	GameplayTags.State_Invulnerable = Manager.AddNativeGameplayTag(
 		FName("State.Invulnerable"),
-		FString("Invulnerabilidad temporal. ExecCalc_Damage anula todo dano mientras el target lo tenga."));
+		FString("Invulnerabilidad absoluta. Ni el daño Unavoidable la atraviesa."));
+	GameplayTags.State_Invulnerable_Dodge = Manager.AddNativeGameplayTag(
+		FName("State.Invulnerable.Dodge"),
+		FString("I-frames del dash. Anulan daño normal y permiten confirmar esquive perfecto."));
+	GameplayTags.State_Invulnerable_Jump = Manager.AddNativeGameplayTag(
+		FName("State.Invulnerable.Jump"),
+		FString("I-frames menores del salto. Anulan daño normal pero nunca generan esquive perfecto."));
+	GameplayTags.State_Dodge_Active = Manager.AddNativeGameplayTag(
+		FName("State.Dodge.Active"),
+		FString("GA_Dodge está activa. Bloquea la activación directa de ataques durante el dash."));
 
 	// --- Lanzamiento aéreo / Nivel 3 de knockback (post-315) ---
 	GameplayTags.State_Airborne = Manager.AddNativeGameplayTag(
@@ -521,6 +542,9 @@ void FPantheliaGameplayTags::InitializeNativeGameplayTags()
 	GameplayTags.GameplayCue_Parry_Magic_Block = Manager.AddNativeGameplayTag(
 		FName("GameplayCue.Parry.Magic.Block"),
 		FString("Cue para bloqueo magico imperfecto. Efecto de escudo/burbuja parcial, sonido amortiguado."));
+	GameplayTags.GameplayCue_Dodge_Perfect = Manager.AddNativeGameplayTag(
+		FName("GameplayCue.Dodge.Perfect"),
+		FString("Cue audiovisual del esquive perfecto. No contiene lógica de gameplay."));
 
 	// Gameplay Cue de impacto melee. Se dispara desde el WeaponTraceComponent cuando el
 	// sweep de la hoja golpea a un actor. Pasa como parametros: posicion de impacto

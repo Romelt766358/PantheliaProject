@@ -7,6 +7,7 @@
 #include "GameplayTagContainer.h"
 #include "ScalableFloat.h"
 #include "Interfaces/CombatInterface.h"
+#include "AbilitySystem/PantheliaAbilityTypes.h"
 #include "PantheliaDamageGameplayAbility.generated.h"
 
 /**
@@ -40,6 +41,13 @@ public:
 	// Añadir una entrada por cada tipo de daño que este ability aplica.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Damage")
 	TMap<FGameplayTag, FScalableFloat> DamageTypes;
+
+	// Política de esta ability frente a los i-frames de evasión. Las damage abilities
+	// representan por defecto ataques leíbles: se anulan durante un dodge y pueden
+	// confirmar un esquive perfecto. Fuentes ambientales/secundarias usan el default
+	// conservador AvoidableNoReward de FDamageEffectParams/context.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Damage|Dodge")
+	EPantheliaDodgeResponse DodgeResponse = EPantheliaDodgeResponse::Dodgeable;
 
 	// Escalados por atributos secundarios/vitales del caster (spec §1.7).
 	// Máximo 2 entradas. Ver FAbilityAttributeScaling para detalles y restricciones.

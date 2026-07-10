@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
+#include "ActiveGameplayEffectHandle.h"
 #include "AbilitySystem/Data/PantheliaCharacterClassInfo.h"
 #include "AbilitySystem/PantheliaAbilityTypes.h"
 #include "PantheliaAbilitySystemLibrary.generated.h"
@@ -71,6 +72,20 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "PantheliaAbilitySystemLibrary|GameplayEffects")
 	static void SetIsCriticalHit(UPARAM(ref) FGameplayEffectContextHandle& EffectContextHandle,
 		bool bInIsCriticalHit);
+
+	// Lee la política de esta fuente de daño frente a los i-frames de evasión.
+	// Si el context no es válido, devuelve el default seguro AvoidableNoReward.
+	UFUNCTION(BlueprintPure, Category = "PantheliaAbilitySystemLibrary|GameplayEffects|Dodge")
+	static EPantheliaDodgeResponse GetDodgeResponse(
+		const FGameplayEffectContextHandle& EffectContextHandle);
+
+	// Escribe SIEMPRE la política de dodge desde el productor del spec. Las damage
+	// abilities llaman a esta función en ApplyDamageScalingToSpec; las rutas de daño
+	// secundario lo hacen en ApplyDamageEffect.
+	UFUNCTION(BlueprintCallable, Category = "PantheliaAbilitySystemLibrary|GameplayEffects|Dodge")
+	static void SetDodgeResponse(
+		UPARAM(ref) FGameplayEffectContextHandle& EffectContextHandle,
+		EPantheliaDodgeResponse InDodgeResponse);
 
 	// ============================================================
 	// LECTURA DEL RESULTADO DE DEBUFF (clase 307-308)
@@ -208,16 +223,16 @@ public:
 	// ============================================================
 	// I-FRAMES GENÉRICOS (post-315, a petición explícita)
 	// ============================================================
-	// Concede el tag State.Invulnerable a ASC durante Duration segundos, creando un
+	// Concede el PADRE EXACTO State.Invulnerable a ASC durante Duration segundos, creando un
 	// UGameplayEffect dinámicamente en C++ (mismo patrón que UPantheliaAttributeSet::Debuff,
 	// clase 310 — un GE con duración simple, sin modificadores de atributo, que solo
-	// concede un tag). ExecCalc_Damage comprueba este tag al principio de
-	// Execute_Implementation y anula CUALQUIER daño mientras esté activo.
+	// concede un tag). El padre significa invulnerabilidad absoluta: ExecCalc_Damage
+	// anula cualquier daño, incluido Unavoidable, mientras esté activo.
 	//
 	// GENÉRICO A PROPÓSITO: no pertenece a ninguna ability concreta — cualquier sistema
-	// puede llamarlo. Hoy lo usa GA_GetUp (al levantarse tras un lanzamiento aéreo); en
-	// el futuro, GA_Dodge hará exactamente lo mismo con su propia duración, sin que haga
-	// falta tocar esta función ni el chequeo del ExecCalc — ya están listos para eso.
+	// puede llamarlo. Hoy lo usa GA_GetUp al levantarse tras un lanzamiento aéreo.
+	// GA_Dodge NO usa este wrapper: concede el hijo State.Invulnerable.Dodge mediante
+	// GrantTemporaryGameplayTag para conservar la diferencia entre inmunidad y evasión.
 	UFUNCTION(BlueprintCallable, Category = "PantheliaAbilitySystemLibrary|Combat")
 	static void GrantTemporaryInvulnerability(UAbilitySystemComponent* ASC, float Duration);
 
@@ -230,11 +245,15 @@ public:
 	// función por dentro (ver el .cpp) — se mantiene como función aparte, con su firma
 	// intacta, para no romper el nodo ya cableado en GA_GetUp.
 	//
+	// Devuelve el handle exacto del GE aplicado para que abilities con limpieza propia
+	// puedan retirarlo de forma segura en EndAbility, sin eliminar por tag otras fuentes.
+	//
 	// Primer uso: State.HeavyKnockback (Nivel 2), concedido brevemente desde
 	// HandleIncomingDamage cuando un knockback "pesado" se activa, para bloquear
 	// GA_HitReact mientras dura la reacción de GA_HeavyKnockback.
 	UFUNCTION(BlueprintCallable, Category = "PantheliaAbilitySystemLibrary|Combat")
-	static void GrantTemporaryGameplayTag(UAbilitySystemComponent* ASC, FGameplayTag Tag, float Duration);
+	static FActiveGameplayEffectHandle GrantTemporaryGameplayTag(
+		UAbilitySystemComponent* ASC, FGameplayTag Tag, float Duration);
 
 	// ============================================================
 	// HERIDAS GRAVES — API INMEDIATA Y REUTILIZABLE
@@ -265,9 +284,9 @@ public:
 	// (ver el struct para la explicación completa de para qué sirve y en qué se
 	// diferencia del pipeline de la ability principal).
 	//
-	// Construye el spec desde DamageEffectParams.DamageGameplayEffectClass, asigna
-	// el SetByCaller de DamageType (si es válido) y los 4 SetByCaller de debuff, y
-	// aplica el spec resultante a TargetASC.
+	// Construye el spec desde DamageEffectParams.DamageGameplayEffectClass, escribe
+	// DodgeResponse en el context, asigna el SetByCaller de DamageType (si es válido)
+	// y los parámetros secundarios, y aplica el spec resultante a TargetASC.
 	//
 	// Devuelve el FGameplayEffectContextHandle usado, por si el llamador necesita
 	// inspeccionarlo o guardarlo (ej. para leer más tarde si fue crítico).
