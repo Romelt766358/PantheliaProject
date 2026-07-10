@@ -203,15 +203,15 @@ void APantheliaCharacterBase::Die(const FVector& DeathImpulse)
 		ASC->SetNumericAttributeBase(UPantheliaAttributeSet::GetNatureBuildupAttribute(), 0.f);
 
 		FGameplayTagContainer ElementalStatusTags;
-		const FPantheliaGameplayTags& Tags = FPantheliaGameplayTags::Get();
-		ElementalStatusTags.AddTag(Tags.Debuff_Burn);
-		ElementalStatusTags.AddTag(Tags.Debuff_Shock);
-		ElementalStatusTags.AddTag(Tags.Debuff_Saturation);
-		ElementalStatusTags.AddTag(Tags.Debuff_Poison);
+		const FPantheliaGameplayTags& GameplayTags = FPantheliaGameplayTags::Get();
+		ElementalStatusTags.AddTag(GameplayTags.Debuff_Burn);
+		ElementalStatusTags.AddTag(GameplayTags.Debuff_Shock);
+		ElementalStatusTags.AddTag(GameplayTags.Debuff_Saturation);
+		ElementalStatusTags.AddTag(GameplayTags.Debuff_Poison);
 		ASC->RemoveActiveEffectsWithGrantedTags(ElementalStatusTags);
 
 		// Si murió durante un launch, Landed() ya no tiene por qué ejecutarse.
-		ASC->SetLooseGameplayTagCount(Tags.State_Airborne, 0);
+		ASC->SetLooseGameplayTagCount(GameplayTags.State_Airborne, 0);
 	}
 
 	// Corrección post-314: antes esto era siempre FinalWeaponMesh->DetachFromComponent(...).
