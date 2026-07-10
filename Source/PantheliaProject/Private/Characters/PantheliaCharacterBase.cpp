@@ -201,6 +201,8 @@ void APantheliaCharacterBase::Die(const FVector& DeathImpulse)
 		ASC->SetNumericAttributeBase(UPantheliaAttributeSet::GetStormBuildupAttribute(), 0.f);
 		ASC->SetNumericAttributeBase(UPantheliaAttributeSet::GetWaterBuildupAttribute(), 0.f);
 		ASC->SetNumericAttributeBase(UPantheliaAttributeSet::GetNatureBuildupAttribute(), 0.f);
+		ASC->SetNumericAttributeBase(UPantheliaAttributeSet::GetIncomingHealingAttribute(), 0.f);
+		ASC->SetNumericAttributeBase(UPantheliaAttributeSet::GetGrievousWoundsAttribute(), 0.f);
 
 		FGameplayTagContainer ElementalStatusTags;
 		const FPantheliaGameplayTags& GameplayTags = FPantheliaGameplayTags::Get();
@@ -208,6 +210,7 @@ void APantheliaCharacterBase::Die(const FVector& DeathImpulse)
 		ElementalStatusTags.AddTag(GameplayTags.Debuff_Shock);
 		ElementalStatusTags.AddTag(GameplayTags.Debuff_Saturation);
 		ElementalStatusTags.AddTag(GameplayTags.Debuff_Poison);
+		ElementalStatusTags.AddTag(GameplayTags.Effects_GrievousWounds);
 		ASC->RemoveActiveEffectsWithGrantedTags(ElementalStatusTags);
 
 		// Si murió durante un launch, Landed() ya no tiene por qué ejecutarse.

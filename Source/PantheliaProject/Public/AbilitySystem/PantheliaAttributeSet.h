@@ -145,6 +145,23 @@ public:
 		UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_WaterStatusPower, Category = "Status Power Attributes") FGameplayAttributeData WaterStatusPower; ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, WaterStatusPower)
 		UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_NatureStatusPower, Category = "Status Power Attributes") FGameplayAttributeData NatureStatusPower; ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, NatureStatusPower)
 
+		// ===== MODIFICADORES DESBLOQUEABLES DEL PAYLOAD DE ESTADOS =====
+		// Empiezan en 0. Un nodo del árbol o un objeto aplica un GE Infinite Add
+		// para habilitar la rama correspondiente. Los valores son puntos porcentuales:
+		// 0.5 significa 0.5% de la vida usada como base del cálculo.
+		//
+		// Quemadura y Veneno usan vida MÁXIMA por tick. Electrocución puede sumar
+		// vida ACTUAL, vida FALTANTE, o ambas, según qué atributos desbloquee el build.
+		UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_FireMaxHealthDamagePercent, Category = "Status Damage Attributes") FGameplayAttributeData FireMaxHealthDamagePercent; ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, FireMaxHealthDamagePercent)
+		UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_NatureMaxHealthDamagePercent, Category = "Status Damage Attributes") FGameplayAttributeData NatureMaxHealthDamagePercent; ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, NatureMaxHealthDamagePercent)
+		UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_StormCurrentHealthDamagePercent, Category = "Status Damage Attributes") FGameplayAttributeData StormCurrentHealthDamagePercent; ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, StormCurrentHealthDamagePercent)
+		UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_StormMissingHealthDamagePercent, Category = "Status Damage Attributes") FGameplayAttributeData StormMissingHealthDamagePercent; ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, StormMissingHealthDamagePercent)
+
+		// Intensidad de Heridas Graves ACTIVA sobre la víctima. Es un porcentaje
+		// acumulable por Gameplay Effects y se clampea a 0-100. Veneno aporta 30%
+		// por defecto desde DA_ElementalStatusConfig.
+		UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_GrievousWounds, Category = "Debuff Attributes") FGameplayAttributeData GrievousWounds; ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, GrievousWounds)
+
 		// ===== BARRAS DE ACUMULACIÓN ELEMENTAL (BUILDUP) =====
 		// El sistema de efectos de estado soulslike (Gameplay_Mechanics, "Efectos de
 		// estado"): cada golpe elemental SUMA aquí; al llegar a BuildupThreshold (100),
@@ -184,6 +201,10 @@ public:
 		// añade al TagsToAttributes ni tiene OnRep.
 		UPROPERTY(BlueprintReadOnly, Category = "Meta Attributes") FGameplayAttributeData IncomingXP; ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, IncomingXP)
 
+		// Toda curación futura debe entrar por este meta atributo. El AttributeSet
+		// aplica GrievousWounds y solo después suma el resultado final a Health.
+		UPROPERTY(BlueprintReadOnly, Category = "Meta Attributes") FGameplayAttributeData IncomingHealing; ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, IncomingHealing)
+
 		// --- OnRep Primarios ---
 		UFUNCTION() void OnRep_Hardness(const FGameplayAttributeData& OldHardness) const;
 	UFUNCTION() void OnRep_Resonance(const FGameplayAttributeData& OldResonance) const;
@@ -218,6 +239,13 @@ public:
 	UFUNCTION() void OnRep_WaterStatusPower(const FGameplayAttributeData& OldWaterStatusPower) const;
 	UFUNCTION() void OnRep_NatureStatusPower(const FGameplayAttributeData& OldNatureStatusPower) const;
 
+	// --- OnRep Modificadores de payload / antiheal ---
+	UFUNCTION() void OnRep_FireMaxHealthDamagePercent(const FGameplayAttributeData& OldFireMaxHealthDamagePercent) const;
+	UFUNCTION() void OnRep_NatureMaxHealthDamagePercent(const FGameplayAttributeData& OldNatureMaxHealthDamagePercent) const;
+	UFUNCTION() void OnRep_StormCurrentHealthDamagePercent(const FGameplayAttributeData& OldStormCurrentHealthDamagePercent) const;
+	UFUNCTION() void OnRep_StormMissingHealthDamagePercent(const FGameplayAttributeData& OldStormMissingHealthDamagePercent) const;
+	UFUNCTION() void OnRep_GrievousWounds(const FGameplayAttributeData& OldGrievousWounds) const;
+
 	UFUNCTION() void OnRep_FireBuildup(const FGameplayAttributeData& OldFireBuildup) const;
 	UFUNCTION() void OnRep_StormBuildup(const FGameplayAttributeData& OldStormBuildup) const;
 	UFUNCTION() void OnRep_WaterBuildup(const FGameplayAttributeData& OldWaterBuildup) const;
@@ -249,6 +277,10 @@ private:
 	// IncomingXP (detección de subida de nivel, relleno de vida/maná, AddToXP).
 	void HandleIncomingXP(const FEffectProperties& Props);
 
+	// Pipeline central de curación. Consume IncomingHealing, reduce la magnitud
+	// según GrievousWounds y aplica el resultado final a Health.
+	void HandleIncomingHealing(const FEffectProperties& Props);
+
 	// === SISTEMA DE BUILDUP: DISPARO POR UMBRAL (reemplaza al dado del curso) ===
 	//
 	// HandleElementalBuildup: rama de PostGameplayEffectExecute para cada atributo
@@ -263,9 +295,9 @@ private:
 	// elemento y aplica el Status Power del source. La ability que dio el último
 	// golpe ya no puede cambiar daño, duración ni frecuencia del estado.
 	//
-	// DamageOverTime está implementado para Quemadura/Veneno. BurstDamage y
-	// AttributeDebuff quedan como payloads explícitos pendientes, sin fingir un DoT
-	// provisional que después pudiera confundirse con diseño definitivo.
+	// DamageOverTime está implementado para Quemadura/Veneno y BurstDamage para
+	// Electrocución. AttributeDebuff queda pendiente para Saturación, sin fingir
+	// un DoT provisional que después pudiera confundirse con diseño definitivo.
 	void TriggerElementalStatus(const FEffectProperties& Props, EPantheliaElement Element);
 
 	// ApplyElementalDebuff: construye y aplica el GE dinámico del estado (tag de
@@ -276,6 +308,16 @@ private:
 	// estados que no dañan por segundo, como la futura Saturación.
 	void ApplyElementalDebuff(const FEffectProperties& Props, const FGameplayTag& DebuffTag,
 		float Damage, float Duration, float Frequency);
+
+	// Daño instantáneo de un estado (Electrocución). Entra por IncomingDamage con
+	// contexto del source, por lo que conserva muerte, XP y atribución correctas.
+	void ApplyInstantElementalDamage(const FEffectProperties& Props, const FGameplayTag& DebuffTag,
+		float Damage);
+
+	// Aplica el antiheal de Veneno mediante un GE separado del DoT. Debe ser un
+	// efecto distinto porque un GE periódico ejecutaría el modifier de reducción
+	// en cada tick en vez de mantenerlo estable durante toda la duración.
+	void ApplyGrievousWounds(const FEffectProperties& Props, float Duration, float ReductionPercent);
 
 	// === CACHÉ DE DEFINICIONES DINÁMICAS DE ESTADO ===
 	//

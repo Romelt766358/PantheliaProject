@@ -50,6 +50,23 @@ void FPantheliaGameplayTags::InitializeNativeGameplayTags()
 		FName("Attributes.StatusPower.Nature"),
 		FString("Poder ofensivo de Veneno. Lo modifican arbol y equipamiento."));
 
+	// --- MODIFICADORES DE PAYLOAD DE ESTADOS ---
+	GameplayTags.Attributes_StatusDamage_Fire_MaxHealthPercent = Manager.AddNativeGameplayTag(
+		FName("Attributes.StatusDamage.Fire.MaxHealthPercent"),
+		FString("Porcentaje base de vida maxima que cada tick de Quemadura suma como daño. 0 = perk bloqueado."));
+	GameplayTags.Attributes_StatusDamage_Nature_MaxHealthPercent = Manager.AddNativeGameplayTag(
+		FName("Attributes.StatusDamage.Nature.MaxHealthPercent"),
+		FString("Porcentaje base de vida maxima que cada tick de Veneno suma como daño. 0 = perk bloqueado."));
+	GameplayTags.Attributes_StatusDamage_Storm_CurrentHealthPercent = Manager.AddNativeGameplayTag(
+		FName("Attributes.StatusDamage.Storm.CurrentHealthPercent"),
+		FString("Porcentaje base de vida actual que Electrocucion suma como daño. 0 = rama bloqueada."));
+	GameplayTags.Attributes_StatusDamage_Storm_MissingHealthPercent = Manager.AddNativeGameplayTag(
+		FName("Attributes.StatusDamage.Storm.MissingHealthPercent"),
+		FString("Porcentaje base de vida faltante que Electrocucion suma como daño. 0 = rama bloqueada."));
+
+	GameplayTags.Attributes_Secondary_GrievousWounds = Manager.AddNativeGameplayTag(
+		FName("Attributes.Secondary.GrievousWounds"),
+		FString("Porcentaje de curacion recibida que se niega mientras Heridas Graves esta activo."));
 
 	// --- META ATRIBUTOS ---
 	// Tag usado como SetByCallerTag en GE_EventBasedEffect para transportar la XP ganada.
@@ -57,6 +74,7 @@ void FPantheliaGameplayTags::InitializeNativeGameplayTags()
 	// y cuando recibe uno con este tag específico, aplica el GE con la magnitude del evento.
 	// El AttributeSet lo consume en PostGameplayEffectExecute → bloque IncomingXP.
 	GameplayTags.Attributes_Meta_IncomingXP = Manager.AddNativeGameplayTag(FName("Attributes.Meta.IncomingXP"), FString("Meta atributo de XP entrante. No se muestra en UI ni se replica."));
+	GameplayTags.Attributes_Meta_IncomingHealing = Manager.AddNativeGameplayTag(FName("Attributes.Meta.IncomingHealing"), FString("Meta atributo de curacion entrante. Aplica Heridas Graves antes de modificar Health."));
 
 	// --- INPUT TAGS ---
 	// InputTag (raíz): padre de todos los input tags. Solo para queries jerárquicas
@@ -290,6 +308,8 @@ void FPantheliaGameplayTags::InitializeNativeGameplayTags()
 	GameplayTags.Effects_Stagger = Manager.AddNativeGameplayTag(FName("Effects.Stagger"), FString("Otorgado cuando la postura llega a 0. Aturdimiento prolongado."));
 	GameplayTags.Effects_GetUp = Manager.AddNativeGameplayTag(FName("Effects.GetUp"), FString("Tag de activacion de GA_GetUp. La dispara Landed() al aterrizar desde State.Airborne."));
 	GameplayTags.Effects_HeavyKnockback = Manager.AddNativeGameplayTag(FName("Effects.HeavyKnockback"), FString("Tag de activacion de GA_HeavyKnockback (Nivel 2). La dispara HandleIncomingDamage."));
+	GameplayTags.Effects_GrievousWounds = Manager.AddNativeGameplayTag(FName("Effects.GrievousWounds"), FString("Raiz de todos los efectos de Heridas Graves. Reduce curacion recibida."));
+	GameplayTags.Effects_GrievousWounds_Poison = Manager.AddNativeGameplayTag(FName("Effects.GrievousWounds.Poison"), FString("Heridas Graves aplicadas especificamente por Veneno."));
 
 	// --- TAGS DE DEBUFF (efectos de estado negativos elementales) ---
 	// Un debuff por elemento (ver el header para la decisión de diseño completa). La raíz
@@ -350,6 +370,9 @@ void FPantheliaGameplayTags::InitializeNativeGameplayTags()
 	GameplayTags.Debuff_Frequency = Manager.AddNativeGameplayTag(
 		FName("Debuff.Frequency"),
 		FString("SetByCaller: cada cuántos segundos tiquea Debuff.Damage (el 'Period' del GE periódico)."));
+	GameplayTags.Debuff_GrievousWoundsMagnitude = Manager.AddNativeGameplayTag(
+		FName("Debuff.GrievousWounds.Magnitude"),
+		FString("SetByCaller: porcentaje de curacion negada por Heridas Graves."));
 
 	// --- TAGS DE "COMBAT TRICKS" GENÉRICOS (clase 313) ---
 	GameplayTags.CombatTricks_DeathImpulseMagnitude = Manager.AddNativeGameplayTag(

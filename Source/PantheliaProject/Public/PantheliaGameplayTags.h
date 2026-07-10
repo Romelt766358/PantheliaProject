@@ -74,12 +74,25 @@ public:
 	FGameplayTag Attributes_StatusPower_Water;
 	FGameplayTag Attributes_StatusPower_Nature;
 
+	// --- MODIFICADORES DE PAYLOAD DE ESTADOS ---
+	// Porcentajes base concedidos por perks/equipamiento. Empiezan en 0: la
+	// mecánica queda bloqueada hasta que un Gameplay Effect del árbol sume valor.
+	// Son puntos porcentuales (0.5 = medio por ciento), no multiplicadores 0-1.
+	FGameplayTag Attributes_StatusDamage_Fire_MaxHealthPercent;
+	FGameplayTag Attributes_StatusDamage_Nature_MaxHealthPercent;
+	FGameplayTag Attributes_StatusDamage_Storm_CurrentHealthPercent;
+	FGameplayTag Attributes_StatusDamage_Storm_MissingHealthPercent;
+
+	// Intensidad total de reducción de curación activa sobre la víctima.
+	FGameplayTag Attributes_Secondary_GrievousWounds;
+
 	// --- META ATRIBUTOS ---
 	// Tags usados como SetByCaller en los GEs que modifican meta atributos del AttributeSet.
 	// Estos atributos no se muestran en la UI ni se replican — son temporales en el servidor.
 	// El GE_EventBasedEffect usa Attributes.Meta.IncomingXP como SetByCallerTag para
 	// transportar la XP ganada desde GA_ListenForXPEvents hasta el AttributeSet.
 	FGameplayTag Attributes_Meta_IncomingXP;
+	FGameplayTag Attributes_Meta_IncomingHealing;
 
 	// --- INPUT TAGS ---
 	// InputTag (raíz): padre de todos los input tags. NO se asigna a ninguna ability —
@@ -251,6 +264,12 @@ public:
 	// la activa con TryActivateAbilitiesByTag cuando un knockback "pesado" se confirma.
 	FGameplayTag Effects_HeavyKnockback;
 
+	// Heridas graves: la raíz permite consultar cualquier fuente; el hijo Poison
+	// identifica solo la instancia aplicada por Veneno para refrescarla sin borrar
+	// otras fuentes futuras de antiheal.
+	FGameplayTag Effects_GrievousWounds;
+	FGameplayTag Effects_GrievousWounds_Poison;
+
 	// --- TAGS DE DEBUFF (efectos de estado negativos elementales) ---
 	// Un "debuff" es un estado negativo que se aplica a la víctima y dura un tiempo
 	// (a diferencia de un golpe, que es instantáneo). En Panthelia cada elemento tiene
@@ -264,9 +283,8 @@ public:
 	// preguntar Container.HasTag(Debuff) responde "¿la víctima tiene ALGÚN debuff activo?"
 	// de una sola vez — útil para limpiezas (cleanse), inmunidades y los iconos de estado
 	// del HUD. Es el mismo patrón de padre-vacío que ya usan las raíces Cooldown, Abilities
-	// e InputTag. El antiheal (Debuff.GrievousWounds, State_Pending §5) colgará de esta
-	// misma raíz cuando se implemente su pipeline de curación — NO se registra aún porque
-	// depende de un sistema que todavía no existe (no dejamos tags "colgando" sin su lógica).
+	// e InputTag. Heridas Graves ya usa su propia raíz Effects.GrievousWounds y el
+	// pipeline IncomingHealing; Veneno concede Effects.GrievousWounds.Poison.
 	//
 	// DECISIÓN DE DISEÑO (clase 303, adaptada del curso): el curso de Druid Mechanics usa
 	// una relación 1-a-1 "un tipo de daño = un debuff" y colapsa cada ability a un solo
@@ -323,6 +341,7 @@ public:
 	FGameplayTag Debuff_Damage;      // SetByCaller interno: magnitud por tick del estado
 	FGameplayTag Debuff_Duration;    // SetByCaller interno: duración del estado
 	FGameplayTag Debuff_Frequency;   // identidad documental; el Period vive en la definición cacheada
+	FGameplayTag Debuff_GrievousWoundsMagnitude; // SetByCaller: porcentaje de curación negada
 
 	// --- TAGS DE "COMBAT TRICKS" GENÉRICOS (clase 313) ---
 	// Raíz nueva para parámetros SetByCaller de ability que NO son ni un tipo de daño

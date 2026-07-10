@@ -40,8 +40,8 @@ struct FPantheliaElementalStatusDefinition
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Identity")
 	EPantheliaElement Element = EPantheliaElement::None;
 
-	// Clase de payload. DamageOverTime está implementado. BurstDamage y
-	// AttributeDebuff quedan preparados para Electrocución y Saturación.
+	// Clase de payload. DamageOverTime y BurstDamage están implementados.
+	// AttributeDebuff queda preparado para Saturación.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Payload")
 	EPantheliaElementalStatusPayload PayloadType = EPantheliaElementalStatusPayload::DamageOverTime;
 
@@ -69,6 +69,42 @@ struct FPantheliaElementalStatusDefinition
 	// Default 0: el poder aumenta la magnitud, no la duración.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Scaling")
 	float DurationPercentPerStatusPower = 0.f;
+
+	// ===== DAÑO POR PORCENTAJE DE VIDA DESBLOQUEABLE =====
+	// Estos coeficientes NO activan la mecánica por sí solos. El árbol o el
+	// equipamiento deben aportar un porcentaje base mayor que 0 mediante los
+	// atributos Attributes.StatusDamage.* del source. Solo entonces Status Power
+	// añade puntos porcentuales extra usando estos coeficientes.
+	//
+	// Ejemplo: el perk da FireMaxHealthDamagePercent = 0.5 y este campo vale
+	// 0.005. Con 100 FireStatusPower, cada tick de Quemadura suma 1.0% de la
+	// vida máxima: 0.5 + (100 * 0.005).
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Health Percentage Damage", meta = (ClampMin = "0.0"))
+	float MaxHealthPercentPerStatusPower = 0.f;
+
+	// Usado principalmente por Electrocución. El árbol puede habilitar daño
+	// basado en vida ACTUAL, vida FALTANTE, o ambos, concediendo los atributos
+	// correspondientes. Cada canal se calcula y suma de forma independiente.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Health Percentage Damage", meta = (ClampMin = "0.0"))
+	float CurrentHealthPercentPerStatusPower = 0.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Health Percentage Damage", meta = (ClampMin = "0.0"))
+	float MissingHealthPercentPerStatusPower = 0.f;
+
+	// ===== HERIDAS GRAVES =====
+	// Veneno puede aplicar un segundo Gameplay Effect de duración que reduce la
+	// curación recibida. La reducción real se procesa por IncomingHealing; futuras
+	// curaciones deben usar ese meta atributo y no escribir Health directamente.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Grievous Wounds")
+	bool bAppliesGrievousWounds = false;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Grievous Wounds", meta = (ClampMin = "0.0", ClampMax = "100.0"))
+	float GrievousWoundsPercent = 30.f;
+
+	// Escalado opcional de la intensidad con Status Power. Default 0: el Veneno
+	// siempre niega el porcentaje configurado, independientemente de su daño.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Grievous Wounds", meta = (ClampMin = "0.0"))
+	float GrievousWoundsPercentPerStatusPower = 0.f;
 };
 
 /**
