@@ -27,6 +27,14 @@ class PANTHELIAPROJECT_API UWeaponTraceNotifyState : public UAnimNotifyState
 	GENERATED_BODY()
 
 public:
+	// Si está activo, esta ventana de daño usa un radio propio en vez del default del componente.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "WeaponTrace", meta = (InlineEditConditionToggle))
+	bool bUseTraceRadiusOverride = false;
+
+	// Radio temporal del sweep para este notify. Útil en tajos amplios de boss.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "WeaponTrace", meta = (EditCondition = "bUseTraceRadiusOverride", ClampMin = "0.0", UIMin = "0.0"))
+	float OverrideTraceRadius = 25.f;
+
 	virtual void NotifyBegin(
 		USkeletalMeshComponent* MeshComp,
 		UAnimSequenceBase* Animation,

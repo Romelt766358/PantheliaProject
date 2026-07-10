@@ -78,6 +78,11 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "WeaponTrace")
 	void ActivateTrace();
 
+	// Abre la ventana de daño usando un radio temporal para este swing.
+	// Lo usa UWeaponTraceNotifyState cuando un montage necesita un hitbox más permisivo.
+	UFUNCTION(BlueprintCallable, Category = "WeaponTrace")
+	void ActivateTraceWithRadius(float OverrideTraceRadius);
+
 	// Cierra la ventana de daño y limpia la lista de ignorados para el próximo swing.
 	// Lo llama UWeaponTraceNotifyState::NotifyEnd.
 	UFUNCTION(BlueprintCallable, Category = "WeaponTrace")
@@ -126,9 +131,17 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "WeaponTrace")
 	bool bDebugMode = false;
 
+	// Loguea el flujo de trace/daño sin activar necesariamente el dibujo debug.
+	// Pensado para diagnosticar configuraciones de montages/abilities sin cambiar gameplay.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "WeaponTrace|Debug")
+	bool bLogTraceDebug = false;
+
 private:
 	// True mientras la ventana de daño está abierta (entre NotifyBegin y NotifyEnd).
 	bool bIsTracing = false;
+
+	// Radio efectivo del swing actual. Por defecto copia TraceRadius al abrir la ventana.
+	float ActiveTraceRadius = 15.f;
 
 	// Spec de daño a aplicar a los actores golpeados. Lo provee la ability.
 	FGameplayEffectSpecHandle DamageSpecHandle;
@@ -158,6 +171,13 @@ private:
 	// Se llama cada tick mientras bIsTracing es true.
 	void PerformTrace();
 
+	void StartTrace(float InTraceRadius);
+
 	// Resuelve el mesh del arma si WeaponMeshComponent no fue asignado en el editor.
 	void ResolveWeaponMesh();
+
+	// Valida que el componente configurado pertenezca al owner del trace (o a un actor
+	// arma cuyo Owner sea el atacante, caso jugador). Protege contra referencias a
+	// templates/CDO o componentes de otro actor, que producen traces lejos del personaje.
+	bool IsWeaponMeshValidForOwner() const;
 };

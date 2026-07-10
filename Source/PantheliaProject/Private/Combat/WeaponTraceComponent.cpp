@@ -7,10 +7,12 @@
 #include "AbilitySystemComponent.h"
 #include "Combat/LockonComponent.h"
 #include "Components/PrimitiveComponent.h"
+#include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Kismet/GameplayStatics.h"
 #include "PantheliaGameplayTags.h"
+#include "PantheliaLogChannels.h"
 #include "GameplayCueManager.h"
 
 UWeaponTraceComponent::UWeaponTraceComponent()
@@ -35,6 +37,8 @@ void UWeaponTraceComponent::ResolveWeaponMesh()
 {
 	AActor* Owner = GetOwner();
 	if (!Owner) return;
+
+	WeaponMeshComponent = nullptr;
 
 	// Estrategia 1: buscar un componente con el ComponentTag "Weapon".
 	// Permite marcar explícitamente cuál componente es el arma en el Blueprint.
@@ -62,9 +66,41 @@ void UWeaponTraceComponent::ResolveWeaponMesh()
 	}
 }
 
+bool UWeaponTraceComponent::IsWeaponMeshValidForOwner() const
+{
+	if (!IsValid(WeaponMeshComponent))
+	{
+		return false;
+	}
+
+	const AActor* Owner = GetOwner();
+	const AActor* MeshOwner = WeaponMeshComponent->GetOwner();
+	if (!Owner || !MeshOwner)
+	{
+		return false;
+	}
+
+	if (MeshOwner == Owner)
+	{
+		return true;
+	}
+
+	return MeshOwner->GetOwner() == Owner;
+}
+
 void UWeaponTraceComponent::SetDamageSpec(const FGameplayEffectSpecHandle& InDamageSpecHandle)
 {
 	DamageSpecHandle = InDamageSpecHandle;
+
+	if (bLogTraceDebug || bDebugMode)
+	{
+		const UGameplayEffect* DamageEffect = DamageSpecHandle.IsValid() ? DamageSpecHandle.Data->Def : nullptr;
+		UE_LOG(LogPanthelia, Log, TEXT("WeaponTrace SetDamageSpec: Owner=%s Spec=%s Effect=%s Level=%.1f"),
+			*GetNameSafe(GetOwner()),
+			DamageSpecHandle.IsValid() ? TEXT("valid") : TEXT("invalid"),
+			*GetNameSafe(DamageEffect),
+			DamageSpecHandle.IsValid() ? DamageSpecHandle.Data->GetLevel() : 0.f);
+	}
 }
 
 void UWeaponTraceComponent::SetActiveMontageTag(const FGameplayTag& InMontageTag)
@@ -113,11 +149,59 @@ void UWeaponTraceComponent::SetWeaponMeshComponent(UPrimitiveComponent* InWeapon
 
 void UWeaponTraceComponent::ActivateTrace()
 {
+	StartTrace(TraceRadius);
+}
+
+void UWeaponTraceComponent::ActivateTraceWithRadius(float OverrideTraceRadius)
+{
+	StartTrace(OverrideTraceRadius > 0.f ? OverrideTraceRadius : TraceRadius);
+}
+
+void UWeaponTraceComponent::StartTrace(float InTraceRadius)
+{
 	bIsTracing = true;
+	ActiveTraceRadius = FMath::Max(0.f, InTraceRadius);
 
 	// Limpiamos por seguridad: cada swing empieza sin actores ignorados.
 	// (DeactivateTrace también limpia, pero esto protege ante notifies solapados.)
 	IgnoredActors.Empty();
+
+	if (bLogTraceDebug || bDebugMode)
+	{
+		if (!IsWeaponMeshValidForOwner())
+		{
+			ResolveWeaponMesh();
+		}
+
+		const bool bHasBaseSocket = WeaponMeshComponent && WeaponMeshComponent->DoesSocketExist(WeaponBaseSocketName);
+		const bool bHasTipSocket = WeaponMeshComponent && WeaponMeshComponent->DoesSocketExist(WeaponTipSocketName);
+		const UGameplayEffect* DamageEffect = DamageSpecHandle.IsValid() ? DamageSpecHandle.Data->Def : nullptr;
+		const AActor* WeaponOwner = WeaponMeshComponent ? WeaponMeshComponent->GetOwner() : nullptr;
+		const USceneComponent* AttachParent = WeaponMeshComponent ? WeaponMeshComponent->GetAttachParent() : nullptr;
+		const FVector OwnerLocation = GetOwner() ? GetOwner()->GetActorLocation() : FVector::ZeroVector;
+		const FVector WeaponLocation = WeaponMeshComponent ? WeaponMeshComponent->GetComponentLocation() : FVector::ZeroVector;
+		const FVector StartLocation = WeaponMeshComponent ? WeaponMeshComponent->GetSocketLocation(WeaponBaseSocketName) : FVector::ZeroVector;
+		const FVector EndLocation = WeaponMeshComponent ? WeaponMeshComponent->GetSocketLocation(WeaponTipSocketName) : FVector::ZeroVector;
+
+		UE_LOG(LogPanthelia, Log,
+			TEXT("WeaponTrace started: Owner=%s MontageTag=%s Radius=%.1f Weapon=%s WeaponOwner=%s AttachParent=%s BaseSocket=%s(%s) TipSocket=%s(%s) OwnerLoc=%s WeaponLoc=%s Start=%s End=%s DamageSpec=%s Effect=%s"),
+			*GetNameSafe(GetOwner()),
+			*ActiveMontageTag.ToString(),
+			ActiveTraceRadius,
+			*GetNameSafe(WeaponMeshComponent),
+			*GetNameSafe(WeaponOwner),
+			*GetNameSafe(AttachParent),
+			*WeaponBaseSocketName.ToString(),
+			bHasBaseSocket ? TEXT("exists") : TEXT("missing"),
+			*WeaponTipSocketName.ToString(),
+			bHasTipSocket ? TEXT("exists") : TEXT("missing"),
+			*OwnerLocation.ToCompactString(),
+			*WeaponLocation.ToCompactString(),
+			*StartLocation.ToCompactString(),
+			*EndLocation.ToCompactString(),
+			DamageSpecHandle.IsValid() ? TEXT("valid") : TEXT("invalid"),
+			*GetNameSafe(DamageEffect));
+	}
 }
 
 void UWeaponTraceComponent::DeactivateTrace()
@@ -146,11 +230,30 @@ void UWeaponTraceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 
 void UWeaponTraceComponent::PerformTrace()
 {
+	if (!IsWeaponMeshValidForOwner())
+	{
+		ResolveWeaponMesh();
+	}
+
 	// Sin mesh de arma no podemos leer los sockets — nada que hacer.
-	if (!WeaponMeshComponent) return;
+	if (!WeaponMeshComponent)
+	{
+		if (bLogTraceDebug || bDebugMode)
+		{
+			UE_LOG(LogPanthelia, Warning, TEXT("WeaponTrace rejected: Owner=%s Reason=no weapon mesh"), *GetNameSafe(GetOwner()));
+		}
+		return;
+	}
 
 	AActor* Owner = GetOwner();
-	if (!Owner) return;
+	if (!Owner)
+	{
+		if (bLogTraceDebug || bDebugMode)
+		{
+			UE_LOG(LogPanthelia, Warning, TEXT("WeaponTrace rejected: Reason=no owner"));
+		}
+		return;
+	}
 
 	// Posiciones de inicio (base) y fin (punta) de la hoja en el mundo.
 	const FVector StartLocation = WeaponMeshComponent->GetSocketLocation(WeaponBaseSocketName);
@@ -162,10 +265,10 @@ void UWeaponTraceComponent::PerformTrace()
 
 	// Forma de cápsula a lo largo de la hoja. SweepMultiByChannel con una esfera
 	// barrida entre dos puntos equivale a una cápsula que cubre toda la hoja.
-	const FCollisionShape SweepShape = FCollisionShape::MakeSphere(TraceRadius);
+	const FCollisionShape SweepShape = FCollisionShape::MakeSphere(ActiveTraceRadius);
 
 	TArray<FHitResult> HitResults;
-	const bool bHit = GetWorld()->SweepMultiByChannel(
+	GetWorld()->SweepMultiByChannel(
 		HitResults,
 		StartLocation,
 		EndLocation,
@@ -179,16 +282,16 @@ void UWeaponTraceComponent::PerformTrace()
 	{
 		// Dibuja una cápsula entre base y punta para visualizar el área del sweep.
 		const FVector Center = (StartLocation + EndLocation) * 0.5f;
-		const float HalfHeight = (EndLocation - StartLocation).Size() * 0.5f + TraceRadius;
+		const float HalfHeight = (EndLocation - StartLocation).Size() * 0.5f + ActiveTraceRadius;
 		const FVector Direction = (EndLocation - StartLocation).GetSafeNormal();
 		const FRotator CapsuleRotation = FRotationMatrix::MakeFromZ(Direction).Rotator();
-		const FLinearColor DebugColor = bHit ? FLinearColor::Green : FLinearColor::Red;
+		const FLinearColor DebugColor = HitResults.Num() > 0 ? FLinearColor::Green : FLinearColor::Red;
 
 		UKismetSystemLibrary::DrawDebugCapsule(
 			GetWorld(),
 			Center,
 			HalfHeight,
-			TraceRadius,
+			ActiveTraceRadius,
 			CapsuleRotation,
 			DebugColor,
 			0.f,
@@ -196,11 +299,20 @@ void UWeaponTraceComponent::PerformTrace()
 		);
 	}
 
-	if (!bHit) return;
+	if (HitResults.Num() == 0) return;
 
 	// El spec debe ser válido para poder aplicar daño. Si la ability no lo
 	// configuró (SetDamageSpec), no aplicamos nada — pero el debug ya se dibujó.
-	if (!DamageSpecHandle.IsValid()) return;
+	if (!DamageSpecHandle.IsValid())
+	{
+		if (bLogTraceDebug || bDebugMode)
+		{
+			UE_LOG(LogPanthelia, Warning, TEXT("WeaponTrace rejected: Owner=%s Reason=invalid damage spec HitCount=%d"),
+				*GetNameSafe(Owner),
+				HitResults.Num());
+		}
+		return;
+	}
 
 	// Flag para reproducir el sonido de impacto solo una vez por frame de trace, aunque el
 	// sweep golpee a varios actores en el mismo frame.
@@ -209,19 +321,80 @@ void UWeaponTraceComponent::PerformTrace()
 	for (const FHitResult& Hit : HitResults)
 	{
 		AActor* HitActor = Hit.GetActor();
-		if (!HitActor) continue;
+		if (!HitActor)
+		{
+			if (bLogTraceDebug || bDebugMode)
+			{
+				UE_LOG(LogPanthelia, Log, TEXT("WeaponTrace hit rejected: Owner=%s Component=%s Reason=no hit actor"),
+					*GetNameSafe(Owner),
+					*GetNameSafe(Hit.GetComponent()));
+			}
+			continue;
+		}
+
+		if (bLogTraceDebug || bDebugMode)
+		{
+			UE_LOG(LogPanthelia, Log, TEXT("WeaponTrace hit actor: Owner=%s Actor=%s Component=%s"),
+				*GetNameSafe(Owner),
+				*GetNameSafe(HitActor),
+				*GetNameSafe(Hit.GetComponent()));
+		}
 
 		// Un hit por swing por actor: si ya lo golpeamos, lo saltamos.
-		if (IgnoredActors.Contains(HitActor)) continue;
+		if (IgnoredActors.Contains(HitActor))
+		{
+			if (bLogTraceDebug || bDebugMode)
+			{
+				UE_LOG(LogPanthelia, Log, TEXT("WeaponTrace hit rejected: Owner=%s Target=%s Reason=already hit"),
+					*GetNameSafe(Owner),
+					*GetNameSafe(HitActor));
+			}
+			continue;
+		}
 
 		// No dañar a actores del mismo equipo (evita friendly fire entre enemigos).
-		if (!UPantheliaAbilitySystemLibrary::IsNotFriend(Owner, HitActor)) continue;
+		if (!UPantheliaAbilitySystemLibrary::IsNotFriend(Owner, HitActor))
+		{
+			if (bLogTraceDebug || bDebugMode)
+			{
+				auto TagsToString = [](const TArray<FName>& Tags)
+				{
+					FString Result;
+					for (const FName& Tag : Tags)
+					{
+						if (!Result.IsEmpty())
+						{
+							Result += TEXT(",");
+						}
+						Result += Tag.ToString();
+					}
+					return Result;
+				};
+
+				UE_LOG(LogPanthelia, Log, TEXT("WeaponTrace hit rejected: Owner=%s Target=%s Reason=friendly target OwnerTags=%s TargetTags=%s"),
+					*GetNameSafe(Owner),
+					*GetNameSafe(HitActor),
+					*TagsToString(Owner->Tags),
+					*TagsToString(HitActor->Tags));
+			}
+			continue;
+		}
 
 		// Aplicar el daño vía GAS: buscamos el ASC del objetivo y le aplicamos el spec.
 		UAbilitySystemComponent* TargetASC =
 			UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(HitActor);
 
-		if (!TargetASC) continue;
+		if (!TargetASC)
+		{
+			if (bLogTraceDebug || bDebugMode)
+			{
+				UE_LOG(LogPanthelia, Warning, TEXT("WeaponTrace hit rejected: Owner=%s Target=%s Component=%s Reason=no ASC"),
+					*GetNameSafe(Owner),
+					*GetNameSafe(HitActor),
+					*GetNameSafe(Hit.GetComponent()));
+			}
+			continue;
+		}
 
 		// === FIX DE CONTAMINACIÓN DE CONTEXTO (auditoría post-315) — leer antes de tocar ===
 		//
@@ -329,6 +502,24 @@ void UWeaponTraceComponent::PerformTrace()
 		}
 
 		TargetASC->ApplyGameplayEffectSpecToSelf(*DamageSpecHandle.Data.Get());
+
+		if (bLogTraceDebug || bDebugMode)
+		{
+			const FPantheliaGameplayTags& GameplayTags = FPantheliaGameplayTags::Get();
+			const float PhysicalDamage = DamageSpecHandle.Data->GetSetByCallerMagnitude(
+				GameplayTags.Damage_Physical, false, 0.f);
+			const float PoiseDamage = DamageSpecHandle.Data->GetSetByCallerMagnitude(
+				GameplayTags.Damage_Poise, false, 0.f);
+
+			UE_LOG(LogPanthelia, Log, TEXT("WeaponTrace damage applied: Owner=%s Target=%s Effect=%s Level=%.1f Physical=%.1f Poise=%.1f Invulnerable=%s"),
+				*GetNameSafe(Owner),
+				*GetNameSafe(HitActor),
+				*GetNameSafe(DamageSpecHandle.Data->Def),
+				DamageSpecHandle.Data->GetLevel(),
+				PhysicalDamage,
+				PoiseDamage,
+				TargetASC->HasMatchingGameplayTag(GameplayTags.State_Invulnerable) ? TEXT("true") : TEXT("false"));
+		}
 
 		// Disparar el Gameplay Cue de impacto melee (efectos visuales + sonido).
 		// Usamos el ASC del ATACANTE (Owner) para el dispatch, que garantiza replicacion

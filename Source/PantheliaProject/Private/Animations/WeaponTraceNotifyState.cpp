@@ -22,7 +22,14 @@ void UWeaponTraceNotifyState::NotifyBegin(
 	// Buscamos el componente de trace y abrimos la ventana de daño.
 	if (UWeaponTraceComponent* TraceComp = Owner->FindComponentByClass<UWeaponTraceComponent>())
 	{
-		TraceComp->ActivateTrace();
+		if (bUseTraceRadiusOverride)
+		{
+			TraceComp->ActivateTraceWithRadius(OverrideTraceRadius);
+		}
+		else
+		{
+			TraceComp->ActivateTrace();
+		}
 	}
 }
 
