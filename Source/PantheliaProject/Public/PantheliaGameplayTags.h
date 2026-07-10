@@ -83,6 +83,15 @@ public:
 	FGameplayTag Attributes_StatusDamage_Storm_CurrentHealthPercent;
 	FGameplayTag Attributes_StatusDamage_Storm_MissingHealthPercent;
 
+	// --- REDUCCIÓN DEFENSIVA DESBLOQUEABLE POR ESTADOS ---
+	// Atributos ofensivos del SOURCE. Empiezan en 0 y los perks/objetos los
+	// aumentan con GE Infinite Add. Son puntos planos que se restan mientras el
+	// objetivo permanece Quemado o Envenenado.
+	FGameplayTag Attributes_StatusDebuff_Fire_ArmorReduction;
+	FGameplayTag Attributes_StatusDebuff_Fire_MagicResistanceReduction;
+	FGameplayTag Attributes_StatusDebuff_Nature_ArmorReduction;
+	FGameplayTag Attributes_StatusDebuff_Nature_MagicResistanceReduction;
+
 	// Intensidad manual/legacy de reducción de curación activa sobre la víctima.
 	// El sistema inmediato moderno también lee las magnitudes de los efectos con
 	// Effects.GrievousWounds y usa la más alta (no suma varias fuentes).
@@ -280,6 +289,27 @@ public:
 	FGameplayTag Effects_GrievousWounds_Direct;
 	FGameplayTag Effects_GrievousWounds_Poison;
 
+	// Reducciones defensivas ligadas a estados. La raíz sirve para limpiezas
+	// globales; los hijos permiten refrescar Quemadura y Veneno por separado.
+	FGameplayTag Effects_DefenseShred;
+	FGameplayTag Effects_DefenseShred_Burn;
+	FGameplayTag Effects_DefenseShred_Poison;
+
+	// Reserva del futuro sistema de corazones. Por ahora SOLO se registran los
+	// tags: no se añade lógica a MainCharacter ni pasivas temporales.
+	FGameplayTag State_ElementalHeart;
+	FGameplayTag State_ElementalHeart_Fire;
+	FGameplayTag State_ElementalHeart_Water;
+	FGameplayTag State_ElementalHeart_Storm;
+	FGameplayTag State_ElementalHeart_Nature;
+
+	// Eventos reservados para pasivas del corazón. Effects.Damage.Secondary será
+	// la marca anti-recursión de daños proc secundarios cuando llegue el sistema.
+	FGameplayTag Event_Combat_Hit_BurningTarget;
+	FGameplayTag Event_Combat_Hit_PoisonedTarget;
+	FGameplayTag Effects_Damage;
+	FGameplayTag Effects_Damage_Secondary;
+
 	// --- TAGS DE DEBUFF (efectos de estado negativos elementales) ---
 	// Un "debuff" es un estado negativo que se aplica a la víctima y dura un tiempo
 	// (a diferencia de un golpe, que es instantáneo). En Panthelia cada elemento tiene
@@ -352,6 +382,8 @@ public:
 	FGameplayTag Debuff_Duration;    // SetByCaller interno: duración del estado
 	FGameplayTag Debuff_Frequency;   // identidad documental; el Period vive en la definición cacheada
 	FGameplayTag Debuff_GrievousWoundsMagnitude; // SetByCaller interno: porcentaje de curación negada
+	FGameplayTag Debuff_DefenseShred_ArmorReduction; // SetByCaller interno: reducción plana de Armor
+	FGameplayTag Debuff_DefenseShred_MagicResistanceReduction; // SetByCaller interno: reducción plana de MagicResistance
 
 	// --- TAGS DE "COMBAT TRICKS" GENÉRICOS (clase 313) ---
 	// Raíz nueva para parámetros SetByCaller de ability que NO son ni un tipo de daño

@@ -111,6 +111,23 @@ struct FPantheliaElementalStatusDefinition
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Health Percentage Damage|Magic Damage", meta = (ClampMin = "0.0"))
 	float MissingHealthPercentPerMagicDamage = 0.f;
 
+	// ===== DAÑO DE POSTURA AL DETONAR =====
+	// Se aplica UNA sola vez cuando la barra llega a 100, nunca en cada tick del
+	// DoT. El resultado entra por IncomingPoiseDamage para reutilizar flinch,
+	// stagger y el reinicio del timer de regeneración de postura.
+	//
+	// Los tres campos existen en todas las definiciones: Electrocución y
+	// Saturación los usan desde ahora, pero cualquier estado futuro puede hacerlo
+	// sin añadir ramas hardcodeadas nuevas al AttributeSet.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Payload|Poise", meta = (ClampMin = "0.0"))
+	float BasePoiseDamage = 0.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Payload|Poise", meta = (ClampMin = "0.0"))
+	float PoiseDamagePerStatusPower = 0.f;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Payload|Poise", meta = (ClampMin = "0.0"))
+	float PoiseDamagePerMagicDamage = 0.f;
+
 	// ===== HERIDAS GRAVES =====
 	// Veneno puede aplicar un segundo Gameplay Effect de duración que reduce la
 	// curación recibida. La reducción real se procesa por IncomingHealing; futuras

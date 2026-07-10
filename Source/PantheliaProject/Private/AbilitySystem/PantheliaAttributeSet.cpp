@@ -54,6 +54,8 @@ UPantheliaAttributeSet::UPantheliaAttributeSet()
 	// Modificadores de payload desbloqueables por árbol/equipamiento.
 	InitFireMaxHealthDamagePercent(0.f); InitNatureMaxHealthDamagePercent(0.f);
 	InitStormCurrentHealthDamagePercent(0.f); InitStormMissingHealthDamagePercent(0.f);
+	InitFireArmorReduction(0.f); InitFireMagicResistanceReduction(0.f);
+	InitNatureArmorReduction(0.f); InitNatureMagicResistanceReduction(0.f);
 	InitGrievousWounds(0.f);
 	InitGrievousWoundsOnHitPercent(0.f); InitGrievousWoundsOnHitDuration(0.f);
 	InitGrievousWoundsIntensityBonus(0.f); InitGrievousWoundsDurationBonus(0.f);
@@ -109,6 +111,10 @@ UPantheliaAttributeSet::UPantheliaAttributeSet()
 	TagsToAttributes.Add(Tags.Attributes_StatusDamage_Nature_MaxHealthPercent, GetNatureMaxHealthDamagePercentAttribute);
 	TagsToAttributes.Add(Tags.Attributes_StatusDamage_Storm_CurrentHealthPercent, GetStormCurrentHealthDamagePercentAttribute);
 	TagsToAttributes.Add(Tags.Attributes_StatusDamage_Storm_MissingHealthPercent, GetStormMissingHealthDamagePercentAttribute);
+	TagsToAttributes.Add(Tags.Attributes_StatusDebuff_Fire_ArmorReduction, GetFireArmorReductionAttribute);
+	TagsToAttributes.Add(Tags.Attributes_StatusDebuff_Fire_MagicResistanceReduction, GetFireMagicResistanceReductionAttribute);
+	TagsToAttributes.Add(Tags.Attributes_StatusDebuff_Nature_ArmorReduction, GetNatureArmorReductionAttribute);
+	TagsToAttributes.Add(Tags.Attributes_StatusDebuff_Nature_MagicResistanceReduction, GetNatureMagicResistanceReductionAttribute);
 	TagsToAttributes.Add(Tags.Attributes_Debuff_GrievousWounds_OnHitPercent, GetGrievousWoundsOnHitPercentAttribute);
 	TagsToAttributes.Add(Tags.Attributes_Debuff_GrievousWounds_OnHitDuration, GetGrievousWoundsOnHitDurationAttribute);
 	TagsToAttributes.Add(Tags.Attributes_Debuff_GrievousWounds_IntensityBonus, GetGrievousWoundsIntensityBonusAttribute);
@@ -160,6 +166,10 @@ void UPantheliaAttributeSet::GetLifetimeReplicatedProps(TArray<FLifetimeProperty
 	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, NatureMaxHealthDamagePercent, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, StormCurrentHealthDamagePercent, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, StormMissingHealthDamagePercent, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, FireArmorReduction, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, FireMagicResistanceReduction, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, NatureArmorReduction, COND_None, REPNOTIFY_Always);
+	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, NatureMagicResistanceReduction, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, GrievousWounds, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, GrievousWoundsOnHitPercent, COND_None, REPNOTIFY_Always);
 	DOREPLIFETIME_CONDITION_NOTIFY(UPantheliaAttributeSet, GrievousWoundsOnHitDuration, COND_None, REPNOTIFY_Always);
@@ -186,6 +196,10 @@ void UPantheliaAttributeSet::PreAttributeChange(const FGameplayAttribute& Attrib
 	else if (Attribute == GetManaAttribute() && GetMaxMana() > 0.f) NewValue = FMath::Clamp(NewValue, 0.f, GetMaxMana());
 	else if (Attribute == GetStaminaAttribute() && GetMaxStamina() > 0.f) NewValue = FMath::Clamp(NewValue, 0.f, GetMaxStamina());
 	else if (Attribute == GetPoiseAttribute() && GetMaxPoise() > 0.f) NewValue = FMath::Clamp(NewValue, 0.f, GetMaxPoise());
+	// Armor y MagicResistance pueden bajar temporalmente por estados, pero nunca
+	// deben presentar un valor efectivo negativo en GAS/UI.
+	else if (Attribute == GetArmorAttribute()) NewValue = FMath::Max(NewValue, 0.f);
+	else if (Attribute == GetMagicResistanceAttribute()) NewValue = FMath::Max(NewValue, 0.f);
 	// Las resistencias se clampean a 0-100 aquí para que nunca sean negativas ni > 100%
 	else if (Attribute == GetFireResistanceAttribute())   NewValue = FMath::Clamp(NewValue, 0.f, 100.f);
 	else if (Attribute == GetWaterResistanceAttribute())  NewValue = FMath::Clamp(NewValue, 0.f, 100.f);
@@ -205,6 +219,10 @@ void UPantheliaAttributeSet::PreAttributeChange(const FGameplayAttribute& Attrib
 	else if (Attribute == GetNatureMaxHealthDamagePercentAttribute()) NewValue = FMath::Clamp(NewValue, 0.f, 100.f);
 	else if (Attribute == GetStormCurrentHealthDamagePercentAttribute()) NewValue = FMath::Clamp(NewValue, 0.f, 100.f);
 	else if (Attribute == GetStormMissingHealthDamagePercentAttribute()) NewValue = FMath::Clamp(NewValue, 0.f, 100.f);
+	else if (Attribute == GetFireArmorReductionAttribute()) NewValue = FMath::Max(NewValue, 0.f);
+	else if (Attribute == GetFireMagicResistanceReductionAttribute()) NewValue = FMath::Max(NewValue, 0.f);
+	else if (Attribute == GetNatureArmorReductionAttribute()) NewValue = FMath::Max(NewValue, 0.f);
+	else if (Attribute == GetNatureMagicResistanceReductionAttribute()) NewValue = FMath::Max(NewValue, 0.f);
 	else if (Attribute == GetGrievousWoundsAttribute()) NewValue = FMath::Clamp(NewValue, 0.f, 100.f);
 	else if (Attribute == GetGrievousWoundsOnHitPercentAttribute()) NewValue = FMath::Clamp(NewValue, 0.f, 100.f);
 	else if (Attribute == GetGrievousWoundsOnHitDurationAttribute()) NewValue = FMath::Max(NewValue, 0.f);
@@ -941,6 +959,36 @@ void UPantheliaAttributeSet::TriggerElementalStatus(const FEffectProperties& Pro
 			0.f, 100.f)
 		: 0.f;
 
+	// Reducción defensiva: atributos del source desbloqueados por perks/objetos.
+	float FinalArmorReduction = 0.f;
+	float FinalMagicResistanceReduction = 0.f;
+	FGameplayTag DefenseShredTag;
+	if (Props.SourceASC)
+	{
+		switch (Element)
+		{
+			case EPantheliaElement::Fire:
+				FinalArmorReduction = FMath::Max(Props.SourceASC->GetNumericAttribute(GetFireArmorReductionAttribute()), 0.f);
+				FinalMagicResistanceReduction = FMath::Max(Props.SourceASC->GetNumericAttribute(GetFireMagicResistanceReductionAttribute()), 0.f);
+				DefenseShredTag = GameplayTags.Effects_DefenseShred_Burn;
+				break;
+			case EPantheliaElement::Nature:
+				FinalArmorReduction = FMath::Max(Props.SourceASC->GetNumericAttribute(GetNatureArmorReductionAttribute()), 0.f);
+				FinalMagicResistanceReduction = FMath::Max(Props.SourceASC->GetNumericAttribute(GetNatureMagicResistanceReductionAttribute()), 0.f);
+				DefenseShredTag = GameplayTags.Effects_DefenseShred_Poison;
+				break;
+			default:
+				break;
+		}
+	}
+
+	// Daño de postura de la detonación: una sola aplicación, no por tick.
+	const float FinalPoiseDamage = FMath::Max(
+		Definition->BasePoiseDamage +
+		(StatusPower * Definition->PoiseDamagePerStatusPower) +
+		(SourceMagicDamage * Definition->PoiseDamagePerMagicDamage),
+		0.f);
+
 	switch (Definition->PayloadType)
 	{
 		case EPantheliaElementalStatusPayload::DamageOverTime:
@@ -964,9 +1012,15 @@ void UPantheliaAttributeSet::TriggerElementalStatus(const FEffectProperties& Pro
 				Props.TargetAvatarActor->Implements<UCombatInterface>() &&
 				ICombatInterface::Execute_IsDead(Props.TargetAvatarActor);
 
-			if (FinalGrievousWoundsPercent > 0.f && !bTargetDiedFromInitialTick)
+			if (!bTargetDiedFromInitialTick)
 			{
-				ApplyGrievousWounds(Props, AppliedDuration, FinalGrievousWoundsPercent);
+				if (FinalGrievousWoundsPercent > 0.f)
+				{
+					ApplyGrievousWounds(Props, AppliedDuration, FinalGrievousWoundsPercent);
+				}
+				ApplyElementalDefenseShred(
+					Props, *DebuffTagPtr, DefenseShredTag, AppliedDuration,
+					FinalArmorReduction, FinalMagicResistanceReduction);
 			}
 			break;
 		}
@@ -994,10 +1048,14 @@ void UPantheliaAttributeSet::TriggerElementalStatus(const FEffectProperties& Pro
 		}
 
 		case EPantheliaElementalStatusPayload::AttributeDebuff:
-			// Saturación necesita un GE de duración que reduzca atributos defensivos.
-			// Se deja explícitamente pendiente en vez de sustituirlo por daño periódico.
+			// El payload defensivo principal de Saturación sigue pendiente, pero su
+			// tag ya puede vivir durante la duración configurada para Niagara/UI/pasivas.
+			if (FinalDuration > 0.f)
+			{
+				ApplyElementalDebuff(Props, *DebuffTagPtr, 0.f, FinalDuration, 0.f);
+			}
 			UE_LOG(LogPanthelia, Warning,
-				TEXT("[STATUS] '%s' alcanzó el umbral, pero AttributeDebuff aún no está implementado."),
+				TEXT("[STATUS] '%s': tag y postura implementados; AttributeDebuff principal pendiente."),
 				*DebuffTagPtr->ToString());
 			break;
 
@@ -1007,13 +1065,24 @@ void UPantheliaAttributeSet::TriggerElementalStatus(const FEffectProperties& Pro
 			break;
 	}
 
+	const bool bTargetDeadAfterPayload =
+		IsValid(Props.TargetAvatarActor) &&
+		Props.TargetAvatarActor->Implements<UCombatInterface>() &&
+		ICombatInterface::Execute_IsDead(Props.TargetAvatarActor);
+	if (FinalPoiseDamage > 0.f && !bTargetDeadAfterPayload)
+	{
+		ApplyInstantElementalPoiseDamage(Props, *DebuffTagPtr, FinalPoiseDamage);
+	}
+
 	UE_LOG(LogPanthelia, Log,
-		TEXT("[STATUS] '%s' en '%s' | Flat %.2f | MagicDamage %.2f (contrib %.2f) | StatusPower %.2f | MaxHP %.3f%% | CurrentHP %.3f%% | MissingHP %.3f%% | PercentDamage %.2f | Dur %.2f | Freq %.2f | Grievous %.1f%%"),
+		TEXT("[STATUS] '%s' en '%s' | Flat %.2f | MagicDamage %.2f (contrib %.2f) | StatusPower %.2f | MaxHP %.3f%% | CurrentHP %.3f%% | MissingHP %.3f%% | PercentDamage %.2f | Poise %.2f | ArmorShred %.2f | MRShred %.2f | Dur %.2f | Freq %.2f | Grievous %.1f%%"),
 		*DebuffTagPtr->ToString(),
 		Props.TargetCharacter ? *Props.TargetCharacter->GetName() : TEXT("null"),
 		FinalMagnitude, SourceMagicDamage, MagicDamageContribution, StatusPower,
 		FinalMaxHealthPercent, FinalCurrentHealthPercent, FinalMissingHealthPercent,
-		PercentageHealthDamage, FinalDuration, TickFrequency, FinalGrievousWoundsPercent);
+		PercentageHealthDamage, FinalPoiseDamage, FinalArmorReduction,
+		FinalMagicResistanceReduction, FinalDuration, TickFrequency,
+		FinalGrievousWoundsPercent);
 }
 
 void UPantheliaAttributeSet::ApplyElementalDebuff(const FEffectProperties& Props, const FGameplayTag& DebuffTag,
@@ -1203,6 +1272,118 @@ void UPantheliaAttributeSet::ApplyInstantElementalDamage(
 	Props.TargetASC->ApplyGameplayEffectSpecToSelf(MutableSpec);
 }
 
+void UPantheliaAttributeSet::ApplyInstantElementalPoiseDamage(
+	const FEffectProperties& Props,
+	const FGameplayTag& DebuffTag,
+	float PoiseDamage)
+{
+	if (!DebuffTag.IsValid() || !Props.SourceASC || !Props.TargetASC || PoiseDamage <= 0.f) return;
+
+	FGameplayEffectContextHandle EffectContextHandle = Props.SourceASC->MakeEffectContext();
+	EffectContextHandle.AddSourceObject(Props.SourceAvatarActor);
+
+	const FPantheliaGameplayTags& GameplayTags = FPantheliaGameplayTags::Get();
+	const FName CacheKey(*FString::Printf(TEXT("DynamicStatusPoise_%s"), *DebuffTag.ToString()));
+	TObjectPtr<UGameplayEffect>& CachedEffect = CachedDebuffEffects.FindOrAdd(CacheKey);
+	if (!CachedEffect)
+	{
+		UGameplayEffect* Effect = NewObject<UGameplayEffect>(this, CacheKey);
+		Effect->DurationPolicy = EGameplayEffectDurationType::Instant;
+		Effect->Modifiers.SetNum(1);
+
+		FSetByCallerFloat PoiseSetByCaller;
+		PoiseSetByCaller.DataTag = GameplayTags.Damage_Poise;
+		Effect->Modifiers[0].ModifierMagnitude = FGameplayEffectModifierMagnitude(PoiseSetByCaller);
+		Effect->Modifiers[0].ModifierOp = EGameplayModOp::Additive;
+		Effect->Modifiers[0].Attribute = UPantheliaAttributeSet::GetIncomingPoiseDamageAttribute();
+		CachedEffect = Effect;
+	}
+
+	FGameplayEffectSpec MutableSpec(CachedEffect, EffectContextHandle, 1.f);
+	MutableSpec.SetSetByCallerMagnitude(GameplayTags.Damage_Poise, PoiseDamage);
+	Props.TargetASC->ApplyGameplayEffectSpecToSelf(MutableSpec);
+}
+
+void UPantheliaAttributeSet::ApplyElementalDefenseShred(
+	const FEffectProperties& Props,
+	const FGameplayTag& DebuffTag,
+	const FGameplayTag& DefenseShredTag,
+	float Duration,
+	float ArmorReduction,
+	float MagicResistanceReduction)
+{
+	if (!DebuffTag.IsValid() || !DefenseShredTag.IsValid() ||
+		!Props.SourceASC || !Props.TargetASC || Duration <= 0.f)
+	{
+		return;
+	}
+
+	ArmorReduction = FMath::Max(ArmorReduction, 0.f);
+	MagicResistanceReduction = FMath::Max(MagicResistanceReduction, 0.f);
+	if (ArmorReduction <= 0.f && MagicResistanceReduction <= 0.f) return;
+
+	const FPantheliaGameplayTags& GameplayTags = FPantheliaGameplayTags::Get();
+
+	// Refresca solo la reducción del mismo estado. Quemadura y Veneno usan hijos
+	// distintos, así que pueden coexistir y sus modifiers Add se acumulan.
+	FGameplayTagContainer ExistingShredTag;
+	ExistingShredTag.AddTag(DefenseShredTag);
+	Props.TargetASC->RemoveActiveEffectsWithGrantedTags(ExistingShredTag);
+
+	FString SafeTagName = DefenseShredTag.ToString();
+	SafeTagName.ReplaceInline(TEXT("."), TEXT("_"));
+	const FName CacheKey(*FString::Printf(TEXT("DynamicDefenseShred_%s"), *SafeTagName));
+	TObjectPtr<UGameplayEffect>& CachedEffect = CachedDebuffEffects.FindOrAdd(CacheKey);
+	if (!CachedEffect)
+	{
+		UGameplayEffect* Effect = NewObject<UGameplayEffect>(this, CacheKey);
+		Effect->DurationPolicy = EGameplayEffectDurationType::HasDuration;
+
+		FSetByCallerFloat DurationSetByCaller;
+		DurationSetByCaller.DataTag = GameplayTags.Debuff_Duration;
+		Effect->DurationMagnitude = FGameplayEffectModifierMagnitude(DurationSetByCaller);
+
+		FInheritedTagContainer GrantedTags;
+		GrantedTags.AddTag(DebuffTag);
+		GrantedTags.AddTag(GameplayTags.Effects_DefenseShred);
+		GrantedTags.AddTag(DefenseShredTag);
+		UTargetTagsGameplayEffectComponent& TagComponent =
+			Effect->AddComponent<UTargetTagsGameplayEffectComponent>();
+		TagComponent.SetAndApplyTargetTagChanges(GrantedTags);
+
+		Effect->Modifiers.SetNum(2);
+
+		FSetByCallerFloat ArmorSetByCaller;
+		ArmorSetByCaller.DataTag = GameplayTags.Debuff_DefenseShred_ArmorReduction;
+		Effect->Modifiers[0].ModifierMagnitude = FGameplayEffectModifierMagnitude(ArmorSetByCaller);
+		Effect->Modifiers[0].ModifierOp = EGameplayModOp::Additive;
+		Effect->Modifiers[0].Attribute = UPantheliaAttributeSet::GetArmorAttribute();
+
+		FSetByCallerFloat MagicResistanceSetByCaller;
+		MagicResistanceSetByCaller.DataTag = GameplayTags.Debuff_DefenseShred_MagicResistanceReduction;
+		Effect->Modifiers[1].ModifierMagnitude = FGameplayEffectModifierMagnitude(MagicResistanceSetByCaller);
+		Effect->Modifiers[1].ModifierOp = EGameplayModOp::Additive;
+		Effect->Modifiers[1].Attribute = UPantheliaAttributeSet::GetMagicResistanceAttribute();
+		CachedEffect = Effect;
+	}
+
+	FGameplayEffectContextHandle EffectContextHandle = Props.SourceASC->MakeEffectContext();
+	EffectContextHandle.AddSourceObject(Props.SourceAvatarActor);
+	FGameplayEffectSpec MutableSpec(CachedEffect, EffectContextHandle, 1.f);
+	MutableSpec.SetSetByCallerMagnitude(GameplayTags.Debuff_Duration, Duration);
+	MutableSpec.SetSetByCallerMagnitude(GameplayTags.Debuff_DefenseShred_ArmorReduction, -ArmorReduction);
+	MutableSpec.SetSetByCallerMagnitude(
+		GameplayTags.Debuff_DefenseShred_MagicResistanceReduction,
+		-MagicResistanceReduction);
+	Props.TargetASC->ApplyGameplayEffectSpecToSelf(MutableSpec);
+
+	UE_LOG(LogPanthelia, Log,
+		TEXT("[DEFENSE SHRED] '%s' en '%s' | Armor -%.2f | MagicResistance -%.2f | %.2fs"),
+		*DefenseShredTag.ToString(),
+		Props.TargetCharacter ? *Props.TargetCharacter->GetName() : TEXT("null"),
+		ArmorReduction, MagicResistanceReduction, Duration);
+}
+
 void UPantheliaAttributeSet::ApplyGrievousWounds(
 	const FEffectProperties& Props,
 	float Duration,
@@ -1258,6 +1439,10 @@ void UPantheliaAttributeSet::OnRep_FireMaxHealthDamagePercent(const FGameplayAtt
 void UPantheliaAttributeSet::OnRep_NatureMaxHealthDamagePercent(const FGameplayAttributeData& O) const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, NatureMaxHealthDamagePercent, O); }
 void UPantheliaAttributeSet::OnRep_StormCurrentHealthDamagePercent(const FGameplayAttributeData& O) const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, StormCurrentHealthDamagePercent, O); }
 void UPantheliaAttributeSet::OnRep_StormMissingHealthDamagePercent(const FGameplayAttributeData& O) const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, StormMissingHealthDamagePercent, O); }
+void UPantheliaAttributeSet::OnRep_FireArmorReduction(const FGameplayAttributeData& O) const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, FireArmorReduction, O); }
+void UPantheliaAttributeSet::OnRep_FireMagicResistanceReduction(const FGameplayAttributeData& O) const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, FireMagicResistanceReduction, O); }
+void UPantheliaAttributeSet::OnRep_NatureArmorReduction(const FGameplayAttributeData& O) const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, NatureArmorReduction, O); }
+void UPantheliaAttributeSet::OnRep_NatureMagicResistanceReduction(const FGameplayAttributeData& O) const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, NatureMagicResistanceReduction, O); }
 void UPantheliaAttributeSet::OnRep_GrievousWounds(const FGameplayAttributeData& O) const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, GrievousWounds, O); }
 void UPantheliaAttributeSet::OnRep_GrievousWoundsOnHitPercent(const FGameplayAttributeData& O) const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, GrievousWoundsOnHitPercent, O); }
 void UPantheliaAttributeSet::OnRep_GrievousWoundsOnHitDuration(const FGameplayAttributeData& O) const { GAMEPLAYATTRIBUTE_REPNOTIFY(UPantheliaAttributeSet, GrievousWoundsOnHitDuration, O); }

@@ -64,6 +64,20 @@ void FPantheliaGameplayTags::InitializeNativeGameplayTags()
 		FName("Attributes.StatusDamage.Storm.MissingHealthPercent"),
 		FString("Porcentaje base de vida faltante que Electrocucion suma como daño. 0 = rama bloqueada."));
 
+	// --- REDUCCIÓN DEFENSIVA DESBLOQUEABLE POR ESTADOS ---
+	GameplayTags.Attributes_StatusDebuff_Fire_ArmorReduction = Manager.AddNativeGameplayTag(
+		FName("Attributes.StatusDebuff.Fire.ArmorReduction"),
+		FString("Reduccion plana de Armor aplicada mientras la Quemadura permanece activa."));
+	GameplayTags.Attributes_StatusDebuff_Fire_MagicResistanceReduction = Manager.AddNativeGameplayTag(
+		FName("Attributes.StatusDebuff.Fire.MagicResistanceReduction"),
+		FString("Reduccion plana de MagicResistance aplicada mientras la Quemadura permanece activa."));
+	GameplayTags.Attributes_StatusDebuff_Nature_ArmorReduction = Manager.AddNativeGameplayTag(
+		FName("Attributes.StatusDebuff.Nature.ArmorReduction"),
+		FString("Reduccion plana de Armor aplicada mientras el Veneno permanece activo."));
+	GameplayTags.Attributes_StatusDebuff_Nature_MagicResistanceReduction = Manager.AddNativeGameplayTag(
+		FName("Attributes.StatusDebuff.Nature.MagicResistanceReduction"),
+		FString("Reduccion plana de MagicResistance aplicada mientras el Veneno permanece activo."));
+
 	GameplayTags.Attributes_Secondary_GrievousWounds = Manager.AddNativeGameplayTag(
 		FName("Attributes.Secondary.GrievousWounds"),
 		FString("Porcentaje manual/legacy de curacion negada por Heridas Graves."));
@@ -323,6 +337,20 @@ void FPantheliaGameplayTags::InitializeNativeGameplayTags()
 	GameplayTags.Effects_GrievousWounds = Manager.AddNativeGameplayTag(FName("Effects.GrievousWounds"), FString("Raiz de todos los efectos de Heridas Graves. Reduce curacion recibida."));
 	GameplayTags.Effects_GrievousWounds_Direct = Manager.AddNativeGameplayTag(FName("Effects.GrievousWounds.Direct"), FString("Heridas Graves inmediatas aplicadas por golpes, ticks, armas, hechizos, parry o bosses."));
 	GameplayTags.Effects_GrievousWounds_Poison = Manager.AddNativeGameplayTag(FName("Effects.GrievousWounds.Poison"), FString("Heridas Graves ligadas a la duracion de Veneno."));
+	GameplayTags.Effects_DefenseShred = Manager.AddNativeGameplayTag(FName("Effects.DefenseShred"), FString("Raiz de reducciones temporales de Armor y MagicResistance."));
+	GameplayTags.Effects_DefenseShred_Burn = Manager.AddNativeGameplayTag(FName("Effects.DefenseShred.Burn"), FString("Reduccion defensiva ligada a Quemadura."));
+	GameplayTags.Effects_DefenseShred_Poison = Manager.AddNativeGameplayTag(FName("Effects.DefenseShred.Poison"), FString("Reduccion defensiva ligada a Veneno."));
+
+	// --- RESERVA: CORAZONES ELEMENTALES Y EVENTOS DE REACCIÓN ---
+	GameplayTags.State_ElementalHeart = Manager.AddNativeGameplayTag(FName("State.ElementalHeart"), FString("Raiz del futuro corazon elemental equipado."));
+	GameplayTags.State_ElementalHeart_Fire = Manager.AddNativeGameplayTag(FName("State.ElementalHeart.Fire"), FString("Corazon de Fuego equipado."));
+	GameplayTags.State_ElementalHeart_Water = Manager.AddNativeGameplayTag(FName("State.ElementalHeart.Water"), FString("Corazon de Agua equipado."));
+	GameplayTags.State_ElementalHeart_Storm = Manager.AddNativeGameplayTag(FName("State.ElementalHeart.Storm"), FString("Corazon de Tormenta equipado."));
+	GameplayTags.State_ElementalHeart_Nature = Manager.AddNativeGameplayTag(FName("State.ElementalHeart.Nature"), FString("Corazon de Naturaleza equipado."));
+	GameplayTags.Event_Combat_Hit_BurningTarget = Manager.AddNativeGameplayTag(FName("Event.Combat.Hit.BurningTarget"), FString("Evento futuro: daño a un objetivo con Debuff.Burn."));
+	GameplayTags.Event_Combat_Hit_PoisonedTarget = Manager.AddNativeGameplayTag(FName("Event.Combat.Hit.PoisonedTarget"), FString("Evento futuro: daño a un objetivo con Debuff.Poison."));
+	GameplayTags.Effects_Damage = Manager.AddNativeGameplayTag(FName("Effects.Damage"), FString("Raiz de marcas internas para paquetes de daño."));
+	GameplayTags.Effects_Damage_Secondary = Manager.AddNativeGameplayTag(FName("Effects.Damage.Secondary"), FString("Marca futura anti-recursion para daños proc secundarios."));
 
 	// --- TAGS DE DEBUFF (efectos de estado negativos elementales) ---
 	// Un debuff por elemento (ver el header para la decisión de diseño completa). La raíz
@@ -386,6 +414,12 @@ void FPantheliaGameplayTags::InitializeNativeGameplayTags()
 	GameplayTags.Debuff_GrievousWoundsMagnitude = Manager.AddNativeGameplayTag(
 		FName("Debuff.GrievousWounds.Magnitude"),
 		FString("SetByCaller: porcentaje de curacion negada por Heridas Graves."));
+	GameplayTags.Debuff_DefenseShred_ArmorReduction = Manager.AddNativeGameplayTag(
+		FName("Debuff.DefenseShred.ArmorReduction"),
+		FString("SetByCaller: puntos planos que el estado resta a Armor."));
+	GameplayTags.Debuff_DefenseShred_MagicResistanceReduction = Manager.AddNativeGameplayTag(
+		FName("Debuff.DefenseShred.MagicResistanceReduction"),
+		FString("SetByCaller: puntos planos que el estado resta a MagicResistance."));
 
 	// --- TAGS DE "COMBAT TRICKS" GENÉRICOS (clase 313) ---
 	GameplayTags.CombatTricks_DeathImpulseMagnitude = Manager.AddNativeGameplayTag(

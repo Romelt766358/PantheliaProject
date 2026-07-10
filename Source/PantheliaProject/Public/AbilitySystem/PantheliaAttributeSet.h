@@ -157,6 +157,14 @@ public:
 		UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_StormCurrentHealthDamagePercent, Category = "Status Damage Attributes") FGameplayAttributeData StormCurrentHealthDamagePercent; ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, StormCurrentHealthDamagePercent)
 		UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_StormMissingHealthDamagePercent, Category = "Status Damage Attributes") FGameplayAttributeData StormMissingHealthDamagePercent; ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, StormMissingHealthDamagePercent)
 
+		// ===== REDUCCIÓN DEFENSIVA DESBLOQUEABLE POR QUEMADURA/VENENO =====
+		// Atributos del ATACANTE. Empiezan en 0; perks, objetos y buffs los aumentan
+		// con GE Infinite Add. Se fotografían al detonar el estado.
+		UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_FireArmorReduction, Category = "Status Debuff Attributes") FGameplayAttributeData FireArmorReduction; ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, FireArmorReduction)
+		UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_FireMagicResistanceReduction, Category = "Status Debuff Attributes") FGameplayAttributeData FireMagicResistanceReduction; ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, FireMagicResistanceReduction)
+		UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_NatureArmorReduction, Category = "Status Debuff Attributes") FGameplayAttributeData NatureArmorReduction; ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, NatureArmorReduction)
+		UPROPERTY(BlueprintReadOnly, ReplicatedUsing = OnRep_NatureMagicResistanceReduction, Category = "Status Debuff Attributes") FGameplayAttributeData NatureMagicResistanceReduction; ATTRIBUTE_ACCESSORS(UPantheliaAttributeSet, NatureMagicResistanceReduction)
+
 		// Compatibilidad legacy para GEs antiguos que escribían la intensidad activa
 		// directamente como atributo. El sistema moderno guarda la intensidad en cada
 		// efecto y usa la fuente más fuerte; este valor no se suma entre fuentes.
@@ -255,6 +263,10 @@ public:
 	UFUNCTION() void OnRep_NatureMaxHealthDamagePercent(const FGameplayAttributeData& OldNatureMaxHealthDamagePercent) const;
 	UFUNCTION() void OnRep_StormCurrentHealthDamagePercent(const FGameplayAttributeData& OldStormCurrentHealthDamagePercent) const;
 	UFUNCTION() void OnRep_StormMissingHealthDamagePercent(const FGameplayAttributeData& OldStormMissingHealthDamagePercent) const;
+	UFUNCTION() void OnRep_FireArmorReduction(const FGameplayAttributeData& OldValue) const;
+	UFUNCTION() void OnRep_FireMagicResistanceReduction(const FGameplayAttributeData& OldValue) const;
+	UFUNCTION() void OnRep_NatureArmorReduction(const FGameplayAttributeData& OldValue) const;
+	UFUNCTION() void OnRep_NatureMagicResistanceReduction(const FGameplayAttributeData& OldValue) const;
 	UFUNCTION() void OnRep_GrievousWounds(const FGameplayAttributeData& OldGrievousWounds) const;
 	UFUNCTION() void OnRep_GrievousWoundsOnHitPercent(const FGameplayAttributeData& OldValue) const;
 	UFUNCTION() void OnRep_GrievousWoundsOnHitDuration(const FGameplayAttributeData& OldValue) const;
@@ -328,6 +340,16 @@ private:
 	// contexto del source, por lo que conserva muerte, XP y atribución correctas.
 	void ApplyInstantElementalDamage(const FEffectProperties& Props, const FGameplayTag& DebuffTag,
 		float Damage);
+
+	// Daño de postura instantáneo de la detonación. Entra por IncomingPoiseDamage.
+	void ApplyInstantElementalPoiseDamage(const FEffectProperties& Props,
+		const FGameplayTag& DebuffTag, float PoiseDamage);
+
+	// Reducción plana temporal ligada a Quemadura o Veneno. El GE también concede
+	// el DebuffTag para que una limpieza por estado retire ambas piezas.
+	void ApplyElementalDefenseShred(const FEffectProperties& Props,
+		const FGameplayTag& DebuffTag, const FGameplayTag& DefenseShredTag,
+		float Duration, float ArmorReduction, float MagicResistanceReduction);
 
 	// Aplica la variante ligada a Veneno a través del helper global reutilizable.
 	// Usa Effects.GrievousWounds.Poison para poder limpiarla/refrescarla sin tocar

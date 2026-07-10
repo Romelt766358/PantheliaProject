@@ -17,8 +17,9 @@
 // ============================================================
 // NOTA ASIMETRÍA (spec §1.7, modelo LoL):
 //   PhysicalDamage (AD): capturado del SOURCE → sumado como addend genérico al daño físico.
-//   MagicDamage    (AP): NO capturado aquí — su único uso es como ratio en las abilities
-//                        (se calcula en SpawnProjectile antes del SetByCaller).
+//   MagicDamage    (AP): NO se suma automáticamente dentro del ExecCalc. El daño directo
+//                        lo usa mediante AttributeScalings de la ability; los estados
+//                        globales lo leen al detonar desde PantheliaAttributeSet.
 
 struct PantheliaDamageStatics
 {
@@ -335,12 +336,14 @@ void UExecCalc_Damage::Execute_Implementation(
     const UPantheliaCharacterClassInfo* ClassInfo = UPantheliaAbilitySystemLibrary::GetCharacterClassInfo(SourceAvatar);
 
     // Defaults seguros (neutros) por si falta el ClassInfo, las curvas o los CombatInterface:
-    //   - ArmorPenCoeff = 0  → no aplica penetración de armadura (EffectiveArmor = Armor).
-    //   - EffArmorCoeff = 1  → la armadura mitiga de forma estándar.
+    //   - ArmorPenCoeff/MagicPenCoeff = 0 → sin penetración si faltan todas las curvas.
+    //   - EffArmorCoeff/EffMagicResistanceCoeff = 1 → mitigación lineal estándar.
     // Así, ante una mala configuración (GameMode incorrecto, Data Asset sin asignar,
     // nombres de fila cambiados) el cálculo no crashea ni anula el daño: degrada con gracia.
     float ArmorPenCoeff = 0.f;
     float EffArmorCoeff = 1.f;
+    float MagicPenCoeff = 0.f;
+    float EffMagicResistanceCoeff = 1.f;
 
     // Niveles del Source/Target. Si el cast a CombatInterface falló, usamos nivel 1 por defecto.
     // SourceLevel ya calculado arriba vía Execute_GetPlayerLevel
@@ -350,6 +353,8 @@ void UExecCalc_Damage::Execute_Implementation(
     {
         const FRealCurve* ArmorPenCurve = ClassInfo->DamageCalculationCoefficients->FindCurve(FName("ArmorPenetration"), FString());
         const FRealCurve* EffArmorCurve = ClassInfo->DamageCalculationCoefficients->FindCurve(FName("EffectiveArmor"), FString());
+        const FRealCurve* MagicPenCurve = ClassInfo->DamageCalculationCoefficients->FindCurve(FName("MagicPenetration"), FString());
+        const FRealCurve* EffMagicResistanceCurve = ClassInfo->DamageCalculationCoefficients->FindCurve(FName("EffectiveMagicResistance"), FString());
 
         if (ArmorPenCurve)
         {
@@ -359,10 +364,19 @@ void UExecCalc_Damage::Execute_Implementation(
         {
             EffArmorCoeff = EffArmorCurve->Eval(TargetLevel);
         }
+
+        // Si las filas mágicas todavía no existen, se reutilizan temporalmente las
+        // curvas físicas. Cuando se creen, el sistema las usa automáticamente.
+        MagicPenCoeff = MagicPenCurve ? MagicPenCurve->Eval(SourceLevel) : ArmorPenCoeff;
+        EffMagicResistanceCoeff = EffMagicResistanceCurve
+            ? EffMagicResistanceCurve->Eval(TargetLevel)
+            : EffArmorCoeff;
     }
 
     const float EffectiveArmor = FMath::Max(
         0.f, Armor * ((100.f - ArmorPenetration * ArmorPenCoeff) / 100.f));
+    const float EffectiveMagicResistance = FMath::Max(
+        0.f, MagicResistance * ((100.f - MagicPenetration * MagicPenCoeff) / 100.f));
 
     // --- ELEMENTO DEFENSIVO DEL TARGET ---
     const EPantheliaElement DefenderElement = TargetCombatInterface
@@ -424,8 +438,12 @@ void UExecCalc_Damage::Execute_Implementation(
         }
         else
         {
-            // PASO 3 (mágico): MagicResistance — PENDIENTE chat de matemáticas
-            // MagicDamage NO se suma aquí — solo se usa como ratio en las abilities
+            // PASO 3 (mágico): mitigación real de MagicResistance después de
+            // MagicPenetration. MagicDamage no se suma aquí: el daño directo lo usa
+            // como ratio en la ability y los estados lo consultan en su payload global.
+            TypeDamage *= FMath::Max(
+                0.f,
+                (100.f - EffectiveMagicResistance * EffMagicResistanceCoeff) / 100.f);
         }
 
         // PASO 4: Tabla de afinidades (±15%)

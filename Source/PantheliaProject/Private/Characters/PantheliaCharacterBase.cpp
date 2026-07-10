@@ -211,6 +211,7 @@ void APantheliaCharacterBase::Die(const FVector& DeathImpulse)
 		ElementalStatusTags.AddTag(GameplayTags.Debuff_Saturation);
 		ElementalStatusTags.AddTag(GameplayTags.Debuff_Poison);
 		ElementalStatusTags.AddTag(GameplayTags.Effects_GrievousWounds);
+		ElementalStatusTags.AddTag(GameplayTags.Effects_DefenseShred);
 		ASC->RemoveActiveEffectsWithGrantedTags(ElementalStatusTags);
 
 		// Si murió durante un launch, Landed() ya no tiene por qué ejecutarse.
