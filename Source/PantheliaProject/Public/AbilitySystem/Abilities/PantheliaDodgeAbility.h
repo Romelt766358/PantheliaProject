@@ -10,6 +10,8 @@
 
 class UAnimMontage;
 class UAbilityTask_PlayMontageAndWait;
+class UAbilityTask_WaitDelay;
+class UAbilityTask_WaitGameplayEvent;
 
 /**
  * EPantheliaDodgeDirection
@@ -99,7 +101,11 @@ struct FPantheliaDodgeRequest
  *   - Detener velocidad/input residual antes del root motion.
  *   - Escalar localmente la traslación root motion de la task del montage.
  *   - Conceder State.Invulnerable.Dodge desde un AnimNotify y guardar su handle.
- *   - Limpiar task e i-frames en toda salida normal, cancelada o interrumpida.
+ *   - Escuchar Event.Dodge.HitAvoided y confirmar un Perfect Dodge solo dentro
+ *     de una ventana estrecha, separada de los i-frames generales.
+ *   - Emitir Event.Dodge.Perfect y GameplayCue.Dodge.Perfect una sola vez por dash.
+ *   - Limpiar tasks, ventana perfecta e i-frames en toda salida normal, cancelada
+ *     o interrumpida.
  *
  * Configuración de tags y coste se hace en GA_PlayerDodge (Blueprint hijo):
  *   Ability Tag: Abilities.Dodge
@@ -121,10 +127,20 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Combat|Dodge")
 	void StartIFrames();
 
+	// Lo llama UDodgePerfectWindowNotify. La ventana queda siempre contenida dentro
+	// de los i-frames, incluso si los dos notifies se procesan en orden inverso.
+	UFUNCTION(BlueprintCallable, Category = "Combat|Dodge")
+	void StartPerfectDodgeWindow();
+
 	// Punto único de extensión para árbol/Corazones. En esta fase devuelve el valor
 	// base del rango de ability con clamp de seguridad.
 	UFUNCTION(BlueprintPure, Category = "Combat|Dodge")
 	virtual float GetFinalIFrameDuration() const;
+
+	// Ventana estrecha que convierte un golpe evitado en Perfect Dodge. Siempre se
+	// limita a la duración restante de los i-frames de esta activación.
+	UFUNCTION(BlueprintPure, Category = "Combat|Dodge")
+	virtual float GetFinalPerfectDodgeWindowDuration() const;
 
 	// Punto único de extensión para modificadores futuros de distancia.
 	UFUNCTION(BlueprintPure, Category = "Combat|Dodge")
@@ -167,6 +183,19 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Dodge|IFrames", meta = (ClampMin = "0.01"))
 	float MinIFrameDuration = 0.05f;
 
+	// Duración base de la ventana de Perfect Dodge. El valor inicial (0.12 s) es
+	// deliberadamente menor que los i-frames generales para premiar el timing preciso.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Dodge|PerfectDodge")
+	FScalableFloat BasePerfectDodgeWindowDuration;
+
+	// Cap de balance de la ventana perfecta. El getter también la limita a la
+	// duración total/restante de los i-frames, por lo que nunca puede sobresalir.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Dodge|PerfectDodge")
+	FScalableFloat MaxPerfectDodgeWindowDuration;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Dodge|PerfectDodge", meta = (ClampMin = "0.001"))
+	float MinPerfectDodgeWindowDuration = 0.01f;
+
 	// Distancia final deseada en centímetros. La task escala el root motion del montage
 	// usando esta distancia y AuthoredTravelDistance.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Dodge|Movement")
@@ -203,15 +232,44 @@ private:
 	UFUNCTION()
 	void OnDodgeMontageInterruptedOrCancelled();
 
+	UFUNCTION()
+	void OnHitAvoidedEventReceived(FGameplayEventData Payload);
+
+	UFUNCTION()
+	void OnPerfectDodgeWindowFinished();
+
+	void OpenPerfectDodgeWindow();
+	void ConfirmPerfectDodge(const FGameplayEventData& RawPayload);
 	void ClearIFrames();
 	void ClearMontageTask();
+	void ClearHitAvoidedEventTask();
+	void ClearPerfectDodgeWindowTask();
 
 	// Guard runtime por activación para que un notify duplicado no conceda dos efectos.
 	bool bIFramesStarted = false;
+
+	// La petición permite que ambos notifies compartan timestamp sin depender del orden
+	// interno en que Unreal los procese. La ventana solo abre tras iniciar i-frames.
+	bool bPerfectDodgeWindowRequested = false;
+	bool bPerfectDodgeWindowStarted = false;
+	bool bPerfectDodgeWindowOpen = false;
+
+	// Un dash puede anular varios impactos, pero solo confirma un Perfect Dodge.
+	bool bPerfectDodgeTriggered = false;
+
+	// Tiempo de inicio de los i-frames para recortar la ventana perfecta si su notify
+	// se coloca más tarde durante el montage.
+	float IFramesStartTimeSeconds = 0.f;
 
 	// Handle exacto del GE que concedió los i-frames de ESTA activación.
 	FActiveGameplayEffectHandle IFramesEffectHandle;
 
 	UPROPERTY(Transient)
 	TObjectPtr<UAbilityTask_PlayMontageAndWait> CurrentMontageTask = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UAbilityTask_WaitGameplayEvent> HitAvoidedEventTask = nullptr;
+
+	UPROPERTY(Transient)
+	TObjectPtr<UAbilityTask_WaitDelay> PerfectDodgeWindowTask = nullptr;
 };

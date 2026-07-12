@@ -3,13 +3,18 @@
 #include "AbilitySystem/Abilities/PantheliaDodgeAbility.h"
 
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
+#include "Abilities/Tasks/AbilityTask_WaitDelay.h"
+#include "Abilities/Tasks/AbilityTask_WaitGameplayEvent.h"
 #include "AbilitySystem/PantheliaAbilitySystemLibrary.h"
+#include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "Animation/AnimInstance.h"
 #include "Components/SkeletalMeshComponent.h"
+#include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "PantheliaGameplayTags.h"
+#include "PantheliaLogChannels.h"
 
 UPantheliaDodgeAbility::UPantheliaDodgeAbility()
 {
@@ -20,6 +25,8 @@ UPantheliaDodgeAbility::UPantheliaDodgeAbility()
 
 	BaseIFrameDuration = FScalableFloat(0.30f);
 	MaxIFrameDuration = FScalableFloat(1.00f);
+	BasePerfectDodgeWindowDuration = FScalableFloat(0.12f);
+	MaxPerfectDodgeWindowDuration = FScalableFloat(0.30f);
 	BaseDashDistance = FScalableFloat(300.f);
 }
 
@@ -76,10 +83,30 @@ void UPantheliaDodgeAbility::ActivateAbility(
 		return;
 	}
 
+	// Creamos la escucha antes de cobrar y antes del montage. Crear la task no produce
+	// gameplay ni activa nada; solo valida que la infraestructura del Perfect Dodge
+	// está disponible. OnlyTriggerOnce=false es intencional: un HitAvoided temprano
+	// fuera de la ventana no debe consumir la escucha de un impacto posterior válido.
+	const FPantheliaGameplayTags& DodgeTags = FPantheliaGameplayTags::Get();
+	UAbilityTask_WaitGameplayEvent* PendingHitAvoidedEventTask =
+		UAbilityTask_WaitGameplayEvent::WaitGameplayEvent(
+			this,
+			DodgeTags.Event_Dodge_HitAvoided,
+			/*OptionalExternalTarget=*/nullptr,
+			/*OnlyTriggerOnce=*/false,
+			/*OnlyMatchExact=*/true);
+
+	if (!PendingHitAvoidedEventTask)
+	{
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		return;
+	}
+
 	// Orden deliberado: primero sabemos que el dash puede ejecutarse; después cobramos.
 	// Si no hay estamina suficiente, CommitAbility falla y no se reproduce nada.
 	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
 	{
+		PendingHitAvoidedEventTask->EndTask();
 		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
 		return;
 	}
@@ -87,7 +114,17 @@ void UPantheliaDodgeAbility::ActivateAbility(
 	// Estado limpio para esta activación. EndAbility también lo limpia como red de
 	// seguridad, pero se reinicia aquí antes de que el montage pueda disparar notifies.
 	bIFramesStarted = false;
+	bPerfectDodgeWindowRequested = false;
+	bPerfectDodgeWindowStarted = false;
+	bPerfectDodgeWindowOpen = false;
+	bPerfectDodgeTriggered = false;
+	IFramesStartTimeSeconds = 0.f;
 	IFramesEffectHandle = FActiveGameplayEffectHandle();
+
+	HitAvoidedEventTask = PendingHitAvoidedEventTask;
+	HitAvoidedEventTask->EventReceived.AddDynamic(
+		this, &UPantheliaDodgeAbility::OnHitAvoidedEventReceived);
+	HitAvoidedEventTask->ReadyForActivation();
 
 	// Evita sumar la velocidad de carrera o el input acumulado al root motion del dash.
 	// No desactivamos CharacterMovement: el montage sigue controlando el desplazamiento.
@@ -142,12 +179,19 @@ void UPantheliaDodgeAbility::EndAbility(
 	bool bReplicateEndAbility,
 	bool bWasCancelled)
 {
-	// Limpiar primero el GE exacto de esta activación. Nunca removemos por tag porque
-	// eso podría borrar i-frames legítimos concedidos por otra fuente.
+	// Cerramos primero las escuchas/ventanas para impedir callbacks tardíos durante la
+	// limpieza de la ability. Después retiramos el GE exacto de esta activación.
+	ClearPerfectDodgeWindowTask();
+	ClearHitAvoidedEventTask();
 	ClearIFrames();
 	ClearMontageTask();
 
 	bIFramesStarted = false;
+	bPerfectDodgeWindowRequested = false;
+	bPerfectDodgeWindowStarted = false;
+	bPerfectDodgeWindowOpen = false;
+	bPerfectDodgeTriggered = false;
+	IFramesStartTimeSeconds = 0.f;
 
 	Super::EndAbility(
 		Handle,
@@ -164,10 +208,9 @@ void UPantheliaDodgeAbility::StartIFrames()
 		return;
 	}
 
-	bIFramesStarted = true;
-
 	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
-	if (!ASC)
+	UWorld* World = GetWorld();
+	if (!ASC || !World)
 	{
 		return;
 	}
@@ -176,6 +219,40 @@ void UPantheliaDodgeAbility::StartIFrames()
 		ASC,
 		FPantheliaGameplayTags::Get().State_Invulnerable_Dodge,
 		GetFinalIFrameDuration());
+
+	if (!IFramesEffectHandle.IsValid())
+	{
+		UE_LOG(LogPanthelia, Warning,
+			TEXT("[DODGE] No se pudo conceder State.Invulnerable.Dodge."));
+		return;
+	}
+
+	bIFramesStarted = true;
+	IFramesStartTimeSeconds = World->GetTimeSeconds();
+
+	// Si Unreal procesó primero el notify de Perfect Window en el mismo timestamp,
+	// la petición quedó guardada y se resuelve ahora, ya dentro de los i-frames.
+	if (bPerfectDodgeWindowRequested)
+	{
+		OpenPerfectDodgeWindow();
+	}
+}
+
+void UPantheliaDodgeAbility::StartPerfectDodgeWindow()
+{
+	if (!IsActive() || bPerfectDodgeWindowStarted)
+	{
+		return;
+	}
+
+	bPerfectDodgeWindowRequested = true;
+
+	// La ventana perfecta nunca puede existir antes que la invulnerabilidad real.
+	// Si los notifies comparten frame y este llega primero, StartIFrames la abrirá.
+	if (bIFramesStarted)
+	{
+		OpenPerfectDodgeWindow();
+	}
 }
 
 float UPantheliaDodgeAbility::GetFinalIFrameDuration() const
@@ -188,10 +265,166 @@ float UPantheliaDodgeAbility::GetFinalIFrameDuration() const
 	return FMath::Clamp(BaseDuration, MinIFrameDuration, SafeCap);
 }
 
+float UPantheliaDodgeAbility::GetFinalPerfectDodgeWindowDuration() const
+{
+	const float AbilityLevel = static_cast<float>(FMath::Max(1, GetAbilityLevel()));
+	const float BaseDuration = BasePerfectDodgeWindowDuration.GetValueAtLevel(AbilityLevel);
+	const float ConfiguredCap = MaxPerfectDodgeWindowDuration.GetValueAtLevel(AbilityLevel);
+
+	// La ventana perfecta nunca puede ser más larga que los i-frames totales.
+	const float IFrameCap = GetFinalIFrameDuration();
+	const float SafeCap = FMath::Max(
+		MinPerfectDodgeWindowDuration,
+		FMath::Min(ConfiguredCap, IFrameCap));
+
+	return FMath::Clamp(
+		BaseDuration,
+		MinPerfectDodgeWindowDuration,
+		SafeCap);
+}
+
 float UPantheliaDodgeAbility::GetFinalDashDistance() const
 {
 	const float AbilityLevel = static_cast<float>(FMath::Max(1, GetAbilityLevel()));
 	return FMath::Max(1.f, BaseDashDistance.GetValueAtLevel(AbilityLevel));
+}
+
+void UPantheliaDodgeAbility::OpenPerfectDodgeWindow()
+{
+	if (!IsActive() || !bIFramesStarted || bPerfectDodgeWindowStarted)
+	{
+		return;
+	}
+
+	UWorld* World = GetWorld();
+	if (!World)
+	{
+		return;
+	}
+
+	const float ElapsedIFrameTime =
+		FMath::Max(0.f, World->GetTimeSeconds() - IFramesStartTimeSeconds);
+	const float RemainingIFrameTime =
+		FMath::Max(0.f, GetFinalIFrameDuration() - ElapsedIFrameTime);
+	const float WindowDuration = FMath::Min(
+		GetFinalPerfectDodgeWindowDuration(),
+		RemainingIFrameTime);
+
+	if (WindowDuration <= KINDA_SMALL_NUMBER)
+	{
+		return;
+	}
+
+	UAbilityTask_WaitDelay* PendingWindowTask =
+		UAbilityTask_WaitDelay::WaitDelay(this, WindowDuration);
+	if (!PendingWindowTask)
+	{
+		return;
+	}
+
+	bPerfectDodgeWindowStarted = true;
+	bPerfectDodgeWindowOpen = true;
+	PerfectDodgeWindowTask = PendingWindowTask;
+	PerfectDodgeWindowTask->OnFinish.AddDynamic(
+		this, &UPantheliaDodgeAbility::OnPerfectDodgeWindowFinished);
+	PerfectDodgeWindowTask->ReadyForActivation();
+
+	UE_LOG(LogPanthelia, Verbose,
+		TEXT("[DODGE] Ventana perfecta abierta durante %.3f s."),
+		WindowDuration);
+}
+
+void UPantheliaDodgeAbility::OnPerfectDodgeWindowFinished()
+{
+	bPerfectDodgeWindowOpen = false;
+
+	if (PerfectDodgeWindowTask)
+	{
+		PerfectDodgeWindowTask->OnFinish.RemoveAll(this);
+		PerfectDodgeWindowTask = nullptr;
+	}
+
+	UE_LOG(LogPanthelia, Verbose, TEXT("[DODGE] Ventana perfecta cerrada."));
+}
+
+void UPantheliaDodgeAbility::OnHitAvoidedEventReceived(FGameplayEventData Payload)
+{
+	if (!IsActive() ||
+		bPerfectDodgeTriggered ||
+		!bPerfectDodgeWindowOpen ||
+		!bIFramesStarted)
+	{
+		return;
+	}
+
+	ConfirmPerfectDodge(Payload);
+}
+
+void UPantheliaDodgeAbility::ConfirmPerfectDodge(const FGameplayEventData& RawPayload)
+{
+	AActor* Avatar = GetAvatarActorFromActorInfo();
+	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
+	if (!Avatar || !ASC)
+	{
+		return;
+	}
+
+	// El ExecCalc envía el evento al defensor. Esta comprobación evita confirmar un
+	// payload ajeno si otro sistema reutilizara por error el tag interno.
+	if (RawPayload.Target && RawPayload.Target != Avatar)
+	{
+		return;
+	}
+
+	bPerfectDodgeTriggered = true;
+
+	const FPantheliaGameplayTags& Tags = FPantheliaGameplayTags::Get();
+
+	// Copiamos el payload crudo para conservar Instigator, ContextHandle, objetos
+	// opcionales y tags capturados. Solo normalizamos el contrato público.
+	FGameplayEventData PerfectPayload = RawPayload;
+	PerfectPayload.EventTag = Tags.Event_Dodge_Perfect;
+	PerfectPayload.Target = Avatar;
+	PerfectPayload.EventMagnitude = 1.f;
+
+	UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(
+		Avatar,
+		Tags.Event_Dodge_Perfect,
+		PerfectPayload);
+
+	// El Gameplay Event es el contrato de gameplay. El Cue solo presenta el resultado
+	// mediante VFX/SFX/cámara y puede no tener asset todavía sin romper la simulación.
+	FGameplayCueParameters CueParams;
+	CueParams.Location = Avatar->GetActorLocation();
+
+	// En UE 5.8, FGameplayEventData expone Instigator como const AActor*, mientras
+	// que FGameplayCueParameters conserva TWeakObjectPtr<AActor>. El Cue no modifica
+	// al actor: solo necesita una referencia no const para completar sus parámetros.
+	AActor* CueInstigator = RawPayload.Instigator
+		? const_cast<AActor*>(RawPayload.Instigator.Get())
+		: Avatar;
+	CueParams.Instigator = CueInstigator;
+	CueParams.EffectCauser = CueInstigator;
+	CueParams.EffectContext = RawPayload.ContextHandle;
+	CueParams.RawMagnitude = 1.f;
+
+	if (RawPayload.Instigator)
+	{
+		CueParams.Normal =
+			(Avatar->GetActorLocation() - RawPayload.Instigator->GetActorLocation())
+			.GetSafeNormal();
+	}
+	else
+	{
+		CueParams.Normal = Avatar->GetActorForwardVector();
+	}
+
+	ASC->ExecuteGameplayCue(Tags.GameplayCue_Dodge_Perfect, CueParams);
+
+	UE_LOG(LogPanthelia, Log,
+		TEXT("[DODGE] Perfect confirmado | Atacante: %s | Objetivo: %s"),
+		RawPayload.Instigator ? *RawPayload.Instigator->GetName() : TEXT("None"),
+		*Avatar->GetName());
 }
 
 bool UPantheliaDodgeAbility::BuildDodgeRequest(FPantheliaDodgeRequest& OutRequest) const
@@ -248,4 +481,31 @@ void UPantheliaDodgeAbility::ClearMontageTask()
 	CurrentMontageTask->OnCancelled.RemoveAll(this);
 	CurrentMontageTask->EndTask();
 	CurrentMontageTask = nullptr;
+}
+
+
+void UPantheliaDodgeAbility::ClearHitAvoidedEventTask()
+{
+	if (!HitAvoidedEventTask)
+	{
+		return;
+	}
+
+	HitAvoidedEventTask->EventReceived.RemoveAll(this);
+	HitAvoidedEventTask->EndTask();
+	HitAvoidedEventTask = nullptr;
+}
+
+void UPantheliaDodgeAbility::ClearPerfectDodgeWindowTask()
+{
+	bPerfectDodgeWindowOpen = false;
+
+	if (!PerfectDodgeWindowTask)
+	{
+		return;
+	}
+
+	PerfectDodgeWindowTask->OnFinish.RemoveAll(this);
+	PerfectDodgeWindowTask->EndTask();
+	PerfectDodgeWindowTask = nullptr;
 }
