@@ -2,6 +2,8 @@
 
 #include "AbilitySystem/Abilities/PantheliaPlayerAttackAbility.h"
 
+#include "AbilitySystem/PantheliaAbilitySystemComponent.h"
+
 #include "Combat/PantheliaEquipmentComponent.h"
 #include "Combat/PantheliaWeaponDefinition.h"
 #include "Combat/PantheliaWeapon.h"
@@ -13,6 +15,7 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
+#include "PantheliaLogChannels.h"
 
 bool UPantheliaPlayerAttackAbility::CanActivateAbility(
 	const FGameplayAbilitySpecHandle Handle,
@@ -40,6 +43,16 @@ void UPantheliaPlayerAttackAbility::ActivateAbility(
 {
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
+	// Consumir el contexto efímero antes de decidir el montage de apertura. El ASC lo
+	// resetea a Normal en la misma operación, así que ninguna activación posterior puede
+	// heredar accidentalmente un DodgeFollowup ya usado.
+	CurrentAttackEntryContext = EPantheliaAttackEntryContext::Normal;
+	if (UPantheliaAbilitySystemComponent* PantheliaASC =
+		Cast<UPantheliaAbilitySystemComponent>(GetAbilitySystemComponentFromActorInfo()))
+	{
+		CurrentAttackEntryContext = PantheliaASC->ConsumeAttackEntryContext();
+	}
+
 	// Aplicar el coste de stamina (y cooldown si lo hubiera). Si no hay stamina
 	// suficiente, CommitAbility falla y no atacamos (modelo Dark Souls).
 	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
@@ -63,6 +76,26 @@ void UPantheliaPlayerAttackAbility::StartComboFromActivation()
 	// ComboIndex persiste entre activaciones (Instanced Per Actor), pero como cada
 	// activacion arranca un combo nuevo, normalmente empieza en 0 si el reset previo
 	// lo dejo asi. El reset ocurre en CloseComboWindow o al terminar sin encadenar.
+
+	// Un DodgeFollowup solo sustituye el montage de APERTURA. Si el arma no configura
+	// uno específico, se degrada con gracia al primer montage normal de la cadena.
+	bUsingDodgeFollowupOpeningMontage = false;
+	if (IsDodgeFollowupEntry())
+	{
+		if (const UPantheliaWeaponDefinition* WeaponDef = GetEquippedWeaponDefinition())
+		{
+			bUsingDodgeFollowupOpeningMontage =
+				(AttackType == EPlayerAttackType::Heavy)
+				? IsValid(WeaponDef->DodgeHeavyAttackMontage.Get())
+				: IsValid(WeaponDef->DodgeLightAttackMontage.Get());
+		}
+
+		UE_LOG(LogPanthelia, Log,
+			TEXT("[ATTACK] Entrada DodgeFollowup | Tipo: %s | Montage dedicado: %s"),
+			AttackType == EPlayerAttackType::Heavy ? TEXT("Heavy") : TEXT("Light"),
+			bUsingDodgeFollowupOpeningMontage ? TEXT("Sí") : TEXT("No (fallback normal)"));
+	}
+
 	PlayCurrentComboMontage();
 }
 
@@ -79,6 +112,8 @@ void UPantheliaPlayerAttackAbility::EndAbility(
 	ComboIndex = 0;
 	bComboWindowOpen = false;
 	bComboInputBuffered = false;
+	bUsingDodgeFollowupOpeningMontage = false;
+	CurrentAttackEntryContext = EPantheliaAttackEntryContext::Normal;
 	CurrentMontageTask = nullptr;
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
@@ -104,6 +139,8 @@ void UPantheliaPlayerAttackAbility::ResetCombo()
 	ComboIndex = 0;
 	bComboWindowOpen = false;
 	bComboInputBuffered = false;
+	bUsingDodgeFollowupOpeningMontage = false;
+	CurrentAttackEntryContext = EPantheliaAttackEntryContext::Normal;
 }
 
 void UPantheliaPlayerAttackAbility::OpenComboWindow()
@@ -200,8 +237,19 @@ void UPantheliaPlayerAttackAbility::AdvanceAndPlayNext()
 	const TArray<TObjectPtr<UAnimMontage>>& Montages =
 		(AttackType == EPlayerAttackType::Heavy) ? WeaponDef->HeavyAttackMontages : WeaponDef->LightAttackMontages;
 
-	// Avanzar el indice. Si llegamos al final del combo, ciclamos a 0.
-	ComboIndex = (Montages.Num() > 0) ? (ComboIndex + 1) % Montages.Num() : 0;
+	// El montage post-dodge es un golpe de APERTURA externo al array. Al encadenar desde
+	// él, pasamos al índice 1 de la cadena normal (o 0 si el arma solo tiene un golpe).
+	// Los encadenados posteriores avanzan/ciclan con la lógica normal del combo.
+	if (bUsingDodgeFollowupOpeningMontage)
+	{
+		bUsingDodgeFollowupOpeningMontage = false;
+		ComboIndex = Montages.Num() > 1 ? 1 : 0;
+	}
+	else
+	{
+		// Avanzar el indice. Si llegamos al final del combo, ciclamos a 0.
+		ComboIndex = (Montages.Num() > 0) ? (ComboIndex + 1) % Montages.Num() : 0;
+	}
 
 	// Reproducir el siguiente golpe. PlayCurrentComboMontage limpia la task anterior
 	// (desengancha sus callbacks) antes de crear la nueva, asi que el montage viejo
@@ -282,6 +330,13 @@ UAnimMontage* UPantheliaPlayerAttackAbility::GetCurrentComboMontage() const
 {
 	const UPantheliaWeaponDefinition* WeaponDef = GetEquippedWeaponDefinition();
 	if (!WeaponDef) return nullptr;
+
+	if (bUsingDodgeFollowupOpeningMontage)
+	{
+		return AttackType == EPlayerAttackType::Heavy
+			? WeaponDef->DodgeHeavyAttackMontage.Get()
+			: WeaponDef->DodgeLightAttackMontage.Get();
+	}
 
 	const TArray<TObjectPtr<UAnimMontage>>& Montages =
 		(AttackType == EPlayerAttackType::Heavy) ? WeaponDef->HeavyAttackMontages : WeaponDef->LightAttackMontages;

@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "AbilitySystemComponent.h"
+#include "AbilitySystem/PantheliaAbilityTypes.h"
 #include "PantheliaAbilitySystemComponent.generated.h"
 
 // Delegate que broadcast los Asset Tags de cualquier GE aplicado a este ASC.
@@ -180,6 +181,26 @@ public:
 	// override InputPressed de la ability, que con input Held se disparaba cada frame.
 	void NotifyComboInputPressed(const FGameplayTag& InputTag);
 
+	// Llamado desde el PlayerController en el mismo edge de pulsación. Si hay un dodge
+	// del jugador activo, le ofrece el input para la ventana de follow-up. El dodge solo
+	// lo acepta si la ventana está abierta y todavía no existe otro input bufferizado.
+	bool NotifyDodgeFollowupInputPressed(const FGameplayTag& InputTag);
+
+	// Intenta activar la primera ability cuyo DynamicSpecSourceTag coincida exactamente
+	// con InputTag. Se usa para ejecutar un follow-up almacenado sin duplicar la lógica
+	// de búsqueda de specs. Devuelve true solo si alguna activación fue aceptada por GAS.
+	bool TryActivateAbilityByInputTag(const FGameplayTag& InputTag);
+
+	// Contexto efímero de la próxima activación de ataque. El dodge lo escribe justo
+	// antes de activar el ataque y la propia ability lo consume con reset al comenzar.
+	void SetPendingAttackEntryContext(EPantheliaAttackEntryContext NewContext);
+	EPantheliaAttackEntryContext ConsumeAttackEntryContext();
+	EPantheliaAttackEntryContext GetPendingAttackEntryContext() const
+	{
+		return PendingAttackEntryContext;
+	}
+	void ResetPendingAttackEntryContext();
+
 	// Llamado desde el PlayerController cuando se SUELTA un input de ability. Notifica a
 	// la ability de ataque pesado activa para la deteccion tap-vs-hold del cargado.
 	void NotifyHeavyInputReleased(const FGameplayTag& InputTag);
@@ -238,4 +259,10 @@ protected:
 	// pasivas se otorgan Y ACTIVAN (GiveAbilityAndActivateOnce), así que duplicarlas
 	// significaría dos GA_ListenForXPEvents activas procesando cada evento dos veces.
 	bool bPassiveAbilitiesGiven = false;
+
+private:
+	// Solo existe entre SetPendingAttackEntryContext y el comienzo de la próxima ability
+	// de ataque. ConsumeAttackEntryContext lo devuelve y lo resetea en la misma llamada.
+	EPantheliaAttackEntryContext PendingAttackEntryContext =
+		EPantheliaAttackEntryContext::Normal;
 };

@@ -91,6 +91,18 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Moveset")
 	TArray<TObjectPtr<UAnimMontage>> HeavyAttackMontages;
 
+	// Golpe de APERTURA ligero al encadenar desde un dodge. No es una cadena separada:
+	// tras su ComboWindowNotifyState, el sistema continúa en el índice 1 del combo ligero
+	// normal. Si está vacío, el follow-up degrada con gracia al primer golpe normal.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Moveset|Dodge Followup")
+	TObjectPtr<UAnimMontage> DodgeLightAttackMontage;
+
+	// Golpe de APERTURA pesado al encadenar desde un dodge. Se reproduce de inmediato,
+	// sin fase tap-vs-hold ni carga; después puede continuar en el índice 1 de la cadena
+	// Heavy normal. Si está vacío, usa el primer montage pesado normal.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Moveset|Dodge Followup")
+	TObjectPtr<UAnimMontage> DodgeHeavyAttackMontage;
+
 	// Ataque PESADO CARGADO (hold del boton de ataque pesado). Modelo Elden Ring:
 	// mantener presionado = golpe unico mas potente, sin cadena. Un solo montage.
 	// Lleva WeaponTraceNotifyState (ventana de dano) pero NO necesita ComboWindowNotifyState

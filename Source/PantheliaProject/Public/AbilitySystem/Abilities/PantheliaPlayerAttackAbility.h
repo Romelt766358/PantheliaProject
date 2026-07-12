@@ -110,6 +110,15 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Combo")
 	EPlayerAttackType AttackType = EPlayerAttackType::Light;
 
+	// Contexto consumido del ASC al comenzar esta activación. Solo DodgeFollowup altera
+	// el montage de apertura; después del primer golpe, el combo vuelve a su cadena normal.
+	EPantheliaAttackEntryContext CurrentAttackEntryContext =
+		EPantheliaAttackEntryContext::Normal;
+
+	// True únicamente mientras el montage especial post-dodge es el golpe actual.
+	// Al encadenar, se limpia antes de saltar al índice 1 de la cadena normal.
+	bool bUsingDodgeFollowupOpeningMontage = false;
+
 	// Indice actual dentro de la cadena de combo (0 = primer golpe).
 	int32 ComboIndex = 0;
 
@@ -129,6 +138,13 @@ protected:
 	// debe decidir tap-vs-hold antes de atacar) pueden NO llamar al Super y diferir
 	// el inicio hasta resolver su logica de input. Es virtual para ese fin.
 	virtual void StartComboFromActivation();
+
+	// Permite a la ability pesada saltarse tap-vs-hold cuando la entrada proviene del
+	// dodge. El contexto ya fue consumido del ASC y permanece estable durante la activación.
+	bool IsDodgeFollowupEntry() const
+	{
+		return CurrentAttackEntryContext == EPantheliaAttackEntryContext::DodgeFollowup;
+	}
 
 	// Reproduce el montage del golpe actual (ComboIndex) y engancha sus callbacks.
 	// Si no hay montage valido, termina la ability. Protected para que las hijas

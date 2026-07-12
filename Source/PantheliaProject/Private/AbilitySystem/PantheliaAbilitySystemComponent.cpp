@@ -5,6 +5,7 @@
 #include "AbilitySystem/Abilities/PantheliaGameplayAbility.h"
 #include "AbilitySystem/Abilities/PantheliaPlayerAttackAbility.h"
 #include "AbilitySystem/Abilities/PantheliaPlayerHeavyAttackAbility.h"
+#include "AbilitySystem/Abilities/PantheliaPlayerDodgeAbility.h"
 #include "AbilitySystem/Abilities/PantheliaParryAbility.h"
 #include "Interfaces/PantheliaPlayerInterface.h"
 #include "AbilitySystemBlueprintLibrary.h"
@@ -14,6 +15,11 @@
 
 void UPantheliaAbilitySystemComponent::AbilityActorInfoSet()
 {
+	// El ASC del jugador persiste entre Pawns. Cualquier contexto de entrada que hubiera
+	// quedado pendiente pertenece al avatar anterior y debe descartarse al reinicializar
+	// ActorInfo, incluso si el delegate de efectos ya estaba enlazado.
+	ResetPendingAttackEntryContext();
+
 	// Guarda contra el doble bind (ver bEffectAppliedDelegateBound en el .h): en un
 	// futuro respawn, el Pawn nuevo vuelve a llamar aquí sobre este MISMO ASC persistente,
 	// y el bind anterior sigue vivo (su objeto es el propio ASC, no el Pawn muerto).
@@ -322,6 +328,68 @@ void UPantheliaAbilitySystemComponent::AbilityInputTagReleased(const FGameplayTa
 			AbilitySpecInputReleased(AbilitySpec);
 		}
 	}
+}
+
+bool UPantheliaAbilitySystemComponent::TryActivateAbilityByInputTag(const FGameplayTag& InputTag)
+{
+	if (!InputTag.IsValid()) return false;
+
+	// Activamos una sola spec. Esto evita que dos abilities que compartan accidentalmente
+	// el mismo input se ejecuten a la vez desde un follow-up. Si una spec no satisface
+	// costes/tags, continuamos buscando otra candidata con ese InputTag.
+	for (FGameplayAbilitySpec& AbilitySpec : GetActivatableAbilities())
+	{
+		if (!AbilitySpec.GetDynamicSpecSourceTags().HasTagExact(InputTag)) continue;
+
+		if (TryActivateAbility(AbilitySpec.Handle))
+		{
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void UPantheliaAbilitySystemComponent::SetPendingAttackEntryContext(
+	EPantheliaAttackEntryContext NewContext)
+{
+	PendingAttackEntryContext = NewContext;
+}
+
+EPantheliaAttackEntryContext UPantheliaAbilitySystemComponent::ConsumeAttackEntryContext()
+{
+	// Consumo con reset en la misma operación: una activación posterior jamás puede
+	// heredar por accidente el contexto especial de un ataque anterior.
+	const EPantheliaAttackEntryContext ConsumedContext = PendingAttackEntryContext;
+	PendingAttackEntryContext = EPantheliaAttackEntryContext::Normal;
+	return ConsumedContext;
+}
+
+void UPantheliaAbilitySystemComponent::ResetPendingAttackEntryContext()
+{
+	PendingAttackEntryContext = EPantheliaAttackEntryContext::Normal;
+}
+
+bool UPantheliaAbilitySystemComponent::NotifyDodgeFollowupInputPressed(
+	const FGameplayTag& InputTag)
+{
+	if (!InputTag.IsValid()) return false;
+
+	// El input se ofrece únicamente al dodge del jugador que esté activo. La propia
+	// ability valida la ventana, distingue ligero/pesado y aplica la regla primer-input-gana.
+	for (FGameplayAbilitySpec& AbilitySpec : GetActivatableAbilities())
+	{
+		if (UPantheliaPlayerDodgeAbility* DodgeAbility =
+			Cast<UPantheliaPlayerDodgeAbility>(AbilitySpec.GetPrimaryInstance()))
+		{
+			if (DodgeAbility->IsActive())
+			{
+				return DodgeAbility->TryBufferFollowupInput(InputTag);
+			}
+		}
+	}
+
+	return false;
 }
 
 void UPantheliaAbilitySystemComponent::NotifyComboInputPressed(const FGameplayTag& InputTag)

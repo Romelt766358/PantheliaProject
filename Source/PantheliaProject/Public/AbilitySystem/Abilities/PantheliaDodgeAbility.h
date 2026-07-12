@@ -132,6 +132,18 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Combat|Dodge")
 	void StartPerfectDodgeWindow();
 
+	// Los llama UDodgeFollowupWindowNotifyState. La ventana solo marca cuándo el
+	// dodge acepta un input ligero/pesado; la ejecución concreta vive en la subclase
+	// del jugador para no acoplar la base genérica a controles humanos.
+	UFUNCTION(BlueprintCallable, Category = "Combat|Dodge")
+	void OpenFollowupWindow();
+
+	UFUNCTION(BlueprintCallable, Category = "Combat|Dodge")
+	void CloseFollowupWindow();
+
+	UFUNCTION(BlueprintPure, Category = "Combat|Dodge")
+	bool IsFollowupWindowOpen() const { return bFollowupWindowOpen; }
+
 	// Punto único de extensión para árbol/Corazones. En esta fase devuelve el valor
 	// base del rango de ability con clamp de seguridad.
 	UFUNCTION(BlueprintPure, Category = "Combat|Dodge")
@@ -171,6 +183,12 @@ protected:
 	// reemplaza con input + lock-on; un boss futuro lo reemplazará con BossBrain.
 	virtual bool BuildDodgeRequest(FPantheliaDodgeRequest& OutRequest) const;
 
+	// Callback virtual llamado cuando el montage termina de forma natural. La base
+	// finaliza el dodge; la subclase del jugador puede conservar un follow-up bufferizado,
+	// terminar primero el dodge y activar después el ataque sin que State.Dodge.Active
+	// siga bloqueándolo.
+	virtual void HandleDodgeMontageCompleted();
+
 	// Duración base de i-frames por rango de GA_Dodge.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Dodge|IFrames")
 	FScalableFloat BaseIFrameDuration;
@@ -200,6 +218,12 @@ protected:
 	// usando esta distancia y AuthoredTravelDistance.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Dodge|Movement")
 	FScalableFloat BaseDashDistance;
+
+	// true: al aceptar el input dentro de la ventana, el dodge recorta su cola de
+	// recovery y encadena de inmediato. false: guarda el input y espera a OnCompleted.
+	// Es un ajuste de feel por diseñador; en ambos modos el ataque nunca cancela al dodge.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Dodge|Followup")
+	bool bChainImmediatelyOnFollowupInput = true;
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Dodge|Montages")
 	FPantheliaDodgeMontageData DodgeForward;
@@ -247,6 +271,10 @@ private:
 
 	// Guard runtime por activación para que un notify duplicado no conceda dos efectos.
 	bool bIFramesStarted = false;
+
+	// Estado interno abierto/cerrado por el Notify State de follow-up. No se usa un
+	// Gameplay Tag temporal porque ningún sistema externo necesita consultar la ventana.
+	bool bFollowupWindowOpen = false;
 
 	// La petición permite que ambos notifies compartan timestamp sin depender del orden
 	// interno en que Unreal los procese. La ventana solo abre tras iniciar i-frames.

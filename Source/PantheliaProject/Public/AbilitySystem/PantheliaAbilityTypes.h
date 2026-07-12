@@ -35,6 +35,29 @@ enum class EPantheliaDodgeResponse : uint8
 };
 
 // ============================================================
+// EPantheliaAttackEntryContext
+// ============================================================
+// Describe desde qué sistema comenzó una activación de ataque. El contexto vive
+// temporalmente en el ASC, se consume una sola vez al arrancar la ability y vuelve
+// inmediatamente a Normal para que nunca contamine ataques posteriores.
+// ============================================================
+UENUM(BlueprintType)
+enum class EPantheliaAttackEntryContext : uint8
+{
+    // Activación ordinaria desde el input de ataque.
+    Normal UMETA(DisplayName = "Normal"),
+
+    // Activación encadenada desde la ventana final de un dodge. Permite seleccionar
+    // un montage de apertura especial sin convertir todo el combo en una cadena distinta.
+    DodgeFollowup UMETA(DisplayName = "Dodge Follow-up"),
+
+    // Reservados para unificar entradas especiales futuras sin acoplarlas a tags
+    // temporales que podrían desaparecer antes de empezar el montage.
+    PerfectBlockCounter UMETA(DisplayName = "Perfect Block Counter"),
+    FutureSpecial UMETA(DisplayName = "Future Special")
+};
+
+// ============================================================
 // FDamageEffectParams
 // ============================================================
 //

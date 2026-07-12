@@ -2,9 +2,51 @@
 
 #include "AbilitySystem/Abilities/PantheliaPlayerDodgeAbility.h"
 
+#include "AbilitySystem/PantheliaAbilitySystemComponent.h"
 #include "Combat/LockonComponent.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "PantheliaGameplayTags.h"
+#include "PantheliaLogChannels.h"
+
+bool UPantheliaPlayerDodgeAbility::TryBufferFollowupInput(const FGameplayTag& InputTag)
+{
+	if (!IsActive() ||
+		!IsFollowupWindowOpen() ||
+		BufferedFollowup != EPantheliaDodgeBufferedAction::None)
+	{
+		return false;
+	}
+
+	const EPantheliaDodgeBufferedAction RequestedAction =
+		GetBufferedActionFromInputTag(InputTag);
+	if (RequestedAction == EPantheliaDodgeBufferedAction::None)
+	{
+		return false;
+	}
+
+	// Primer input válido gana. Desde este punto, otras pulsaciones no pueden sustituirlo.
+	BufferedFollowup = RequestedAction;
+
+	if (!bChainImmediatelyOnFollowupInput)
+	{
+		// Modo comprometido: conservar el input hasta que el montage llegue a OnCompleted.
+		return true;
+	}
+
+	// Modo inmediato: copiamos la acción a una variable local porque EndAbility limpia
+	// siempre el buffer. El dodge se termina a sí mismo, retira State.Dodge.Active y solo
+	// después intenta activar el ataque; el ataque nunca cancela externamente al dodge.
+	const EPantheliaDodgeBufferedAction FollowupToExecute = BufferedFollowup;
+	UPantheliaAbilitySystemComponent* PantheliaASC =
+		Cast<UPantheliaAbilitySystemComponent>(GetAbilitySystemComponentFromActorInfo());
+	BufferedFollowup = EPantheliaDodgeBufferedAction::None;
+	CloseFollowupWindow();
+
+	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
+	ExecuteBufferedFollowup(FollowupToExecute, PantheliaASC);
+	return true;
+}
 
 bool UPantheliaPlayerDodgeAbility::BuildDodgeRequest(FPantheliaDodgeRequest& OutRequest) const
 {
@@ -139,4 +181,111 @@ bool UPantheliaPlayerDodgeAbility::BuildDodgeRequest(FPantheliaDodgeRequest& Out
 	OutRequest.Montage = SelectedMontageData->Montage;
 	OutRequest.AuthoredTravelDistance = SelectedMontageData->AuthoredTravelDistance;
 	return true;
+}
+
+void UPantheliaPlayerDodgeAbility::HandleDodgeMontageCompleted()
+{
+	if (BufferedFollowup == EPantheliaDodgeBufferedAction::None)
+	{
+		Super::HandleDodgeMontageCompleted();
+		return;
+	}
+
+	// Modo no inmediato: el montage completó su desplazamiento/recovery. Conservamos la
+	// acción localmente, terminamos la ability para retirar el tag bloqueante y activamos.
+	const EPantheliaDodgeBufferedAction FollowupToExecute = BufferedFollowup;
+	UPantheliaAbilitySystemComponent* PantheliaASC =
+		Cast<UPantheliaAbilitySystemComponent>(GetAbilitySystemComponentFromActorInfo());
+	BufferedFollowup = EPantheliaDodgeBufferedAction::None;
+
+	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
+	ExecuteBufferedFollowup(FollowupToExecute, PantheliaASC);
+}
+
+void UPantheliaPlayerDodgeAbility::EndAbility(
+	const FGameplayAbilitySpecHandle Handle,
+	const FGameplayAbilityActorInfo* ActorInfo,
+	const FGameplayAbilityActivationInfo ActivationInfo,
+	bool bReplicateEndAbility,
+	bool bWasCancelled)
+{
+	// Toda salida por interrupción, muerte o cancelación descarta el input. Los únicos
+	// caminos que ejecutan un follow-up copian la acción a una variable local antes.
+	BufferedFollowup = EPantheliaDodgeBufferedAction::None;
+	Super::EndAbility(
+		Handle,
+		ActorInfo,
+		ActivationInfo,
+		bReplicateEndAbility,
+		bWasCancelled);
+}
+
+EPantheliaDodgeBufferedAction UPantheliaPlayerDodgeAbility::GetBufferedActionFromInputTag(
+	const FGameplayTag& InputTag) const
+{
+	const FPantheliaGameplayTags& Tags = FPantheliaGameplayTags::Get();
+
+	if (InputTag.MatchesTagExact(Tags.InputTag_LightAttack))
+	{
+		return EPantheliaDodgeBufferedAction::LightAttack;
+	}
+
+	if (InputTag.MatchesTagExact(Tags.InputTag_HeavyAttack))
+	{
+		return EPantheliaDodgeBufferedAction::HeavyAttack;
+	}
+
+	return EPantheliaDodgeBufferedAction::None;
+}
+
+FGameplayTag UPantheliaPlayerDodgeAbility::GetInputTagFromBufferedAction(
+	EPantheliaDodgeBufferedAction BufferedAction) const
+{
+	const FPantheliaGameplayTags& Tags = FPantheliaGameplayTags::Get();
+
+	switch (BufferedAction)
+	{
+	case EPantheliaDodgeBufferedAction::LightAttack:
+		return Tags.InputTag_LightAttack;
+
+	case EPantheliaDodgeBufferedAction::HeavyAttack:
+		return Tags.InputTag_HeavyAttack;
+
+	default:
+		return FGameplayTag();
+	}
+}
+
+void UPantheliaPlayerDodgeAbility::ExecuteBufferedFollowup(
+	EPantheliaDodgeBufferedAction BufferedAction,
+	UPantheliaAbilitySystemComponent* PantheliaASC)
+{
+	const FGameplayTag BufferedInputTag =
+		GetInputTagFromBufferedAction(BufferedAction);
+
+	if (!PantheliaASC || !BufferedInputTag.IsValid())
+	{
+		return;
+	}
+
+	PantheliaASC->SetPendingAttackEntryContext(
+		EPantheliaAttackEntryContext::DodgeFollowup);
+
+	const bool bActivationAccepted =
+		PantheliaASC->TryActivateAbilityByInputTag(BufferedInputTag);
+	const bool bContextWasConsumed =
+		PantheliaASC->GetPendingAttackEntryContext() ==
+		EPantheliaAttackEntryContext::Normal;
+
+	if (!bActivationAccepted || !bContextWasConsumed)
+	{
+		// TryActivateAbility puede devolver un falso positivo si la activación falla más
+		// tarde. La prueba definitiva es que UPantheliaPlayerAttackAbility haya consumido
+		// el contexto al entrar en ActivateAbility. Si sigue pendiente, lo descartamos.
+		PantheliaASC->ResetPendingAttackEntryContext();
+
+		UE_LOG(LogPanthelia, Verbose,
+			TEXT("[DODGE] Follow-up rechazado para InputTag '%s'."),
+			*BufferedInputTag.ToString());
+	}
 }

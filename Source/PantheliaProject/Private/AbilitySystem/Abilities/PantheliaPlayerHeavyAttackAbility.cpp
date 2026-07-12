@@ -16,6 +16,18 @@ UPantheliaPlayerHeavyAttackAbility::UPantheliaPlayerHeavyAttackAbility()
 
 void UPantheliaPlayerHeavyAttackAbility::StartComboFromActivation()
 {
+	// Un heavy que viene del dodge es una entrada especial ya decidida: reproduce el
+	// montage post-dodge de inmediato y NO entra en tap-vs-hold ni en la carga. El
+	// contexto fue consumido por la clase base antes de llegar aquí.
+	if (IsDodgeFollowupEntry())
+	{
+		bDecisionMade = true;
+		bInputHeld = false;
+		bIsCharging = false;
+		ExecuteSpecialAttack();
+		return;
+	}
+
 	// NO atacamos de inmediato. Detectamos tap vs hold: si el jugador suelta antes del
 	// umbral -> tap (especial); si mantiene -> hold (cargado). El release lo notifica el
 	// ASC vía NotifyHeavyInputReleased (no usamos WaitInputRelease porque el sistema de

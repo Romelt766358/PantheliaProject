@@ -118,6 +118,7 @@ void UPantheliaDodgeAbility::ActivateAbility(
 	bPerfectDodgeWindowStarted = false;
 	bPerfectDodgeWindowOpen = false;
 	bPerfectDodgeTriggered = false;
+	bFollowupWindowOpen = false;
 	IFramesStartTimeSeconds = 0.f;
 	IFramesEffectHandle = FActiveGameplayEffectHandle();
 
@@ -191,6 +192,7 @@ void UPantheliaDodgeAbility::EndAbility(
 	bPerfectDodgeWindowStarted = false;
 	bPerfectDodgeWindowOpen = false;
 	bPerfectDodgeTriggered = false;
+	bFollowupWindowOpen = false;
 	IFramesStartTimeSeconds = 0.f;
 
 	Super::EndAbility(
@@ -253,6 +255,21 @@ void UPantheliaDodgeAbility::StartPerfectDodgeWindow()
 	{
 		OpenPerfectDodgeWindow();
 	}
+}
+
+void UPantheliaDodgeAbility::OpenFollowupWindow()
+{
+	if (!IsActive())
+	{
+		return;
+	}
+
+	bFollowupWindowOpen = true;
+}
+
+void UPantheliaDodgeAbility::CloseFollowupWindow()
+{
+	bFollowupWindowOpen = false;
 }
 
 float UPantheliaDodgeAbility::GetFinalIFrameDuration() const
@@ -447,6 +464,11 @@ bool UPantheliaDodgeAbility::BuildDodgeRequest(FPantheliaDodgeRequest& OutReques
 }
 
 void UPantheliaDodgeAbility::OnDodgeMontageCompleted()
+{
+	HandleDodgeMontageCompleted();
+}
+
+void UPantheliaDodgeAbility::HandleDodgeMontageCompleted()
 {
 	EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
 }

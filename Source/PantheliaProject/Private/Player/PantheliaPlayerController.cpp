@@ -96,10 +96,22 @@ void APantheliaPlayerController::AbilityInputTagPressed(FGameplayTag InputTag)
 	// ya activo y esa misma primera pulsación podría dejar bufferizado el golpe siguiente.
 	GetASC()->NotifyComboInputPressed(InputTag);
 
-	// Activación normal de abilities OnInputTriggered: una pulsación = un intento.
-	// Mantener el botón no las repetirá al terminar porque Held solo procesa la política
-	// WhileInputActive, reservada para canalizaciones futuras.
-	GetASC()->AbilityInputTagPressed(InputTag);
+	// Si hay un dodge activo, ofrecerle el input antes de la activación normal. Durante
+	// State.Dodge.Active los ataques están bloqueados, pero el dodge puede aceptar el
+	// primer input válido dentro de su ventana de follow-up y ejecutarlo al encadenar.
+	const bool bConsumedByDodgeFollowup =
+		GetASC()->NotifyDodgeFollowupInputPressed(InputTag);
+
+	// Si el dodge aceptó Light/Heavy dentro de su ventana, esa pulsación ya tiene un
+	// destino único y no debe pasar también por la ruta normal de activación. El resto
+	// de inputs conserva el flujo OnInputTriggered existente.
+	if (!bConsumedByDodgeFollowup)
+	{
+		// Activación normal de abilities OnInputTriggered: una pulsación = un intento.
+		// Mantener el botón no las repetirá al terminar porque Held solo procesa la política
+		// WhileInputActive, reservada para canalizaciones futuras.
+		GetASC()->AbilityInputTagPressed(InputTag);
+	}
 }
 
 void APantheliaPlayerController::AbilityInputTagReleased(FGameplayTag InputTag)
