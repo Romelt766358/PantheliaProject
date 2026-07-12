@@ -56,7 +56,7 @@ bool UPantheliaPlayerDodgeAbility::BuildDodgeRequest(FPantheliaDodgeRequest& Out
 	else
 	{
 		// Con lock-on no rotamos al input: se conserva la orientación hacia el objetivo
-		// y se elige un montage cardinal en el espacio local del personaje.
+		// y se elige uno de ocho montages en sectores locales de 45 grados.
 		OutRequest.bApplyRotation = false;
 		OutRequest.DesiredRotation = Character->GetActorRotation();
 
@@ -70,33 +70,61 @@ bool UPantheliaPlayerDodgeAbility::BuildDodgeRequest(FPantheliaDodgeRequest& Out
 		{
 			const float ForwardDot = FVector::DotProduct(InputDirection, ActorForward);
 			const float RightDot = FVector::DotProduct(InputDirection, ActorRight);
+			const float DirectionAngleDegrees = FMath::RadiansToDegrees(
+				FMath::Atan2(RightDot, ForwardDot));
 
-			if (FMath::Abs(ForwardDot) >= FMath::Abs(RightDot))
+			const FVector ForwardRightDirection = (ActorForward + ActorRight).GetSafeNormal();
+			const FVector BackwardRightDirection = (-ActorForward + ActorRight).GetSafeNormal();
+			const FVector BackwardLeftDirection = (-ActorForward - ActorRight).GetSafeNormal();
+			const FVector ForwardLeftDirection = (ActorForward - ActorRight).GetSafeNormal();
+
+			if (DirectionAngleDegrees >= -22.5f && DirectionAngleDegrees < 22.5f)
 			{
-				if (ForwardDot >= 0.f)
-				{
-					OutRequest.Direction = EPantheliaDodgeDirection::Forward;
-					OutRequest.WorldDirection = ActorForward;
-					SelectedMontageData = &DodgeForward;
-				}
-				else
-				{
-					OutRequest.Direction = EPantheliaDodgeDirection::Backward;
-					OutRequest.WorldDirection = -ActorForward;
-					SelectedMontageData = &DodgeBackward;
-				}
+				OutRequest.Direction = EPantheliaDodgeDirection::Forward;
+				OutRequest.WorldDirection = ActorForward;
+				SelectedMontageData = &DodgeForward;
 			}
-			else if (RightDot >= 0.f)
+			else if (DirectionAngleDegrees >= 22.5f && DirectionAngleDegrees < 67.5f)
+			{
+				OutRequest.Direction = EPantheliaDodgeDirection::ForwardRight;
+				OutRequest.WorldDirection = ForwardRightDirection;
+				SelectedMontageData = &DodgeForwardRight;
+			}
+			else if (DirectionAngleDegrees >= 67.5f && DirectionAngleDegrees < 112.5f)
 			{
 				OutRequest.Direction = EPantheliaDodgeDirection::Right;
 				OutRequest.WorldDirection = ActorRight;
 				SelectedMontageData = &DodgeRight;
 			}
-			else
+			else if (DirectionAngleDegrees >= 112.5f && DirectionAngleDegrees < 157.5f)
+			{
+				OutRequest.Direction = EPantheliaDodgeDirection::BackwardRight;
+				OutRequest.WorldDirection = BackwardRightDirection;
+				SelectedMontageData = &DodgeBackwardRight;
+			}
+			else if (DirectionAngleDegrees >= 157.5f || DirectionAngleDegrees < -157.5f)
+			{
+				OutRequest.Direction = EPantheliaDodgeDirection::Backward;
+				OutRequest.WorldDirection = -ActorForward;
+				SelectedMontageData = &DodgeBackward;
+			}
+			else if (DirectionAngleDegrees >= -157.5f && DirectionAngleDegrees < -112.5f)
+			{
+				OutRequest.Direction = EPantheliaDodgeDirection::BackwardLeft;
+				OutRequest.WorldDirection = BackwardLeftDirection;
+				SelectedMontageData = &DodgeBackwardLeft;
+			}
+			else if (DirectionAngleDegrees >= -112.5f && DirectionAngleDegrees < -67.5f)
 			{
 				OutRequest.Direction = EPantheliaDodgeDirection::Left;
 				OutRequest.WorldDirection = -ActorRight;
 				SelectedMontageData = &DodgeLeft;
+			}
+			else
+			{
+				OutRequest.Direction = EPantheliaDodgeDirection::ForwardLeft;
+				OutRequest.WorldDirection = ForwardLeftDirection;
+				SelectedMontageData = &DodgeForwardLeft;
 			}
 		}
 	}

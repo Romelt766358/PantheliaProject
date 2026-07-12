@@ -14,17 +14,23 @@ class UAbilityTask_PlayMontageAndWait;
 /**
  * EPantheliaDodgeDirection
  *
- * Dirección cardinal elegida para una activación concreta del dash.
+ * Dirección de ocho sectores elegida para una activación concreta del dash.
  * La clase base no decide de dónde sale esa dirección: el jugador la obtiene
  * del input y del lock-on; un boss futuro podrá obtenerla del BossBrain.
  */
 UENUM(BlueprintType)
 enum class EPantheliaDodgeDirection : uint8
 {
-	Forward  UMETA(DisplayName = "Forward"),
-	Backward UMETA(DisplayName = "Backward"),
-	Left     UMETA(DisplayName = "Left"),
-	Right    UMETA(DisplayName = "Right")
+	// Las cuatro direcciones originales conservan su orden para no cambiar sus
+	// valores serializados si el enum ya fue usado por algún Blueprint.
+	Forward       UMETA(DisplayName = "Forward"),
+	Backward      UMETA(DisplayName = "Backward"),
+	Left          UMETA(DisplayName = "Left"),
+	Right         UMETA(DisplayName = "Right"),
+	ForwardRight  UMETA(DisplayName = "Forward Right"),
+	BackwardRight UMETA(DisplayName = "Backward Right"),
+	BackwardLeft  UMETA(DisplayName = "Backward Left"),
+	ForwardLeft   UMETA(DisplayName = "Forward Left")
 };
 
 /**
@@ -177,6 +183,18 @@ protected:
 
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Dodge|Montages")
 	FPantheliaDodgeMontageData DodgeRight;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Dodge|Montages")
+	FPantheliaDodgeMontageData DodgeForwardRight;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Dodge|Montages")
+	FPantheliaDodgeMontageData DodgeBackwardRight;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Dodge|Montages")
+	FPantheliaDodgeMontageData DodgeBackwardLeft;
+
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Dodge|Montages")
+	FPantheliaDodgeMontageData DodgeForwardLeft;
 
 private:
 	UFUNCTION()

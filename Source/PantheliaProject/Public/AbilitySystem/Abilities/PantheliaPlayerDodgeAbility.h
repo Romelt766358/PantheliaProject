@@ -12,8 +12,8 @@
  * Implementación del request direccional para el jugador:
  *   - Sin lock-on: con input rota al vector de movimiento y usa el montage frontal;
  *     sin input usa el montage hacia atrás sin rotar.
- *   - Con lock-on: conserva el strafe y clasifica el input en Forward/Backward/Left/Right
- *     usando dot products contra los ejes locales del personaje.
+ *   - Con lock-on: conserva el strafe y clasifica el input en ocho sectores de 45 grados
+ *     usando el ángulo local respecto a los ejes del personaje.
  *
  * La ejecución común (coste, root motion, i-frames y limpieza) permanece en la base.
  */
