@@ -265,10 +265,17 @@ void UPantheliaDodgeAbility::OpenFollowupWindow()
 	}
 
 	bFollowupWindowOpen = true;
+
+	UE_LOG(LogPanthelia, Log, TEXT("[DODGE] Ventana de follow-up ABIERTA."));
 }
 
 void UPantheliaDodgeAbility::CloseFollowupWindow()
 {
+	if (bFollowupWindowOpen)
+	{
+		UE_LOG(LogPanthelia, Log, TEXT("[DODGE] Ventana de follow-up CERRADA."));
+	}
+
 	bFollowupWindowOpen = false;
 }
 

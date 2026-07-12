@@ -12,6 +12,7 @@
 // Singleton de tags nativos: usado por GetAbilityTagFromSpec / GetInputTagFromSpec
 // para las queries jerárquicas contra las raíces "Abilities" e "InputTag" sin strings.
 #include "PantheliaGameplayTags.h"
+#include "PantheliaLogChannels.h"
 
 void UPantheliaAbilitySystemComponent::AbilityActorInfoSet()
 {
@@ -384,7 +385,15 @@ bool UPantheliaAbilitySystemComponent::NotifyDodgeFollowupInputPressed(
 		{
 			if (DodgeAbility->IsActive())
 			{
-				return DodgeAbility->TryBufferFollowupInput(InputTag);
+				const bool bAccepted = DodgeAbility->TryBufferFollowupInput(InputTag);
+
+				UE_LOG(LogPanthelia, Log,
+					TEXT("[DODGE] Input '%s' ofrecido al follow-up | Ventana abierta: %s | Aceptado: %s"),
+					*InputTag.ToString(),
+					DodgeAbility->IsFollowupWindowOpen() ? TEXT("Sí") : TEXT("No"),
+					bAccepted ? TEXT("Sí") : TEXT("No"));
+
+				return bAccepted;
 			}
 		}
 	}

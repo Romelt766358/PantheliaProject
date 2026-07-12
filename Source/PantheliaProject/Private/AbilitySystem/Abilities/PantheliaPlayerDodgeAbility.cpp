@@ -8,6 +8,8 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "PantheliaGameplayTags.h"
 #include "PantheliaLogChannels.h"
+#include "Engine/World.h"
+#include "TimerManager.h"
 
 bool UPantheliaPlayerDodgeAbility::TryBufferFollowupInput(const FGameplayTag& InputTag)
 {
@@ -27,6 +29,13 @@ bool UPantheliaPlayerDodgeAbility::TryBufferFollowupInput(const FGameplayTag& In
 
 	// Primer input válido gana. Desde este punto, otras pulsaciones no pueden sustituirlo.
 	BufferedFollowup = RequestedAction;
+
+	UE_LOG(LogPanthelia, Log,
+		TEXT("[DODGE] Input de follow-up aceptado: %s | Modo inmediato: %s"),
+		RequestedAction == EPantheliaDodgeBufferedAction::HeavyAttack
+			? TEXT("Heavy")
+			: TEXT("Light"),
+		bChainImmediatelyOnFollowupInput ? TEXT("Sí") : TEXT("No"));
 
 	if (!bChainImmediatelyOnFollowupInput)
 	{
@@ -271,21 +280,52 @@ void UPantheliaPlayerDodgeAbility::ExecuteBufferedFollowup(
 	PantheliaASC->SetPendingAttackEntryContext(
 		EPantheliaAttackEntryContext::DodgeFollowup);
 
-	const bool bActivationAccepted =
-		PantheliaASC->TryActivateAbilityByInputTag(BufferedInputTag);
-	const bool bContextWasConsumed =
-		PantheliaASC->GetPendingAttackEntryContext() ==
-		EPantheliaAttackEntryContext::Normal;
-
-	if (!bActivationAccepted || !bContextWasConsumed)
+	UWorld* World = PantheliaASC->GetWorld();
+	if (!World)
 	{
-		// TryActivateAbility puede devolver un falso positivo si la activación falla más
-		// tarde. La prueba definitiva es que UPantheliaPlayerAttackAbility haya consumido
-		// el contexto al entrar en ActivateAbility. Si sigue pendiente, lo descartamos.
 		PantheliaASC->ResetPendingAttackEntryContext();
-
-		UE_LOG(LogPanthelia, Verbose,
-			TEXT("[DODGE] Follow-up rechazado para InputTag '%s'."),
-			*BufferedInputTag.ToString());
+		return;
 	}
+
+	// El dodge acaba de terminar y retirar sus ActivationOwnedTags. Activar el ataque
+	// en el mismo call stack puede competir con la limpieza interna de GAS, especialmente
+	// con State.Dodge.Active como ActivationBlockedTag de los ataques. Diferimos un tick
+	// para que la terminación del dodge quede completamente asentada antes de revalidar
+	// costes, tags y requisitos del follow-up.
+	const TWeakObjectPtr<UPantheliaAbilitySystemComponent> WeakASC(PantheliaASC);
+	World->GetTimerManager().SetTimerForNextTick(
+		[WeakASC, BufferedInputTag]()
+		{
+			UPantheliaAbilitySystemComponent* ResolvedASC = WeakASC.Get();
+			if (!ResolvedASC)
+			{
+				return;
+			}
+
+			const bool bActivationAccepted =
+				ResolvedASC->TryActivateAbilityByInputTag(BufferedInputTag);
+			const bool bContextWasConsumed =
+				ResolvedASC->GetPendingAttackEntryContext() ==
+				EPantheliaAttackEntryContext::Normal;
+
+			if (!bActivationAccepted || !bContextWasConsumed)
+			{
+				// TryActivateAbility puede devolver un falso positivo si la activación falla
+				// más tarde. La prueba definitiva es que la ability de ataque haya consumido
+				// el contexto al entrar en ActivateAbility. Si sigue pendiente, lo descartamos.
+				ResolvedASC->ResetPendingAttackEntryContext();
+
+				UE_LOG(LogPanthelia, Warning,
+					TEXT("[DODGE] Follow-up rechazado para InputTag '%s' | TryActivate=%s | Contexto consumido=%s"),
+					*BufferedInputTag.ToString(),
+					bActivationAccepted ? TEXT("Sí") : TEXT("No"),
+					bContextWasConsumed ? TEXT("Sí") : TEXT("No"));
+				return;
+			}
+
+			UE_LOG(LogPanthelia, Log,
+				TEXT("[DODGE] Follow-up activado correctamente para InputTag '%s'."),
+				*BufferedInputTag.ToString());
+		});
 }
+
