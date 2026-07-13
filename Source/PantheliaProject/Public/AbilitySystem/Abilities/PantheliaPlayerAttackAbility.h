@@ -74,6 +74,20 @@ public:
 		const FGameplayTagContainer* TargetTags = nullptr,
 		FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
 
+	// Coste dinámico de ataque obtenido del arma equipada.
+	//
+	// CheckCost valida el coste antes del commit y permite que GAS comunique
+	// correctamente un fallo por stamina insuficiente.
+	virtual bool CheckCost(const FGameplayAbilitySpecHandle Handle,
+		const FGameplayAbilityActorInfo* ActorInfo,
+		FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
+
+	// Construye el spec del Cost Gameplay Effect e inyecta Cost.Stamina mediante
+	// SetByCaller. El valor se aplica negativo porque el modificador del GE usa Add.
+	virtual void ApplyCost(const FGameplayAbilitySpecHandle Handle,
+		const FGameplayAbilityActorInfo* ActorInfo,
+		const FGameplayAbilityActivationInfo ActivationInfo) const override;
+
 	// Punto de entrada de la ability: arranca el combo en el golpe actual.
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 		const FGameplayAbilityActorInfo* ActorInfo,
@@ -160,6 +174,23 @@ protected:
 	// DamageMultiplier escala el dano final (1.0 = sin cambio; el pesado cargado usa >1).
 	// Protected y con multiplicador para que el pesado cargado reutilice el pipeline.
 	FGameplayEffectSpecHandle MakeWeaponDamageSpec(float DamageMultiplier = 1.0f);
+
+	// Copia los datos de daño del arma equipada a las propiedades heredadas de la
+	// ability para que el pipeline compartido ApplyDamageScalingToSpec los use.
+	//
+	// Este helper existe para mantener un único punto de copia. Antes, los campos
+	// se copiaban manualmente dentro de MakeWeaponDamageSpec y cualquier propiedad
+	// nueva del arma podía quedar desconectada silenciosamente.
+	//
+	// El nombre está limitado a DamageData a propósito: knockback, launch, impulso
+	// de muerte, Heridas Graves y otros parámetros de la clase base no pertenecen
+	// automáticamente al arma y no deben copiarse aquí.
+	void ApplyWeaponDamageDataToAbility(const UPantheliaWeaponDefinition* WeaponDef);
+
+	// Intenta obtener el coste del golpe desde el WeaponDefinition actual.
+	// Devuelve false cuando no existe un arma válida o su Definition no está
+	// disponible. No confundir "sin arma" con un coste legítimo de cero.
+	bool TryGetCurrentAttackStaminaCost(float& OutCost) const;
 
 	// Helper: WeaponDefinition del arma equipada del avatar. Null si no hay.
 	// Protected para que las hijas lean los montages/datos del arma.

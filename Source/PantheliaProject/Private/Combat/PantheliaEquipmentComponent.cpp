@@ -3,6 +3,7 @@
 #include "Combat/PantheliaEquipmentComponent.h"
 #include "Combat/PantheliaWeapon.h"
 #include "Combat/PantheliaWeaponDefinition.h"
+#include "Combat/WeaponTraceComponent.h"
 #include "GameFramework/Character.h"
 #include "Engine/World.h"
 
@@ -79,6 +80,18 @@ void UPantheliaEquipmentComponent::EquipWeapon(
 void UPantheliaEquipmentComponent::UnequipWeapon()
 {
 	if (!EquippedWeapon) return;
+
+	// El arma del jugador es la fuente externa del WeaponTraceComponent. Limpiamos
+	// TODA la referencia de trace antes de destruir el Actor del arma para que un
+	// notify tardío no pueda reutilizar el spec, sonido o mesh del ataque anterior.
+	if (AActor* OwnerActor = GetOwner())
+	{
+		if (UWeaponTraceComponent* TraceComponent =
+			OwnerActor->FindComponentByClass<UWeaponTraceComponent>())
+		{
+			TraceComponent->ClearExternalWeaponTraceSource();
+		}
+	}
 
 	EquippedWeapon->Destroy();
 	EquippedWeapon = nullptr;

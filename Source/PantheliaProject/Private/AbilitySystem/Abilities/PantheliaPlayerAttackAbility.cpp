@@ -10,11 +10,15 @@
 #include "Combat/WeaponTraceComponent.h"
 #include "Combat/LockonComponent.h"
 #include "AbilitySystemComponent.h"
+#include "AbilitySystemGlobals.h"
+#include "AbilitySystem/PantheliaAttributeSet.h"
+#include "GameplayEffect.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Components/MeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
+#include "PantheliaGameplayTags.h"
 #include "PantheliaLogChannels.h"
 
 bool UPantheliaPlayerAttackAbility::CanActivateAbility(
@@ -33,6 +37,128 @@ bool UPantheliaPlayerAttackAbility::CanActivateAbility(
 	}
 
 	return Super::CanActivateAbility(Handle, ActorInfo, SourceTags, TargetTags, OptionalRelevantTags);
+}
+
+bool UPantheliaPlayerAttackAbility::CheckCost(
+	const FGameplayAbilitySpecHandle Handle,
+	const FGameplayAbilityActorInfo* ActorInfo,
+	FGameplayTagContainer* OptionalRelevantTags) const
+{
+	// El GE sigue siendo obligatorio: contiene el modificador Instant/Add sobre
+	// Stamina. Esta ability solo reemplaza su magnitud estática por Cost.Stamina.
+	if (!GetCostGameplayEffect())
+	{
+		UE_LOG(LogPanthelia, Error,
+			TEXT("[ATTACK] Ability '%s' sin Cost Gameplay Effect asignado. Asigna GE_Cost_AttackStamina en el Blueprint."),
+			*GetName());
+
+		if (OptionalRelevantTags)
+		{
+			OptionalRelevantTags->AddTag(UAbilitySystemGlobals::Get().ActivateFailCostTag);
+		}
+
+		return false;
+	}
+
+	const UAbilitySystemComponent* ASC =
+		ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
+
+	if (!ASC)
+	{
+		return false;
+	}
+
+	float StaminaCost = 0.f;
+	if (!TryGetCurrentAttackStaminaCost(StaminaCost))
+	{
+		UE_LOG(LogPanthelia, Warning,
+			TEXT("[ATTACK] Ability '%s' sin arma o WeaponDefinition válido."),
+			*GetName());
+
+		if (OptionalRelevantTags)
+		{
+			OptionalRelevantTags->AddTag(UAbilitySystemGlobals::Get().ActivateFailCostTag);
+		}
+
+		return false;
+	}
+
+	const float CurrentStamina = ASC->GetNumericAttribute(
+		UPantheliaAttributeSet::GetStaminaAttribute());
+
+	if (CurrentStamina < StaminaCost)
+	{
+		if (OptionalRelevantTags)
+		{
+			OptionalRelevantTags->AddTag(UAbilitySystemGlobals::Get().ActivateFailCostTag);
+		}
+
+		return false;
+	}
+
+	return true;
+}
+
+void UPantheliaPlayerAttackAbility::ApplyCost(
+	const FGameplayAbilitySpecHandle Handle,
+	const FGameplayAbilityActorInfo* ActorInfo,
+	const FGameplayAbilityActivationInfo ActivationInfo) const
+{
+	UGameplayEffect* CostGE = GetCostGameplayEffect();
+	UAbilitySystemComponent* ASC =
+		ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
+
+	if (!CostGE || !ASC)
+	{
+		return;
+	}
+
+	float StaminaCost = 0.f;
+	if (!TryGetCurrentAttackStaminaCost(StaminaCost))
+	{
+		return;
+	}
+
+	FGameplayEffectSpecHandle CostSpec = MakeOutgoingGameplayEffectSpec(
+		Handle,
+		ActorInfo,
+		ActivationInfo,
+		CostGE->GetClass(),
+		GetAbilityLevel());
+
+	if (!CostSpec.IsValid())
+	{
+		UE_LOG(LogPanthelia, Error,
+			TEXT("[ATTACK] No se pudo construir el spec de coste para la ability '%s'."),
+			*GetName());
+		return;
+	}
+
+	CostSpec.Data->SetSetByCallerMagnitude(
+		FPantheliaGameplayTags::Get().Cost_Stamina,
+		-StaminaCost);
+
+	ASC->ApplyGameplayEffectSpecToSelf(*CostSpec.Data.Get());
+}
+
+bool UPantheliaPlayerAttackAbility::TryGetCurrentAttackStaminaCost(
+	float& OutCost) const
+{
+	OutCost = 0.f;
+
+	const UPantheliaWeaponDefinition* WeaponDef = GetEquippedWeaponDefinition();
+	if (!WeaponDef)
+	{
+		return false;
+	}
+
+	const float ConfiguredCost =
+		(AttackType == EPlayerAttackType::Heavy)
+			? WeaponDef->HeavyAttackStaminaCost
+			: WeaponDef->LightAttackStaminaCost;
+
+	OutCost = FMath::Max(0.f, ConfiguredCost);
+	return true;
 }
 
 void UPantheliaPlayerAttackAbility::ActivateAbility(
@@ -237,19 +363,53 @@ void UPantheliaPlayerAttackAbility::AdvanceAndPlayNext()
 	const TArray<TObjectPtr<UAnimMontage>>& Montages =
 		(AttackType == EPlayerAttackType::Heavy) ? WeaponDef->HeavyAttackMontages : WeaponDef->LightAttackMontages;
 
+	if (Montages.Num() == 0)
+	{
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
+		return;
+	}
+
+	int32 NextComboIndex = 0;
+
 	// El montage post-dodge es un golpe de APERTURA externo al array. Al encadenar desde
 	// él, pasamos al índice 1 de la cadena normal (o 0 si el arma solo tiene un golpe).
 	// Los encadenados posteriores avanzan/ciclan con la lógica normal del combo.
 	if (bUsingDodgeFollowupOpeningMontage)
 	{
-		bUsingDodgeFollowupOpeningMontage = false;
-		ComboIndex = Montages.Num() > 1 ? 1 : 0;
+		NextComboIndex = Montages.Num() > 1 ? 1 : 0;
 	}
 	else
 	{
-		// Avanzar el indice. Si llegamos al final del combo, ciclamos a 0.
-		ComboIndex = (Montages.Num() > 0) ? (ComboIndex + 1) % Montages.Num() : 0;
+		// Calcular el siguiente índice sin modificar todavía el estado. Primero se
+		// valida que el golpe exista y solo después se cobra su stamina.
+		NextComboIndex = (ComboIndex + 1) % Montages.Num();
 	}
+
+	if (!Montages.IsValidIndex(NextComboIndex) || !IsValid(Montages[NextComboIndex].Get()))
+	{
+		UE_LOG(LogPanthelia, Error,
+			TEXT("[ATTACK] Siguiente montage de combo inválido. Weapon=%s Index=%d"),
+			*GetNameSafe(WeaponDef),
+			NextComboIndex);
+
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
+		return;
+	}
+
+	// Cada golpe encadenado cuesta stamina. CommitAbilityCost pasa por CheckCost y
+	// ApplyCost, pero no reaplica el cooldown comprometido al iniciar la ability.
+	if (!CommitAbilityCost(
+		CurrentSpecHandle,
+		CurrentActorInfo,
+		CurrentActivationInfo,
+		nullptr))
+	{
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
+		return;
+	}
+
+	bUsingDodgeFollowupOpeningMontage = false;
+	ComboIndex = NextComboIndex;
 
 	// Reproducir el siguiente golpe. PlayCurrentComboMontage limpia la task anterior
 	// (desengancha sus callbacks) antes de crear la nueva, asi que el montage viejo
@@ -267,13 +427,24 @@ void UPantheliaPlayerAttackAbility::SetupWeaponTraceForCurrentAttack(float Damag
 
 	if (!TraceComp || !EquipComp) return;
 
-	// Pasar al trace el mesh del arma equipada (su componente activo) para que lea
-	// los sockets WeaponBase/WeaponTip de la hoja durante el sweep.
+	// Pasar al trace el mesh del arma equipada (su componente activo) y los nombres
+	// de socket definidos por ESTA arma. Antes los datos de sockets existían en el
+	// WeaponDefinition, pero esta llamada usaba siempre los defaults del componente.
 	if (APantheliaWeapon* Weapon = EquipComp->GetEquippedWeapon())
 	{
 		if (UMeshComponent* WeaponMesh = Weapon->GetActiveMeshComponent())
 		{
-			TraceComp->SetWeaponMeshComponent(WeaponMesh);
+			if (const UPantheliaWeaponDefinition* WeaponDef = GetEquippedWeaponDefinition())
+			{
+				TraceComp->SetWeaponMeshComponent(
+					WeaponMesh,
+					WeaponDef->WeaponBaseSocketName,
+					WeaponDef->WeaponTipSocketName);
+			}
+			else
+			{
+				TraceComp->SetWeaponMeshComponent(WeaponMesh);
+			}
 		}
 	}
 
@@ -303,12 +474,10 @@ FGameplayEffectSpecHandle UPantheliaPlayerAttackAbility::MakeWeaponDamageSpec(fl
 	UAbilitySystemComponent* SourceASC = GetAbilitySystemComponentFromActorInfo();
 	if (!SourceASC || !DamageEffectClass) return FGameplayEffectSpecHandle();
 
-	// Copiar los datos de dano DEL ARMA a las propiedades heredadas de la clase base
-	// para reutilizar el pipeline de escalado ya probado (ApplyDamageScalingToSpec).
-	// Asi melee de enemigos, proyectiles y melee del jugador comparten el mismo calculo.
-	DamageTypes = WeaponDef->DamageTypes;
-	AttributeScalings = WeaponDef->AttributeScalings;
-	PoiseDamage = WeaponDef->PoiseDamage;
+	// Copiar los datos de daño DEL ARMA a las propiedades heredadas de la clase base
+	// desde un único helper. Así, melee de enemigos, proyectiles y melee del jugador
+	// comparten el mismo cálculo sin dejar campos nuevos desconectados.
+	ApplyWeaponDamageDataToAbility(WeaponDef);
 
 	FGameplayEffectContextHandle ContextHandle = SourceASC->MakeEffectContext();
 	ContextHandle.AddSourceObject(GetAvatarActorFromActorInfo());
@@ -324,6 +493,23 @@ FGameplayEffectSpecHandle UPantheliaPlayerAttackAbility::MakeWeaponDamageSpec(fl
 	// DamageMultiplier (1.0 por defecto) escala el dano final; el pesado cargado lo usa >1.
 	ApplyDamageScalingToSpec(SpecHandle, SourceASC, DamageMultiplier);
 	return SpecHandle;
+}
+
+void UPantheliaPlayerAttackAbility::ApplyWeaponDamageDataToAbility(
+	const UPantheliaWeaponDefinition* WeaponDef)
+{
+	if (!WeaponDef)
+	{
+		return;
+	}
+
+	DamageTypes = WeaponDef->DamageTypes;
+	AttributeScalings = WeaponDef->AttributeScalings;
+	PoiseDamage = WeaponDef->PoiseDamage;
+
+	// Sin esta copia, el ataque usaba el buildup genérico configurado en el
+	// Blueprint de la ability en lugar de la identidad elemental del arma.
+	BuildupAmounts = WeaponDef->BuildupAmounts;
 }
 
 UAnimMontage* UPantheliaPlayerAttackAbility::GetCurrentComboMontage() const

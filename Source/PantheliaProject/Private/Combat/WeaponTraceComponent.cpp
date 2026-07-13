@@ -26,8 +26,9 @@ void UWeaponTraceComponent::BeginPlay()
 {
 	Super::BeginPlay();
 
-	// Si no se asignó el mesh del arma en el editor, intentamos resolverlo.
-	if (!WeaponMeshComponent)
+	// Si no se asignó el mesh del arma en el editor, intentamos resolverlo solo para
+	// owners con fuente interna (enemigos). El jugador usa un Actor de arma externo.
+	if (!bUseExternalWeaponSource && !WeaponMeshComponent)
 	{
 		ResolveWeaponMesh();
 	}
@@ -35,6 +36,13 @@ void UWeaponTraceComponent::BeginPlay()
 
 void UWeaponTraceComponent::ResolveWeaponMesh()
 {
+	// El jugador debe recibir siempre el mesh desde su arma equipada. Este guard evita
+	// que un notify tardío o un orden de inicialización inesperado active el fallback.
+	if (bUseExternalWeaponSource)
+	{
+		return;
+	}
+
 	AActor* Owner = GetOwner();
 	if (!Owner) return;
 
@@ -129,9 +137,16 @@ void UWeaponTraceComponent::SetWeaponMeshComponent(UPrimitiveComponent* InWeapon
 	FName InBaseSocketName, FName InTipSocketName)
 {
 	// Asignar el mesh externo (el del arma equipada del jugador). A partir de aquí
-	// el sweep lee los sockets de este mesh y ResolveWeaponMesh ya no se invoca
-	// (PerformTrace solo resuelve si WeaponMeshComponent es null).
+	// el sweep lee los sockets de este mesh y el modo externo prohíbe por contrato
+	// cualquier intento posterior de ResolveWeaponMesh.
 	WeaponMeshComponent = InWeaponMesh;
+
+	// Un mesh inyectado pertenece al modo externo. Desde este momento, aunque el
+	// actor del arma sea destruido, el componente no debe buscar un fallback interno.
+	if (IsValid(InWeaponMesh))
+	{
+		bUseExternalWeaponSource = true;
+	}
 
 	// Si se proveen nombres de socket válidos, los adoptamos. Esto permite que cada
 	// arma del jugador defina sus propios nombres de socket en su WeaponDefinition.
@@ -147,6 +162,35 @@ void UWeaponTraceComponent::SetWeaponMeshComponent(UPrimitiveComponent* InWeapon
 	}
 }
 
+void UWeaponTraceComponent::SetUseExternalWeaponSource(bool bInUseExternalWeaponSource)
+{
+	bUseExternalWeaponSource = bInUseExternalWeaponSource;
+
+	if (bUseExternalWeaponSource)
+	{
+		// El modo externo empieza sin asumir ningún componente del owner. La ability
+		// inyectará el mesh del arma equipada antes de abrir la ventana de daño.
+		WeaponMeshComponent = nullptr;
+	}
+}
+
+void UWeaponTraceComponent::ClearExternalWeaponTraceSource()
+{
+	// DeactivateTrace cierra la ventana, limpia los ignorados y revoca el permiso
+	// de auto lock-on del swing actual.
+	DeactivateTrace();
+
+	WeaponMeshComponent = nullptr;
+	DamageSpecHandle = FGameplayEffectSpecHandle();
+	ActiveMontageTag = FGameplayTag();
+	ActiveImpactSound = nullptr;
+	bAutoLockOnFromBasicAttackHitAllowed = false;
+	IgnoredActors.Empty();
+
+	// Se conserva el modo externo para impedir que un notify tardío use fallback.
+	bUseExternalWeaponSource = true;
+}
+
 void UWeaponTraceComponent::ActivateTrace()
 {
 	StartTrace(TraceRadius);
@@ -159,6 +203,38 @@ void UWeaponTraceComponent::ActivateTraceWithRadius(float OverrideTraceRadius)
 
 void UWeaponTraceComponent::StartTrace(float InTraceRadius)
 {
+	// Una fuente externa incompleta debe fallar cerrada. Esto cubre el caso donde el
+	// arma se desequipa y después llega el NotifyBegin de un montage aún reproduciéndose.
+	if (bUseExternalWeaponSource && !IsWeaponMeshValidForOwner())
+	{
+		bIsTracing = false;
+
+		if (bLogTraceDebug || bDebugMode)
+		{
+			UE_LOG(LogPanthelia, Warning,
+				TEXT("WeaponTrace no iniciado: Owner=%s usa fuente externa sin arma válida."),
+				*GetNameSafe(GetOwner()));
+		}
+
+		return;
+	}
+
+	// Sin un spec válido no existe un golpe aplicable. No abrimos una ventana que
+	// pueda quedar activa esperando datos que ya fueron limpiados al desequipar.
+	if (!DamageSpecHandle.IsValid())
+	{
+		bIsTracing = false;
+
+		if (bLogTraceDebug || bDebugMode)
+		{
+			UE_LOG(LogPanthelia, Warning,
+				TEXT("WeaponTrace no iniciado: Owner=%s no tiene DamageSpec válido."),
+				*GetNameSafe(GetOwner()));
+		}
+
+		return;
+	}
+
 	bIsTracing = true;
 	ActiveTraceRadius = FMath::Max(0.f, InTraceRadius);
 
@@ -168,7 +244,7 @@ void UWeaponTraceComponent::StartTrace(float InTraceRadius)
 
 	if (bLogTraceDebug || bDebugMode)
 	{
-		if (!IsWeaponMeshValidForOwner())
+		if (!bUseExternalWeaponSource && !IsWeaponMeshValidForOwner())
 		{
 			ResolveWeaponMesh();
 		}
@@ -230,17 +306,18 @@ void UWeaponTraceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 
 void UWeaponTraceComponent::PerformTrace()
 {
-	if (!IsWeaponMeshValidForOwner())
+	if (!bUseExternalWeaponSource && !IsWeaponMeshValidForOwner())
 	{
 		ResolveWeaponMesh();
 	}
 
-	// Sin mesh de arma no podemos leer los sockets — nada que hacer.
-	if (!WeaponMeshComponent)
+	// Sin un mesh válido y perteneciente al owner no podemos leer sockets. Para el
+	// jugador no se intenta fallback; para enemigos ya se intentó resolver arriba.
+	if (!IsWeaponMeshValidForOwner())
 	{
 		if (bLogTraceDebug || bDebugMode)
 		{
-			UE_LOG(LogPanthelia, Warning, TEXT("WeaponTrace rejected: Owner=%s Reason=no weapon mesh"), *GetNameSafe(GetOwner()));
+			UE_LOG(LogPanthelia, Warning, TEXT("WeaponTrace rejected: Owner=%s Reason=no valid weapon mesh"), *GetNameSafe(GetOwner()));
 		}
 		return;
 	}

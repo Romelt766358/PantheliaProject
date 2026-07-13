@@ -153,6 +153,24 @@ public:
 	FScalableFloat PoiseDamage;
 
 	// ----------------------------------------------------------------
+	// BUILDUP ELEMENTAL (sistema de umbral, sin azar)
+	// ----------------------------------------------------------------
+	// CUÁNTO llena ESTA arma la barra de estado de la víctima, POR TIPO DE DAÑO
+	// (misma clave que DamageTypes). Aquí vive parte de la identidad del arma:
+	// un espadón de fuego puede hacer mucho daño y poco buildup, mientras que una
+	// daga de veneno puede hacer poco daño directo y acumular rápidamente su estado.
+	//
+	// La escala base es 0-100 porque el estado se dispara al alcanzar 100.
+	// Ejemplo: 25 significa aproximadamente cuatro golpes antes de resistencias.
+	// Si un tipo de daño no tiene entrada en este mapa, aplica 0 buildup.
+	//
+	// El arma NO define qué hace el estado ni su potencia. El payload vive en
+	// DA_ElementalStatusConfig y la potencia se modifica mediante los atributos
+	// XStatusPower del portador, alterados por árbol, equipo, buffs y pasivas.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Buildup")
+	TMap<FGameplayTag, FScalableFloat> BuildupAmounts;
+
+	// ----------------------------------------------------------------
 	// MEJORA DE ARMA (upgrade con materiales, estilo soulslike — Titanite)
 	// ----------------------------------------------------------------
 	// Estructura reservada para el sistema de mejora. La LÓGICA de aplicar mejoras

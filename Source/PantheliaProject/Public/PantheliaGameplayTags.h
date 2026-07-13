@@ -130,6 +130,11 @@ public:
 	FGameplayTag InputTag_Spell_5;
 	FGameplayTag InputTag_Spell_Ultimate;
 
+	// --- TAGS DE COSTE ---
+	// SetByCaller usados por Gameplay Effects de coste dinámico. El coste base vive
+	// en los datos del arma; la ability lo inyecta con magnitud negativa en el spec.
+	FGameplayTag Cost_Stamina;
+
 	// --- TAGS DE DAÑO ---
 	FGameplayTag DamageParent_Physical;    // "Damage.Physical" — tag raíz físicos
 	FGameplayTag DamageParent_Magical;     // "Damage.Magical"  — tag raíz mágicos

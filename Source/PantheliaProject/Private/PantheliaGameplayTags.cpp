@@ -121,6 +121,11 @@ void FPantheliaGameplayTags::InitializeNativeGameplayTags()
 	GameplayTags.InputTag_Spell_5 = Manager.AddNativeGameplayTag(FName("InputTag.Spell.5"), FString());
 	GameplayTags.InputTag_Spell_Ultimate = Manager.AddNativeGameplayTag(FName("InputTag.Spell.Ultimate"), FString());
 
+	// --- TAGS DE COSTE ---
+	GameplayTags.Cost_Stamina = Manager.AddNativeGameplayTag(
+		FName("Cost.Stamina"),
+		FString("SetByCaller: coste de stamina del golpe actual. La magnitud viaja negativa en el spec."));
+
 	// --- TIPOS DE DAÑO ---
 	GameplayTags.DamageParent_Physical = Manager.AddNativeGameplayTag(FName("Damage.Physical"), FString("Tag raíz para todos los daños físicos. Mitigado por Armor."));
 	GameplayTags.DamageParent_Magical = Manager.AddNativeGameplayTag(FName("Damage.Magical"), FString("Tag raíz para todos los daños mágicos. Mitigado por MagicResistance."));

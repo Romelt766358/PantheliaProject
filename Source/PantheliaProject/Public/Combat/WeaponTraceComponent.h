@@ -99,9 +99,20 @@ public:
 	void SetWeaponMeshComponent(UPrimitiveComponent* InWeaponMesh,
 		FName InBaseSocketName = NAME_None, FName InTipSocketName = NAME_None);
 
+	// Define si el mesh del arma debe ser inyectado externamente.
+	// true: no se permite ResolveWeaponMesh (caso jugador, cuyo arma es otro Actor).
+	// false: el componente puede auto-resolver el arma desde su owner (caso enemigos).
+	void SetUseExternalWeaponSource(bool bInUseExternalWeaponSource);
+
+	// Limpia completamente la fuente de trace externa del jugador al desequipar.
+	// El componente permanece en modo externo, por lo que un notify tardío no puede
+	// adoptar un StaticMeshComponent arbitrario del personaje como arma de fallback.
+	void ClearExternalWeaponTraceSource();
+
 	// El mesh del arma del que se leen los sockets WeaponBase/WeaponTip.
-	// Si es null, el componente intenta resolverlo en BeginPlay desde el dueño
-	// (busca un componente con el tag "Weapon" o el primer StaticMeshComponent).
+	// Si es null y la fuente NO es externa, el componente intenta resolverlo desde
+	// el dueño (tag "Weapon" o primer StaticMeshComponent). En el jugador, el modo
+	// externo prohíbe ese fallback y exige que la ability inyecte el arma equipada.
 	// Configurable por Blueprint para armas que viven en componentes distintos.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "WeaponTrace")
 	TObjectPtr<UPrimitiveComponent> WeaponMeshComponent;
@@ -137,6 +148,11 @@ protected:
 	bool bLogTraceDebug = false;
 
 private:
+	// El jugador usa un Actor de arma separado e inyecta su mesh explícitamente.
+	// Mientras este flag sea true, ResolveWeaponMesh está prohibido. Los enemigos
+	// mantienen false y conservan el comportamiento de auto-resolución existente.
+	bool bUseExternalWeaponSource = false;
+
 	// True mientras la ventana de daño está abierta (entre NotifyBegin y NotifyEnd).
 	bool bIsTracing = false;
 

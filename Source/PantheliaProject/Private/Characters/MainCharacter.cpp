@@ -65,6 +65,10 @@ AMainCharacter::AMainCharacter()
     // Trace de arma (GAS-ready). Sweep por sockets de la hoja; aplica el spec de daño.
     // Sustituye al UTraceComponent legacy. La ability de ataque le inyecta mesh y spec.
     WeaponTraceComponent = CreateDefaultSubobject<UWeaponTraceComponent>(TEXT("WeaponTraceComponent"));
+    // El arma del jugador vive en un Actor separado (APantheliaWeapon). Declaramos el
+    // modo externo desde el constructor para que BeginPlay nunca intente adoptar un
+    // StaticMeshComponent arbitrario del personaje antes del primer ataque.
+    WeaponTraceComponent->SetUseExternalWeaponSource(true);
 
     GetCharacterMovement()->bOrientRotationToMovement = true;
     GetCharacterMovement()->RotationRate = FRotator(0.f, 400.f, 0.f);
