@@ -10,6 +10,8 @@
 #include "Combat/LockonComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "AI/PantheliaAIController.h"
+#include "AIController.h"
+#include "BrainComponent.h"
 #include "BehaviorTree/BehaviorTree.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "Components/SceneComponent.h"
@@ -69,11 +71,34 @@ int32 APantheliaEnemy::GetPlayerLevel_Implementation() const
 
 void APantheliaEnemy::Die(const FVector& DeathImpulse)
 {
-	// Notificar al Behavior Tree que el enemigo ha muerto.
-	// El decorator "Am I Alive?" comprueba Dead=false — al ponerlo a true,
-	// el árbol aborta inmediatamente (Observer Aborts = Both) y el enemigo
-	// deja de atacar, moverse y procesar lógica de IA aunque el actor
-	// todavía no se haya destruido (Lifespan lo destruye unos segundos después).
+	// Detener primero toda lógica de navegación/decisión. Los enemigos normales usan
+	// el BrainComponent del AIController; un boss también puede tener un componente de
+	// IA basado en UBrainComponent directamente sobre el pawn. Cubrimos ambos caminos
+	// sin acoplar esta clase a un Behavior Tree o StateTree concreto.
+	if (AAIController* AIController = Cast<AAIController>(GetController()))
+	{
+		AIController->StopMovement();
+
+		if (UBrainComponent* ControllerBrain = AIController->GetBrainComponent())
+		{
+			ControllerBrain->StopLogic(TEXT("Owner died"));
+		}
+	}
+
+	if (UBrainComponent* PawnBrain = FindComponentByClass<UBrainComponent>())
+	{
+		PawnBrain->StopLogic(TEXT("Owner died"));
+	}
+
+	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	{
+		MovementComponent->StopMovementImmediately();
+		MovementComponent->DisableMovement();
+	}
+
+	// Notificar también al Blackboard legacy. El decorator "Am I Alive?" comprueba
+	// Dead=false; conservar este dato permite que un Behavior Tree reiniciado por
+	// error siga rechazando su rama de combate.
 	if (PantheliaAIController)
 	{
 		if (UBlackboardComponent* BlackboardComp = PantheliaAIController->GetBlackboardComponent())

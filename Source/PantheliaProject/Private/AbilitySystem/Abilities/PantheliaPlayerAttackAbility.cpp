@@ -358,7 +358,21 @@ void UPantheliaPlayerAttackAbility::PlayCurrentComboMontage()
 	StartReorientToDesiredDirection();
 
 	// Preparar el dano en el WeaponTrace antes de que el montage abra su ventana de dano.
-	SetupWeaponTraceForCurrentAttack();
+	// Light y Heavy usan perfiles separados para que vida, postura y buildup no queden
+	// acoplados. El follow-up de dodge reutiliza el perfil de su categoría de ataque.
+	const UPantheliaWeaponDefinition* WeaponDef = GetEquippedWeaponDefinition();
+	if (!WeaponDef)
+	{
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
+		return;
+	}
+
+	const FPantheliaWeaponAttackModifiers& AttackModifiers =
+		AttackType == EPlayerAttackType::Heavy
+			? WeaponDef->HeavyAttackModifiers
+			: WeaponDef->LightAttackModifiers;
+
+	SetupWeaponTraceForCurrentAttack(AttackModifiers);
 
 	// Si habia una task de montage anterior (caso de encadenado), desenganchamos sus
 	// callbacks y la terminamos ANTES de crear la nueva. Asi el montage viejo no nos
@@ -467,7 +481,8 @@ void UPantheliaPlayerAttackAbility::AdvanceAndPlayNext()
 	PlayCurrentComboMontage();
 }
 
-void UPantheliaPlayerAttackAbility::SetupWeaponTraceForCurrentAttack(float DamageMultiplier)
+void UPantheliaPlayerAttackAbility::SetupWeaponTraceForCurrentAttack(
+	const FPantheliaWeaponAttackModifiers& AttackModifiers)
 {
 	AActor* AvatarActor = GetAvatarActorFromActorInfo();
 	if (!AvatarActor) return;
@@ -505,8 +520,8 @@ void UPantheliaPlayerAttackAbility::SetupWeaponTraceForCurrentAttack(float Damag
 
 	// Pasar el spec de dano del arma. El WeaponTraceNotifyState del montage abrira/
 	// cerrara la ventana de dano y aplicara este spec a quien golpee.
-	// DamageMultiplier (1.0 por defecto) lo usa el pesado cargado para mas dano.
-	TraceComp->SetDamageSpec(MakeWeaponDamageSpec(DamageMultiplier));
+	// El perfil recibido mantiene independientes daño a HP, postura y buildup.
+	TraceComp->SetDamageSpec(MakeWeaponDamageSpec(AttackModifiers));
 
 	// Pasar el sonido de impacto del arma. El WeaponTraceComponent lo reproduce en el
 	// punto de hit (solo si el ataque conecta). Lo leemos de la WeaponDefinition equipada.
@@ -516,7 +531,8 @@ void UPantheliaPlayerAttackAbility::SetupWeaponTraceForCurrentAttack(float Damag
 	}
 }
 
-FGameplayEffectSpecHandle UPantheliaPlayerAttackAbility::MakeWeaponDamageSpec(float DamageMultiplier)
+FGameplayEffectSpecHandle UPantheliaPlayerAttackAbility::MakeWeaponDamageSpec(
+	const FPantheliaWeaponAttackModifiers& AttackModifiers)
 {
 	const UPantheliaWeaponDefinition* WeaponDef = GetEquippedWeaponDefinition();
 	if (!WeaponDef) return FGameplayEffectSpecHandle();
@@ -539,9 +555,14 @@ FGameplayEffectSpecHandle UPantheliaPlayerAttackAbility::MakeWeaponDamageSpec(fl
 
 	if (!SpecHandle.IsValid()) return SpecHandle;
 
-	// Escalado completo: dano base + escalado por atributos + poise.
-	// DamageMultiplier (1.0 por defecto) escala el dano final; el pesado cargado lo usa >1.
-	ApplyDamageScalingToSpec(SpecHandle, SourceASC, DamageMultiplier);
+	// Escalado completo: dano base + escalado por atributos + postura + buildup.
+	// Cada canal recibe un multiplicador independiente del perfil ofensivo del golpe.
+	ApplyDamageScalingToSpec(
+		SpecHandle,
+		SourceASC,
+		AttackModifiers.DamageMultiplier,
+		AttackModifiers.PoiseDamageMultiplier,
+		AttackModifiers.BuildupMultiplier);
 	return SpecHandle;
 }
 

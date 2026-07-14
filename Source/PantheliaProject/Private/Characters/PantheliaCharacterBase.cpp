@@ -197,6 +197,11 @@ void APantheliaCharacterBase::Die(const FVector& DeathImpulse)
 	// el futuro respawn. En enemigos también es correcto y evita ticks innecesarios.
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
 	{
+		// Una muerte invalida cualquier acción activa. Cancelar todas las abilities
+		// detiene montages, tasks y trazas gobernadas por GAS antes de activar el ragdoll.
+		// Las abilities concedidas NO se eliminan: solo se finalizan sus instancias activas.
+		ASC->CancelAllAbilities();
+
 		ASC->SetNumericAttributeBase(UPantheliaAttributeSet::GetFireBuildupAttribute(), 0.f);
 		ASC->SetNumericAttributeBase(UPantheliaAttributeSet::GetStormBuildupAttribute(), 0.f);
 		ASC->SetNumericAttributeBase(UPantheliaAttributeSet::GetWaterBuildupAttribute(), 0.f);

@@ -118,8 +118,9 @@ void UPantheliaPlayerHeavyAttackAbility::ExecuteChargedAttack()
 
 	bIsCharging = true;
 
-	// Preparar el dano del cargado con su multiplicador (pega mas fuerte que el especial).
-	SetupWeaponTraceForCurrentAttack(WeaponDef->ChargedHeavyDamageMultiplier);
+	// Preparar el daño del cargado con su perfil ofensivo independiente. Así el
+	// multiplicador de postura no queda forzado a ser igual al multiplicador de HP.
+	SetupWeaponTraceForCurrentAttack(WeaponDef->ChargedHeavyAttackModifiers);
 
 	// Reproducir el montage del cargado. El montage tiene 3 secciones:
 	//   "Start"   (AS1: ponerse en posicion) -> fluye a "Loop"

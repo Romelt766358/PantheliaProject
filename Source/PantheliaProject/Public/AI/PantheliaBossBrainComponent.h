@@ -158,6 +158,12 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Panthelia|Boss")
 	bool IsInterruptionRecoveryActive() const;
 
+	// Estado de seguridad global del cerebro. Se vuelve true al morir el owner y
+	// bloquea selección, ejecución y polling aunque el StateTree tarde un frame
+	// adicional en detenerse.
+	UFUNCTION(BlueprintPure, Category = "Panthelia|Boss")
+	bool IsOwnerDead() const;
+
 	UFUNCTION(BlueprintCallable, Category = "Panthelia|Boss")
 	void ClearCurrentAction();
 
@@ -219,6 +225,11 @@ private:
 	FDelegateHandle MaxHealthChangedDelegateHandle;
 
 	UPROPERTY(Transient)
+	bool bOwnerDead = false;
+
+	bool bOwnerDeathDelegateBound = false;
+
+	UPROPERTY(Transient)
 	TArray<FGameplayTag> RecentActionMemoryGroups;
 
 	UPROPERTY(Transient)
@@ -232,6 +243,10 @@ private:
 	void UnbindRuntimeDelegates();
 	void HandleOwnerAbilityEnded(const FAbilityEndedData& AbilityEndedData);
 	void HandleOwnerHealthChanged(const FOnAttributeChangeData& AttributeChangeData);
+
+	UFUNCTION()
+	void HandleOwnerDeath(AActor* DeadActor);
+
 	void TryInitializeNextTick();
 	void DeferredInitializeBossFromProfile();
 	bool ApplyStatsPreset(const FPantheliaBossStatsPreset& StatsPreset) const;

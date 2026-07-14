@@ -24,8 +24,9 @@
  *           └── UPantheliaProjectileSpell
  *
  * ESCALADO POR ATRIBUTOS (spec §1.7):
- *   Daño final = (DañoBase + Σ Ratio × Atributo) distribuido por tipo proporcionalmente.
- *   El cálculo ocurre en SpawnProjectile() — el ExecCalc recibe el daño YA escalado.
+ *   Daño bruto = DañoBase + Σ(Ratio × Atributo).
+ *   ApplyDamageScalingToSpec centraliza el cálculo para proyectiles, melee y armas;
+ *   el ExecCalc recibe el daño YA escalado y solo aplica defensa/afinidades/crítico.
  *   Máximo 2 entradas en AttributeScalings (regla de diseño).
  */
 UCLASS()
@@ -219,6 +220,8 @@ protected:
 	//   3. Multiplicador = (DañoBase + Escalado) / DañoBase
 	//   4. Distribuir el multiplicador proporcionalmente entre los tipos de daño
 	//   5. Asignar cada tipo de daño escalado + el daño de postura al SetByCaller
+	//   6. Aplicar multiplicadores independientes de daño, postura y buildup
+	//      (para armas: Daño bruto × multiplicador Light/Heavy/Charged)
 	//
 	// El ExecCalc_Damage recibe valores YA escalados — no conoce el escalado.
 	//
@@ -227,5 +230,10 @@ protected:
 	//
 	// Antes esta lógica estaba duplicada en SpawnProjectile; ahora vive aquí en la
 	// clase base de daño para que CauseDamage (melee) también la aplique (hallazgo D1).
-	void ApplyDamageScalingToSpec(FGameplayEffectSpecHandle& SpecHandle, UAbilitySystemComponent* SourceASC, float DamageMultiplier = 1.0f) const;
+	void ApplyDamageScalingToSpec(
+		FGameplayEffectSpecHandle& SpecHandle,
+		UAbilitySystemComponent* SourceASC,
+		float DamageMultiplier = 1.0f,
+		float PoiseDamageMultiplier = 1.0f,
+		float BuildupMultiplier = 1.0f) const;
 };

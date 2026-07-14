@@ -18,11 +18,11 @@
 // ============================================================
 // PantheliaDamageStatics
 // ============================================================
-// NOTA ASIMETRÍA (spec §1.7, modelo LoL):
-//   PhysicalDamage (AD): capturado del SOURCE → sumado como addend genérico al daño físico.
-//   MagicDamage    (AP): NO se suma automáticamente dentro del ExecCalc. El daño directo
-//                        lo usa mediante AttributeScalings de la ability; los estados
-//                        globales lo leen al detonar desde PantheliaAttributeSet.
+// POLÍTICA DE ESCALADO:
+//   El ExecCalc recibe el paquete de daño YA construido por la ability.
+//   DamageTypes aporta el daño base y AttributeScalings añade explícitamente
+//   Ratio × Atributo. Ni PhysicalDamage ni MagicDamage se suman aquí de forma
+//   automática; así cada arma/hechizo controla su propio ratio sin dobles conteos.
 
 struct PantheliaDamageStatics
 {
@@ -33,10 +33,6 @@ struct PantheliaDamageStatics
     DECLARE_ATTRIBUTE_CAPTUREDEF(ArmorPenetration);
     DECLARE_ATTRIBUTE_CAPTUREDEF(MagicPenetration);
     DECLARE_ATTRIBUTE_CAPTUREDEF(Stamina);
-
-    // Sumando genérico de daño físico (modelo AD de LoL).
-    // Se añade ANTES de la mitigación de Armor a TODOS los tipos físicos.
-    DECLARE_ATTRIBUTE_CAPTUREDEF(PhysicalDamage);
 
     // Resistencias elementales del TARGET
     DECLARE_ATTRIBUTE_CAPTUREDEF(FireResistance);
@@ -53,7 +49,6 @@ struct PantheliaDamageStatics
         DEFINE_ATTRIBUTE_CAPTUREDEF(UPantheliaAttributeSet, ArmorPenetration, Source, false);
         DEFINE_ATTRIBUTE_CAPTUREDEF(UPantheliaAttributeSet, MagicPenetration, Source, false);
         DEFINE_ATTRIBUTE_CAPTUREDEF(UPantheliaAttributeSet, Stamina, Target, false);
-        DEFINE_ATTRIBUTE_CAPTUREDEF(UPantheliaAttributeSet, PhysicalDamage, Source, false);
         DEFINE_ATTRIBUTE_CAPTUREDEF(UPantheliaAttributeSet, FireResistance, Target, false);
         DEFINE_ATTRIBUTE_CAPTUREDEF(UPantheliaAttributeSet, WaterResistance, Target, false);
         DEFINE_ATTRIBUTE_CAPTUREDEF(UPantheliaAttributeSet, StormResistance, Target, false);
@@ -98,7 +93,6 @@ UExecCalc_Damage::UExecCalc_Damage()
     RelevantAttributesToCapture.Add(DamageStatics().ArmorPenetrationDef);
     RelevantAttributesToCapture.Add(DamageStatics().MagicPenetrationDef);
     RelevantAttributesToCapture.Add(DamageStatics().StaminaDef);
-    RelevantAttributesToCapture.Add(DamageStatics().PhysicalDamageDef);
     RelevantAttributesToCapture.Add(DamageStatics().FireResistanceDef);
     RelevantAttributesToCapture.Add(DamageStatics().WaterResistanceDef);
     RelevantAttributesToCapture.Add(DamageStatics().StormResistanceDef);
@@ -476,12 +470,6 @@ void UExecCalc_Damage::Execute_Implementation(
     ExecutionParams.AttemptCalculateCapturedAttributeMagnitude(DamageStatics().MagicPenetrationDef, EvalParams, MagicPenetration);
     MagicPenetration = FMath::Max(0.f, MagicPenetration);
 
-    // PhysicalDamage del SOURCE: addend genérico al daño físico (modelo AD de LoL).
-    // Se suma a TODOS los tipos físicos ANTES de la mitigación de Armor.
-    float PhysicalDamage = 0.f;
-    ExecutionParams.AttemptCalculateCapturedAttributeMagnitude(DamageStatics().PhysicalDamageDef, EvalParams, PhysicalDamage);
-    PhysicalDamage = FMath::Max(0.f, PhysicalDamage);
-
     // --- COEFICIENTES DESDE CURVE TABLE ---
     const UPantheliaCharacterClassInfo* ClassInfo = UPantheliaAbilitySystemLibrary::GetCharacterClassInfo(SourceAvatar);
 
@@ -568,7 +556,7 @@ void UExecCalc_Damage::Execute_Implementation(
         const FGameplayTag& DamageTypeTag = DamageTypePair.Key;
         const FGameplayTag& ResistanceTag = DamageTypePair.Value;
 
-        // El daño ya viene escalado desde SpawnProjectile (spec §1.8)
+        // El daño ya viene escalado desde la fuente común ApplyDamageScalingToSpec.
         float TypeDamage = Spec.GetSetByCallerMagnitude(DamageTypeTag, false);
         if (TypeDamage <= 0.f) continue;
 
@@ -576,21 +564,16 @@ void UExecCalc_Damage::Execute_Implementation(
 
         if (bIsPhysical)
         {
-            // PASO 2 (spec §1.8): PhysicalDamage como addend genérico al daño físico.
-            // Se suma ANTES de la mitigación de Armor porque es daño bruto.
-            // Modelo: AD en LoL — escala auto-ataques, armas y cualquier daño físico.
-            // Si la ability también usa PhysicalDamage como ratio en AttributeScalings,
-            // cuenta dos veces (comportamiento intencional — igual que AD en LoL).
-            TypeDamage += PhysicalDamage;
-
+            // PASO 2: el daño base y sus ratios ya llegaron resueltos en el spec.
+            // El ExecCalc solo aplica mitigación; no añade PhysicalDamage otra vez.
             // PASO 3: Mitigación de Armor
             TypeDamage *= FMath::Max(0.f, (100.f - EffectiveArmor * EffArmorCoeff) / 100.f);
         }
         else
         {
             // PASO 3 (mágico): mitigación real de MagicResistance después de
-            // MagicPenetration. MagicDamage no se suma aquí: el daño directo lo usa
-            // como ratio en la ability y los estados lo consultan en su payload global.
+            // MagicPenetration. Igual que PhysicalDamage, MagicDamage solo contribuye
+            // cuando la fuente lo declara mediante AttributeScalings.
             TypeDamage *= FMath::Max(
                 0.f,
                 (100.f - EffectiveMagicResistance * EffMagicResistanceCoeff) / 100.f);

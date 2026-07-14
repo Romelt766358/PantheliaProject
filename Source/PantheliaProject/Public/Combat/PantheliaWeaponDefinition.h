@@ -15,6 +15,50 @@ class UAnimMontage;
 class USoundBase;
 
 /**
+ * FPantheliaWeaponAttackModifiers
+ *
+ * Perfil ofensivo de una CATEGORÍA de ataque del arma. El arma conserva una única
+ * identidad base (DamageTypes, PoiseDamage y BuildupAmounts), mientras cada tipo
+ * de golpe decide cuánto multiplica cada canal de forma independiente.
+ *
+ * Esta separación evita acoplar el daño de vida al daño de postura: un pesado puede
+ * romper mucha más postura sin tener que inflar en la misma proporción el daño a HP.
+ * También deja un punto de extensión estable para que árbol de habilidades, corazones,
+ * equipo y buffs apliquen modificadores runtime encima de estos valores base mediante GAS.
+ */
+USTRUCT(BlueprintType)
+struct PANTHELIAPROJECT_API FPantheliaWeaponAttackModifiers
+{
+	GENERATED_BODY()
+
+	FPantheliaWeaponAttackModifiers() = default;
+
+	FPantheliaWeaponAttackModifiers(
+		const float InDamageMultiplier,
+		const float InPoiseDamageMultiplier,
+		const float InBuildupMultiplier)
+		: DamageMultiplier(InDamageMultiplier)
+		, PoiseDamageMultiplier(InPoiseDamageMultiplier)
+		, BuildupMultiplier(InBuildupMultiplier)
+	{
+	}
+
+	// Multiplica el paquete ofensivo de la categoría después de calcular:
+	// DañoBase + Σ(Ratio × Atributo). Así Light, Heavy y Charged Heavy pueden
+	// modificar el resultado completo sin volver a implementar el escalado.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attack Modifiers", meta = (ClampMin = "0.0"))
+	float DamageMultiplier = 1.f;
+
+	// Multiplica únicamente el daño de postura del golpe.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attack Modifiers", meta = (ClampMin = "0.0"))
+	float PoiseDamageMultiplier = 1.f;
+
+	// Multiplica únicamente el buildup elemental depositado por el golpe.
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Attack Modifiers", meta = (ClampMin = "0.0"))
+	float BuildupMultiplier = 1.f;
+};
+
+/**
  * UPantheliaWeaponDefinition
  *
  * DataAsset que define TODOS los datos de un arma del jugador (modelo soulslike,
@@ -110,11 +154,35 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Moveset")
 	TObjectPtr<UAnimMontage> ChargedHeavyMontage;
 
-	// Multiplicador de dano del pesado cargado respecto al dano base del arma.
-	// Ej. 2.0 = el cargado hace el doble del dano base. El especial (tap) usa el dano
-	// base sin multiplicar (o podriamos darle su propio multiplicador en el futuro).
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Moveset")
+	// Campo legacy conservado para que los WeaponDefinition existentes puedan cargar
+	// el valor serializado anterior sin invalidar el asset. El runtime nuevo NO lo usa:
+	// configurar ChargedHeavyAttackModifiers.DamageMultiplier en su lugar.
+	UPROPERTY()
 	float ChargedHeavyDamageMultiplier = 2.0f;
+
+	// ----------------------------------------------------------------
+	// PERFILES OFENSIVOS POR CATEGORÍA DE ATAQUE
+	// ----------------------------------------------------------------
+	// Estos perfiles multiplican por separado el daño a HP, el daño de postura y el
+	// buildup base del arma. Los valores son datos base del moveset; modificadores
+	// runtime del árbol/corazones/equipo se aplicarán encima mediante GAS.
+
+	// Ataques ligeros, incluido el golpe ligero de apertura después de un dodge.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Attack Profiles")
+	FPantheliaWeaponAttackModifiers LightAttackModifiers =
+		FPantheliaWeaponAttackModifiers(1.f, 1.f, 1.f);
+
+	// Ataques pesados de pulsación corta y su apertura después de un dodge.
+	// Por defecto conservan el daño a HP base, pero aplican 50% más daño de postura.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Attack Profiles")
+	FPantheliaWeaponAttackModifiers HeavyAttackModifiers =
+		FPantheliaWeaponAttackModifiers(1.f, 1.5f, 1.f);
+
+	// Ataque pesado cargado. Por defecto duplica el daño a HP y aplica 2.5 veces
+	// el daño de postura base. El buildup queda independiente y empieza en 1.0.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Attack Profiles")
+	FPantheliaWeaponAttackModifiers ChargedHeavyAttackModifiers =
+		FPantheliaWeaponAttackModifiers(2.f, 2.5f, 1.f);
 
 	// ----------------------------------------------------------------
 	// SONIDO DE IMPACTO (audio del golpe al conectar)
@@ -141,9 +209,17 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Damage")
 	TMap<FGameplayTag, FScalableFloat> DamageTypes;
 
-	// Escalado por atributos del jugador (modelo de stats que ya usan las abilities).
-	// Máximo 2 entradas (regla de diseño de FAbilityAttributeScaling).
-	// Ej: espada que escala con un atributo de fuerza al 60%.
+	// Escalado por atributos del jugador (modelo LoL, declarado por cada arma).
+	// Fórmula antes del perfil de ataque:
+	//   Daño bruto = Daño base + Σ(Ratio × Atributo del portador)
+	//
+	// Ejemplo para PhysicalDamage:
+	//   arma rápida  -> Attributes.Secondary.PhysicalDamage, Ratio 0.7
+	//   arma lenta   -> Attributes.Secondary.PhysicalDamage, Ratio 2.1
+	//
+	// PhysicalDamage NO se añade automáticamente en ExecCalc_Damage. Si un arma
+	// debe aprovecharlo, tiene que declararlo aquí. Máximo 2 entradas según las
+	// reglas de diseño de FAbilityAttributeScaling.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Damage",
 		meta = (TitleProperty = "AttributeTag"))
 	TArray<FAbilityAttributeScaling> AttributeScalings;

@@ -43,10 +43,15 @@ enum class EPantheliaAbilityInputActivationPolicy : uint8
  *     del estado actual del personaje.
  *   - Los ratios son fijos (no escalan por nivel — la curva de daño base ya lo hace).
  *
- * ASIMETRÍA PhysicalDamage vs MagicDamage (modelo LoL, spec §1.7):
- *   - PhysicalDamage (AD): también se suma como addend genérico en ExecCalc_Damage.
- *     Si se usa aquí como ratio, se aplica dos veces para esa habilidad (intencional).
- *   - MagicDamage (AP): NO se suma en el ExecCalc — solo existe como ratio aquí.
+ * MODELO DE ESCALADO (estilo LoL):
+ *   - Ningún atributo ofensivo se suma automáticamente dentro de ExecCalc_Damage.
+ *   - Cada fuente de daño declara explícitamente sus ratios en AttributeScalings.
+ *   - Fórmula bruta: DañoBase + Σ(Ratio × AtributoDelCaster).
+ *   - Ejemplo de arma rápida: PhysicalDamage con Ratio=0.7.
+ *   - Ejemplo de arma lenta: PhysicalDamage con Ratio=2.1.
+ *
+ * Esta política evita dobles conteos y permite que dos armas con el mismo daño base
+ * aprovechen PhysicalDamage de forma completamente distinta sin tocar el ExecCalc.
  */
 USTRUCT(BlueprintType)
 struct FAbilityAttributeScaling

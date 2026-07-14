@@ -77,10 +77,26 @@ void UPantheliaBossBrainComponent::BindRuntimeDelegates()
 				this,
 				&UPantheliaBossBrainComponent::HandleOwnerHealthChanged);
 	}
+
+	if (OwnerEnemy && !bOwnerDeathDelegateBound)
+	{
+		OwnerEnemy->GetOnDeathDelegate().AddDynamic(
+			this,
+			&UPantheliaBossBrainComponent::HandleOwnerDeath);
+		bOwnerDeathDelegateBound = true;
+	}
 }
 
 void UPantheliaBossBrainComponent::UnbindRuntimeDelegates()
 {
+	if (OwnerEnemy && bOwnerDeathDelegateBound)
+	{
+		OwnerEnemy->GetOnDeathDelegate().RemoveDynamic(
+			this,
+			&UPantheliaBossBrainComponent::HandleOwnerDeath);
+		bOwnerDeathDelegateBound = false;
+	}
+
 	if (!OwnerASC)
 	{
 		AbilityEndedDelegateHandle.Reset();
@@ -112,6 +128,11 @@ void UPantheliaBossBrainComponent::UnbindRuntimeDelegates()
 
 void UPantheliaBossBrainComponent::HandleOwnerAbilityEnded(const FAbilityEndedData& AbilityEndedData)
 {
+	if (bOwnerDead)
+	{
+		return;
+	}
+
 	if (!CurrentAbilitySpecHandle.IsValid()
 		|| AbilityEndedData.AbilitySpecHandle != CurrentAbilitySpecHandle)
 	{
@@ -130,7 +151,9 @@ void UPantheliaBossBrainComponent::HandleOwnerAbilityEnded(const FAbilityEndedDa
 
 void UPantheliaBossBrainComponent::HandleOwnerHealthChanged(const FOnAttributeChangeData& AttributeChangeData)
 {
-	if (FMath::IsNearlyEqual(AttributeChangeData.OldValue, AttributeChangeData.NewValue))
+	if (FMath::IsNearlyEqual(AttributeChangeData.OldValue, AttributeChangeData.NewValue)
+		|| AttributeChangeData.NewValue <= 0.f
+		|| IsOwnerDead())
 	{
 		return;
 	}
@@ -138,6 +161,35 @@ void UPantheliaBossBrainComponent::HandleOwnerHealthChanged(const FOnAttributeCh
 	// La fase se actualiza al cruzar el umbral, pero la acción en curso no se cancela.
 	// La nueva fase entra en vigor en la siguiente llamada a SelectAction().
 	UpdatePhaseFromHealth();
+}
+
+void UPantheliaBossBrainComponent::HandleOwnerDeath(AActor* DeadActor)
+{
+	if (DeadActor != OwnerEnemy || bOwnerDead)
+	{
+		return;
+	}
+
+	bOwnerDead = true;
+
+	if (OwnerASC)
+	{
+		OwnerASC->SetLooseGameplayTagCount(
+			FPantheliaGameplayTags::Get().Boss_State_Dead,
+			1);
+	}
+
+	// Las abilities activas ya fueron canceladas por APantheliaCharacterBase::Die.
+	// Limpiamos el estado de decisión para que ninguna lectura tardía conserve una
+	// acción seleccionada sobre el cadáver.
+	ClearCurrentAction();
+
+	if (bLogActionLifecycle || bLogActionSelection)
+	{
+		UE_LOG(LogPanthelia, Log,
+			TEXT("[BOSS DEATH] Boss=%s BrainShutdown=true"),
+			*GetNameSafe(GetOwner()));
+	}
 }
 
 void UPantheliaBossBrainComponent::TryInitializeNextTick()
@@ -160,7 +212,11 @@ bool UPantheliaBossBrainComponent::InitializeBossFromProfile()
 {
 	CacheOwnerData();
 
-	if (!OwnerEnemy || !OwnerASC || !OwnerAttributeSet || !BossProfile)
+	if (IsOwnerDead()
+		|| !OwnerEnemy
+		|| !OwnerASC
+		|| !OwnerAttributeSet
+		|| !BossProfile)
 	{
 		return false;
 	}
@@ -216,12 +272,23 @@ bool UPantheliaBossBrainComponent::ApplyStatsPreset(const FPantheliaBossStatsPre
 
 bool UPantheliaBossBrainComponent::HasValidTargetContext(AActor* TargetActor) const
 {
-	return OwnerEnemy && OwnerASC && TargetActor;
+	if (!OwnerEnemy || !OwnerASC || !IsValid(TargetActor) || IsOwnerDead())
+	{
+		return false;
+	}
+
+	if (TargetActor->Implements<UCombatInterface>()
+		&& ICombatInterface::Execute_IsDead(TargetActor))
+	{
+		return false;
+	}
+
+	return true;
 }
 
 void UPantheliaBossBrainComponent::SetCombatTarget(AActor* TargetActor) const
 {
-	if (OwnerEnemy)
+	if (OwnerEnemy && !IsOwnerDead())
 	{
 		OwnerEnemy->SetCombatTarget_Implementation(TargetActor);
 	}
@@ -272,7 +339,7 @@ float UPantheliaBossBrainComponent::GetAngleToTarget(AActor* TargetActor) const
 
 bool UPantheliaBossBrainComponent::UpdatePhaseFromHealth()
 {
-	if (!BossProfile)
+	if (IsOwnerDead() || !BossProfile)
 	{
 		return false;
 	}
@@ -419,6 +486,11 @@ void UPantheliaBossBrainComponent::StartActionCooldown(const FPantheliaBossActio
 
 bool UPantheliaBossBrainComponent::SelectAction(AActor* TargetActor, FPantheliaBossActionDefinition& OutAction)
 {
+	if (IsOwnerDead())
+	{
+		return false;
+	}
+
 	if (!BossProfile)
 	{
 		SetActionFailure(EPantheliaBossActionFailureReason::NoProfile, true);
@@ -836,6 +908,11 @@ void UPantheliaBossBrainComponent::ShowActionDebugMessage(const TCHAR* Prefix, c
 
 bool UPantheliaBossBrainComponent::TryExecuteAction(AActor* TargetActor, const FGameplayTag& ActionTag)
 {
+	if (IsOwnerDead())
+	{
+		return false;
+	}
+
 	if (!OwnerEnemy)
 	{
 		SetActionFailure(EPantheliaBossActionFailureReason::InvalidAction, true);
@@ -923,6 +1000,11 @@ bool UPantheliaBossBrainComponent::TryExecuteAction(AActor* TargetActor, const F
 
 void UPantheliaBossBrainComponent::RefreshActionRuntimeState()
 {
+	if (IsOwnerDead())
+	{
+		return;
+	}
+
 	if (IsActionTerminal() || CurrentActionState != EPantheliaBossActionRuntimeState::Running)
 	{
 		return;
@@ -986,7 +1068,7 @@ void UPantheliaBossBrainComponent::MarkActionInterrupted()
 
 bool UPantheliaBossBrainComponent::HasSelectedAction() const
 {
-	return CurrentActionTag.IsValid();
+	return !IsOwnerDead() && CurrentActionTag.IsValid();
 }
 
 bool UPantheliaBossBrainComponent::IsActionRunning() const
@@ -1023,7 +1105,7 @@ bool UPantheliaBossBrainComponent::WasActionInterrupted() const
 
 bool UPantheliaBossBrainComponent::IsInterruptionRecoveryActive() const
 {
-	if (!WasActionInterrupted() || !OwnerASC)
+	if (IsOwnerDead() || !WasActionInterrupted() || !OwnerASC)
 	{
 		return false;
 	}
@@ -1031,6 +1113,18 @@ bool UPantheliaBossBrainComponent::IsInterruptionRecoveryActive() const
 	const FPantheliaGameplayTags& Tags = FPantheliaGameplayTags::Get();
 	return OwnerASC->HasMatchingGameplayTag(Tags.Effects_HitReact)
 		|| OwnerASC->HasMatchingGameplayTag(Tags.Effects_Stagger);
+}
+
+bool UPantheliaBossBrainComponent::IsOwnerDead() const
+{
+	if (bOwnerDead)
+	{
+		return true;
+	}
+
+	return !OwnerEnemy
+		|| (OwnerEnemy->Implements<UCombatInterface>()
+			&& ICombatInterface::Execute_IsDead(OwnerEnemy));
 }
 
 void UPantheliaBossBrainComponent::ClearCurrentAction()
@@ -1049,7 +1143,7 @@ void UPantheliaBossBrainComponent::ClearCurrentAction()
 
 bool UPantheliaBossBrainComponent::ActivateActionAbility(const FPantheliaBossActionDefinition& Action)
 {
-	if (!OwnerASC || !Action.AbilityTag.IsValid())
+	if (IsOwnerDead() || !OwnerASC || !Action.AbilityTag.IsValid())
 	{
 		return false;
 	}

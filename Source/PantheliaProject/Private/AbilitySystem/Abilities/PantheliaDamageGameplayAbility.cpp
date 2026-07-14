@@ -60,11 +60,21 @@ FTaggedMontage UPantheliaDamageGameplayAbility::GetRandomTaggedMontageFromArray(
 }
 
 void UPantheliaDamageGameplayAbility::ApplyDamageScalingToSpec(
-	FGameplayEffectSpecHandle& SpecHandle, UAbilitySystemComponent* SourceASC, float DamageMultiplier) const
+	FGameplayEffectSpecHandle& SpecHandle,
+	UAbilitySystemComponent* SourceASC,
+	float DamageMultiplier,
+	float PoiseDamageMultiplier,
+	float BuildupMultiplier) const
 {
 	if (!SpecHandle.IsValid() || !SourceASC) return;
 
 	const FPantheliaGameplayTags& GameplayTags = FPantheliaGameplayTags::Get();
+
+	// Los perfiles de ataque son datos editables. Los normalizamos aquí para que un
+	// valor negativo accidental nunca invierta daño, postura o buildup en runtime.
+	const float SafeDamageMultiplier = FMath::Max(0.f, DamageMultiplier);
+	const float SafePoiseDamageMultiplier = FMath::Max(0.f, PoiseDamageMultiplier);
+	const float SafeBuildupMultiplier = FMath::Max(0.f, BuildupMultiplier);
 
 	// ESCRIBIR SIEMPRE la política de dodge en el context compartido del spec.
 	// Este método es el punto común de melee enemigo, proyectiles y ataques con arma;
@@ -104,7 +114,9 @@ void UPantheliaDamageGameplayAbility::ApplyDamageScalingToSpec(
 		}
 	}
 
-	// PASO 2: Escalado por atributos secundarios/vitales del caster.
+	// PASO 2: Escalado explícito por atributos secundarios/vitales del caster.
+	// Fórmula: TotalScaling = Σ(Ratio × Atributo). PhysicalDamage y MagicDamage
+	// solo participan cuando la fuente los declara en AttributeScalings.
 	// Usamos TagsToAttributes del AttributeSet para lookup genérico sin if-else.
 	float TotalScaling = 0.f;
 
@@ -140,18 +152,20 @@ void UPantheliaDamageGameplayAbility::ApplyDamageScalingToSpec(
 	}
 
 	// PASO 5: Asignar cada tipo de daño escalado al SetByCaller.
-	// DamageMultiplier (1.0 por defecto) escala el daño final — lo usa el ataque pesado
-	// cargado del jugador (hold) para pegar más fuerte que el especial/ligero. Se aplica
+	// DamageMultiplier (1.0 por defecto) escala el daño final. Los perfiles de ataque
+	// del arma pueden dar valores distintos a Light, Heavy y Charged Heavy. Se aplica
 	// aquí, sobre el daño ya escalado por atributos, para que el multiplicador afecte al
 	// total final de forma predecible.
 	for (const auto& DamagePair : ScaledDamages)
 	{
 		UAbilitySystemBlueprintLibrary::AssignTagSetByCallerMagnitude(
-			SpecHandle, DamagePair.Key, DamagePair.Value * DamageMultiplier);
+			SpecHandle, DamagePair.Key, DamagePair.Value * SafeDamageMultiplier);
 	}
 
-	// Daño a la postura (no se escala — es un valor de arma/habilidad directo)
-	const float ScaledPoiseDamage = PoiseDamage.GetValueAtLevel(GetAbilityLevel());
+	// Daño a la postura. El valor base sigue siendo directo del arma/habilidad, pero
+	// el perfil del tipo de ataque puede multiplicarlo sin alterar el daño a HP.
+	const float ScaledPoiseDamage =
+		PoiseDamage.GetValueAtLevel(GetAbilityLevel()) * SafePoiseDamageMultiplier;
 	if (ScaledPoiseDamage > 0.f)
 	{
 		UAbilitySystemBlueprintLibrary::AssignTagSetByCallerMagnitude(
@@ -229,7 +243,8 @@ void UPantheliaDamageGameplayAbility::ApplyDamageScalingToSpec(
 	{
 		const EPantheliaElement* ElementPtr = GameplayTags.DamageTypeToElement.Find(BuildupPair.Key);
 		if (!ElementPtr) continue;
-		const float Amount = BuildupPair.Value.GetValueAtLevel(GetAbilityLevel());
+		const float Amount =
+			BuildupPair.Value.GetValueAtLevel(GetAbilityLevel()) * SafeBuildupMultiplier;
 		switch (*ElementPtr)
 		{
 			case EPantheliaElement::Fire:   ElementBuildup[0] += Amount; break;

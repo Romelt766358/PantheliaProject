@@ -9,6 +9,7 @@
 class UPantheliaWeaponDefinition;
 class UAnimMontage;
 class UAbilityTask_PlayMontageAndWait;
+struct FPantheliaWeaponAttackModifiers;
 
 /**
  * EPlayerAttackType
@@ -172,13 +173,15 @@ protected:
 
 	// Prepara el dano del golpe en el WeaponTraceComponent del jugador (mesh + spec).
 	// Protected para que las hijas configuren el trace de sus propios montages.
-	// DamageMultiplier escala el dano (1.0 = sin cambio; el pesado cargado usa >1).
-	void SetupWeaponTraceForCurrentAttack(float DamageMultiplier = 1.0f);
+	// AttackModifiers separa daño a HP, postura y buildup por categoría de ataque.
+	void SetupWeaponTraceForCurrentAttack(
+		const FPantheliaWeaponAttackModifiers& AttackModifiers);
 
 	// Construye el spec de dano desde el arma equipada (dano + scaling + poise).
-	// DamageMultiplier escala el dano final (1.0 = sin cambio; el pesado cargado usa >1).
-	// Protected y con multiplicador para que el pesado cargado reutilice el pipeline.
-	FGameplayEffectSpecHandle MakeWeaponDamageSpec(float DamageMultiplier = 1.0f);
+	// Cada canal usa su multiplicador independiente del perfil ofensivo recibido.
+	// Protected para que el pesado cargado reutilice exactamente el mismo pipeline.
+	FGameplayEffectSpecHandle MakeWeaponDamageSpec(
+		const FPantheliaWeaponAttackModifiers& AttackModifiers);
 
 	// Copia los datos de daño del arma equipada a las propiedades heredadas de la
 	// ability para que el pipeline compartido ApplyDamageScalingToSpec los use.
