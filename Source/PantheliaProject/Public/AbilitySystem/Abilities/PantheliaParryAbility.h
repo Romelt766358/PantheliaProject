@@ -11,9 +11,11 @@ class UAnimMontage;
 /**
  * EParryType
  * Distingue las dos defensas del jugador (modelo Lies of P):
- *  - Physical: brazo derecho / arma. Parry perfecto anula dano fisico y rompe postura.
- *  - Magic:    brazo izquierdo / elemento. Parry perfecto anula dano magico y efectos.
- * La logica de ambas es identica; solo cambian los GameplayTags de estado que conceden
+ *  - Physical: brazo derecho / arma. Un golpe con componente fisico puede ser parry perfecto.
+ *  - Magic:    brazo izquierdo / elemento. Un golpe con componente magico puede ser parry perfecto.
+ * Una vez reconocido el parry perfecto, se anula el paquete ofensivo COMPLETO del golpe,
+ * aunque fuera mixto. La logica de ambas defensas es identica; solo cambian los
+ * GameplayTags de estado que conceden
  * y los valores del arma que consultan. Por eso una sola clase C++ parametrizada, con
  * dos Blueprints derivados (GA_Parry_Physical / GA_Parry_Magic) que setean este enum.
  */
@@ -25,22 +27,37 @@ enum class EParryType : uint8
 };
 
 /**
+ * EPantheliaParryRuntimeState
+ * Estado lógico de la defensa. Está separado de los Gameplay Tags porque State.Block.X
+ * se concede desde el primer frame para el blend visual y no identifica por sí solo si
+ * la ability sigue en ventana perfecta o ya entró en guardia sostenida.
+ */
+UENUM(BlueprintType)
+enum class EPantheliaParryRuntimeState : uint8
+{
+	Inactive UMETA(DisplayName = "Inactive"),
+	PerfectWindow UMETA(DisplayName = "Perfect Window"),
+	SustainedGuard UMETA(DisplayName = "Sustained Guard"),
+	Ending UMETA(DisplayName = "Ending")
+};
+
+/**
  * UPantheliaParryAbility
  *
  * Defensa del jugador con el sistema "perfect guard" de Lies of P. Terminologia del
  * proyecto: PARRY = bloqueo perfecto (input dentro de la ventana); BLOQUEO = bloqueo
  * imperfecto (fuera de la ventana, mientras se mantiene la guardia).
  *
- * FLUJO (Fase 1 — solo estado y animacion, sin mitigacion de dano todavia):
- *   1. Al activar: reproduce el montage de guardia y concede el tag State.Parry.X
- *      durante ParryWindow segundos (0.2 por defecto, ajustable).
- *   2. Si la ventana expira y el jugador SIGUE mateniendo el boton: cambia a
- *      State.Block.X (bloqueo imperfecto sostenido).
- *   3. Al soltar el boton: termina la ability (quita los tags de estado).
+ * FLUJO ACTUAL:
+ *   1. Al activar: paga el coste de entrada, reproduce la guardia y abre PerfectWindow.
+ *   2. Soltar durante PerfectWindow NO la cancela; solo evita la guardia sostenida.
+ *   3. Si la ventana expira y el jugador sigue manteniendo el boton: entra en
+ *      SustainedGuard (bloqueo imperfecto sostenido).
+ *   4. Soltar durante SustainedGuard termina la ability y limpia los tags.
  *
- * El ExecCalc del dano entrante (Fase 2) leera estos tags de estado del defensor para
- * decidir anular/mitigar el dano. La reaccion (dano de postura al enemigo, efectos
- * elementales) vendra en la Fase 3.
+ * ExecCalc_Damage lee los tags defensivos para decidir anulación/mitigación. El enum
+ * EPantheliaParryRuntimeState es la fuente de verdad del flujo; State.Block.X también
+ * existe durante PerfectWindow para sostener el blend visual y no identifica la fase.
  *
  * SISTEMA DE COSTES (dos momentos):
  *   1. Al entrar en la ventana de parry (ActivateAbility → CommitAbility):
@@ -48,11 +65,15 @@ enum class EParryType : uint8
  *      Representa el esfuerzo inicial de intentar un parry.
  *   2. Al transicionar a bloqueo sostenido (OnParryWindowExpired con boton presionado):
  *      aplica BlockTransitionCostEffectClass (tambien asignado en el Blueprint).
- *      Representa el coste de mantener la guardia firme cuando no pudiste parry.
- *      Es un coste PUNTUAL (no drenaje continuo). El drenaje continuo por bloqueo
- *      se dejara para cuando el sistema de stamina este mas maduro.
+ *      Representa el coste puntual de pasar a guardia sostenida. Si no puede pagarse,
+ *      la guardia se rompe inmediatamente y reutiliza el pipeline de Stagger.
+ *   3. Cada impacto defendido paga un coste calculado desde la WeaponDefinition:
+ *      Normal = coste base, Heavy = coste base x multiplicador, parry perfecto = coste
+ *      fijo relativo al coste base. Llegar exactamente a 0 mantiene la guardia; el
+ *      siguiente impacto no pagable provoca State.GuardBroken + Stagger.
  *
- * El coste de estamina sale del arma equipada (ParryStaminaCost / BlockStaminaCost).
+ * Los Cost Gameplay Effects gobiernan entrada/transición. La WeaponDefinition gobierna
+ * el coste por impacto, para que arma, perks y balance futuro compartan una sola fuente.
  */
 UCLASS()
 class PANTHELIAPROJECT_API UPantheliaParryAbility : public UPantheliaGameplayAbility
@@ -62,17 +83,17 @@ class PANTHELIAPROJECT_API UPantheliaParryAbility : public UPantheliaGameplayAbi
 public:
 	UPantheliaParryAbility();
 
-	// Llamado por el ASC cuando el jugador suelta el boton de bloqueo. Termina la guardia.
+	// Llamado por el ASC cuando el jugador suelta el boton. Durante PerfectWindow solo
+	// registra el release; durante SustainedGuard termina la guardia.
 	// (El sistema de input custom del proyecto no alimenta el InputReleased interno de GAS
 	// de forma fiable, asi que lo notificamos explicitamente, igual que el heavy attack.)
 	void NotifyBlockInputReleased();
 
-	// Llamado por el ASC cuando el sistema de dano detecta que esta ability paro un golpe.
-	// Reproduce el retroceso correspondiente saltando a la seccion del montage de guardia:
-	//   - bWasPerfectParry = true  -> seccion ParryHitSectionName (retroceso de parry)
-	//   - bWasPerfectParry = false -> seccion BlockHitSectionName (retroceso de bloqueo)
-	// Si el GuardMontage o la seccion no existen, solo loguea (no rompe el flujo).
-	void NotifyParryImpact(bool bWasPerfectParry);
+	// Llamado por el ASC cuando el pipeline de daño detecta parry o bloqueo. Mantiene el
+	// GuardLoopMontage intacto, dispara el Gameplay Cue defensivo y aplica retroceso físico
+	// únicamente al bloqueo imperfecto. El parry perfecto no desplaza al jugador.
+	// Una guardia rota termina la ability y deja la reacción al pipeline de Stagger.
+	void NotifyParryImpact(bool bWasPerfectParry, bool bGuardBroken);
 
 protected:
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle,
@@ -94,7 +115,8 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Parry", meta = (ClampMin = "0.0"))
 	float ParryWindow = 0.2f;
 
-	// Montage de guardia (entrar en pose de bloqueo). Opcional en Fase 1.
+	// Montage de entrada a guardia. Puede quedar sin asignar si la presentación se
+	// resuelve completamente mediante GuardLoopMontage/AnimBlueprint.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Parry")
 	TObjectPtr<UAnimMontage> GuardMontage;
 
@@ -106,25 +128,19 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Parry")
 	TObjectPtr<UAnimMontage> GuardLoopMontage;
 
-	// Nombre de la seccion del GuardMontage a la que se salta cuando el defensor logra un
-	// PARRY PERFECTO y recibe el impacto (retroceso de parry). Configurable por si el
-	// montage usa otro nombre. Si la seccion no existe, NotifyParryImpact solo loguea.
+	// Campos legacy reservados para una posible reacción aditiva futura. NotifyParryImpact
+	// no salta actualmente a estas secciones, para no romper el GuardLoopMontage.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Parry")
 	FName ParryHitSectionName = FName("ParryHit");
 
-	// Nombre de la seccion del GuardMontage a la que se salta cuando el defensor BLOQUEA
-	// (imperfecto) y recibe el impacto (retroceso de bloqueo).
+	// Sección legacy equivalente para bloqueo imperfecto. Se conserva por compatibilidad
+	// con los Class Defaults existentes, pero no gobierna el flujo runtime actual.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Parry")
 	FName BlockHitSectionName = FName("BlockHit");
 
-	// Retroceso fisico (knockback) al recibir un golpe en PARRY perfecto. Es el empujon
-	// hacia atras que da feel de impacto (estilo Lies of P / Sekiro). Mas fuerte que el de
-	// bloqueo porque un parry perfecto repele con mas energia. En cm/s (velocidad de launch).
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Parry")
-	float ParryKnockbackSpeed = 600.f;
-
-	// Retroceso fisico al recibir un golpe en BLOQUEO imperfecto. Mas suave que el parry:
-	// el bloqueo absorbe, no repele. En cm/s.
+	// Retroceso fisico al recibir un golpe en BLOQUEO imperfecto. El parry perfecto
+	// no desplaza al jugador porque anula por completo la consecuencia ofensiva del golpe.
+	// En cm/s.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Parry")
 	float BlockKnockbackSpeed = 350.f;
 
@@ -159,11 +175,14 @@ private:
 	// porque no necesitamos esperar su fin: la guardia la termina el input/la ventana.
 	void PlayGuardLoopMontage();
 
-	// Aplica un pequeno retroceso fisico (knockback) al personaje hacia atras, para dar
-	// feel de impacto al recibir un golpe en guardia/parry (estilo Lies of P / Sekiro).
-	// La direccion es opuesta a hacia donde mira el personaje. La fuerza la decide
-	// bWasPerfectParry (ParryKnockbackSpeed vs BlockKnockbackSpeed).
-	void ApplyGuardKnockback(bool bWasPerfectParry);
+	// Intenta pagar el GE de transición a guardia sostenida. Evalúa el modificador
+	// de Stamina del spec para permitir que el coste deje exactamente 0. Si no puede
+	// pagarse, vacía la stamina restante y dispara guardia rota/Stagger.
+	bool TryPayBlockTransitionCost();
+
+	// Aplica un pequeno retroceso fisico al personaje al recibir un golpe en bloqueo
+	// imperfecto. El parry perfecto no llama este helper.
+	void ApplyGuardKnockback();
 
 	// Dispara el Gameplay Cue correspondiente al tipo de parry/bloqueo.
 	// Selecciona el tag segun EParryType (Physical/Magic) y bWasPerfectParry.
@@ -178,6 +197,10 @@ private:
 
 	// True mientras el jugador mantiene presionado el boton de bloqueo.
 	bool bInputHeld = false;
+
+	// Fuente de verdad del flujo defensivo. No inferir la fase desde State.Block.X:
+	// ese tag existe también durante PerfectWindow para mantener la pose upper-body.
+	EPantheliaParryRuntimeState RuntimeState = EPantheliaParryRuntimeState::Inactive;
 
 	FTimerHandle ParryWindowTimerHandle;
 };

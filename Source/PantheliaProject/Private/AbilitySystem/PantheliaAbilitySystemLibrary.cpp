@@ -209,6 +209,82 @@ void UPantheliaAbilitySystemLibrary::SetDodgeResponse(
 	}
 }
 
+EPantheliaDefenseAttackType UPantheliaAbilitySystemLibrary::GetDefenseAttackType(
+	const FGameplayEffectContextHandle& EffectContextHandle)
+{
+	const FPantheliaGameplayEffectContext* PantheliaContext =
+		static_cast<const FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+
+	if (PantheliaContext)
+	{
+		return PantheliaContext->GetDefenseAttackType();
+	}
+
+	return EPantheliaDefenseAttackType::Normal;
+}
+
+void UPantheliaAbilitySystemLibrary::SetDefenseAttackType(
+	FGameplayEffectContextHandle& EffectContextHandle,
+	EPantheliaDefenseAttackType InDefenseAttackType)
+{
+	FPantheliaGameplayEffectContext* PantheliaContext =
+		static_cast<FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+
+	if (PantheliaContext)
+	{
+		PantheliaContext->SetDefenseAttackType(InDefenseAttackType);
+	}
+}
+
+EPantheliaHitOutcome UPantheliaAbilitySystemLibrary::GetHitOutcome(
+	const FGameplayEffectContextHandle& EffectContextHandle)
+{
+	const FPantheliaGameplayEffectContext* PantheliaContext =
+		static_cast<const FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+
+	if (PantheliaContext)
+	{
+		return PantheliaContext->GetHitOutcome();
+	}
+
+	return EPantheliaHitOutcome::Unresolved;
+}
+
+void UPantheliaAbilitySystemLibrary::SetHitOutcome(
+	FGameplayEffectContextHandle& EffectContextHandle,
+	EPantheliaHitOutcome InHitOutcome)
+{
+	FPantheliaGameplayEffectContext* PantheliaContext =
+		static_cast<FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+
+	if (PantheliaContext)
+	{
+		PantheliaContext->SetHitOutcome(InHitOutcome);
+	}
+}
+
+bool UPantheliaAbilitySystemLibrary::WasGuardBroken(
+	const FGameplayEffectContextHandle& EffectContextHandle)
+{
+	const FPantheliaGameplayEffectContext* PantheliaContext =
+		static_cast<const FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+
+	return PantheliaContext && PantheliaContext->WasGuardBroken();
+}
+
+void UPantheliaAbilitySystemLibrary::SetWasGuardBroken(
+	FGameplayEffectContextHandle& EffectContextHandle,
+	bool bInWasGuardBroken)
+{
+	FPantheliaGameplayEffectContext* PantheliaContext =
+		static_cast<FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+
+	if (PantheliaContext)
+	{
+		PantheliaContext->SetWasGuardBroken(bInWasGuardBroken);
+	}
+}
+
 // ============================================================
 // LECTURA DEL RESULTADO DE DEBUFF (clase 307-308)
 // ============================================================
@@ -687,6 +763,8 @@ FGameplayEffectContextHandle UPantheliaAbilitySystemLibrary::ApplyDamageEffect(
 	EffectContextHandle.AddSourceObject(SourceASC->GetAvatarActor());
 	UPantheliaAbilitySystemLibrary::SetDodgeResponse(
 		EffectContextHandle, DamageEffectParams.DodgeResponse);
+	UPantheliaAbilitySystemLibrary::SetDefenseAttackType(
+		EffectContextHandle, DamageEffectParams.DefenseAttackType);
 
 	const FGameplayEffectSpecHandle SpecHandle = SourceASC->MakeOutgoingSpec(
 		DamageEffectParams.DamageGameplayEffectClass, DamageEffectParams.AbilityLevel, EffectContextHandle);

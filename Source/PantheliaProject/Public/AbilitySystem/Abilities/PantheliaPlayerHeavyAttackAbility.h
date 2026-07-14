@@ -57,6 +57,11 @@ protected:
 	// la deteccion tap-vs-hold (WaitInputRelease + temporizador de umbral).
 	virtual void StartComboFromActivation() override;
 
+	// Una activación heavy normal solo es válida si puede resolver AMBAS decisiones
+	// posibles (tap/especial y hold/cargado). El follow-up de dodge no entra en carga
+	// y usa únicamente la validación de la base.
+	virtual bool HasValidActivationMontage() const override;
+
 	virtual void EndAbility(const FGameplayAbilitySpecHandle Handle,
 		const FGameplayAbilityActorInfo* ActorInfo,
 		const FGameplayAbilityActivationInfo ActivationInfo,

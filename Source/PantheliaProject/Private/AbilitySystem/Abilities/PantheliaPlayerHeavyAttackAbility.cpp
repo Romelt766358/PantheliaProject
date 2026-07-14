@@ -14,6 +14,20 @@ UPantheliaPlayerHeavyAttackAbility::UPantheliaPlayerHeavyAttackAbility()
 	AttackType = EPlayerAttackType::Heavy;
 }
 
+bool UPantheliaPlayerHeavyAttackAbility::HasValidActivationMontage() const
+{
+	// El heavy post-dodge es una entrada ya resuelta y no puede convertirse en
+	// cargado; debe tener montage dedicado o fallback normal válido.
+	if (IsDodgeFollowupEntry())
+	{
+		return Super::HasValidActivationMontage();
+	}
+
+	const UPantheliaWeaponDefinition* WeaponDef = GetEquippedWeaponDefinition();
+	return Super::HasValidActivationMontage() &&
+		WeaponDef && IsValid(WeaponDef->ChargedHeavyMontage.Get());
+}
+
 void UPantheliaPlayerHeavyAttackAbility::StartComboFromActivation()
 {
 	// Un heavy que viene del dodge es una entrada especial ya decidida: reproduce el

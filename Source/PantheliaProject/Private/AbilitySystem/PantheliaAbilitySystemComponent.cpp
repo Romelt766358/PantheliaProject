@@ -473,7 +473,7 @@ void UPantheliaAbilitySystemComponent::NotifyBlockInputReleased(const FGameplayT
 	}
 }
 
-void UPantheliaAbilitySystemComponent::NotifyParryImpact(bool bParried)
+void UPantheliaAbilitySystemComponent::NotifyParryImpact(bool bParried, bool bGuardBroken)
 {
 	// A diferencia de las otras funciones Notify*, aquí NO filtramos por InputTag porque
 	// esta notificación viene del pipeline de daño (AttributeSet::HandleParryReaction),
@@ -490,10 +490,77 @@ void UPantheliaAbilitySystemComponent::NotifyParryImpact(bool bParried)
 		{
 			if (ParryAbility->IsActive())
 			{
-				ParryAbility->NotifyParryImpact(bParried);
+				ParryAbility->NotifyParryImpact(bParried, bGuardBroken);
 				return;
 			}
 		}
+	}
+}
+
+void UPantheliaAbilitySystemComponent::TriggerGuardBreak()
+{
+	const FPantheliaGameplayTags& Tags = FPantheliaGameplayTags::Get();
+
+	// El tag semántico se concede antes de activar Stagger para que cualquier listener
+	// que reaccione al comienzo de la animación ya conozca la causa correcta.
+	if (!HasMatchingGameplayTag(Tags.State_GuardBroken))
+	{
+		AddLooseGameplayTag(Tags.State_GuardBroken);
+	}
+
+	bGuardBreakObservedStagger = HasMatchingGameplayTag(Tags.Effects_Stagger);
+
+	if (!GuardBreakStaggerTagDelegateHandle.IsValid())
+	{
+		GuardBreakStaggerTagDelegateHandle =
+			RegisterGameplayTagEvent(Tags.Effects_Stagger, EGameplayTagEventType::NewOrRemoved)
+			.AddUObject(this, &UPantheliaAbilitySystemComponent::OnGuardBreakStaggerTagChanged);
+	}
+
+	FGameplayTagContainer StaggerTags;
+	StaggerTags.AddTag(Tags.Effects_Stagger);
+	const bool bActivationRequested = TryActivateAbilitiesByTag(StaggerTags);
+
+	// La activación puede añadir el tag sincrónicamente. También cubrimos el caso donde
+	// ya existía un Stagger activo y la guardia rota debe compartir su ventana restante.
+	bGuardBreakObservedStagger =
+		bGuardBreakObservedStagger || HasMatchingGameplayTag(Tags.Effects_Stagger);
+
+	if (!bActivationRequested && !bGuardBreakObservedStagger)
+	{
+		UE_LOG(LogPanthelia, Warning,
+			TEXT("[GUARD BREAK] No se pudo activar Stagger; se retira State.GuardBroken."));
+		ClearGuardBreakState();
+	}
+}
+
+void UPantheliaAbilitySystemComponent::OnGuardBreakStaggerTagChanged(
+	const FGameplayTag /*Tag*/,
+	int32 NewCount)
+{
+	if (NewCount > 0)
+	{
+		bGuardBreakObservedStagger = true;
+		return;
+	}
+
+	if (bGuardBreakObservedStagger)
+	{
+		ClearGuardBreakState();
+	}
+}
+
+void UPantheliaAbilitySystemComponent::ClearGuardBreakState()
+{
+	const FPantheliaGameplayTags& Tags = FPantheliaGameplayTags::Get();
+	RemoveLooseGameplayTag(Tags.State_GuardBroken);
+	bGuardBreakObservedStagger = false;
+
+	if (GuardBreakStaggerTagDelegateHandle.IsValid())
+	{
+		RegisterGameplayTagEvent(Tags.Effects_Stagger, EGameplayTagEventType::NewOrRemoved)
+			.Remove(GuardBreakStaggerTagDelegateHandle);
+		GuardBreakStaggerTagDelegateHandle.Reset();
 	}
 }
 

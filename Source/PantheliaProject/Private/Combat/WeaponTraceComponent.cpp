@@ -567,6 +567,11 @@ void UWeaponTraceComponent::PerformTrace()
 		UPantheliaAbilitySystemLibrary::SetLaunchForce(ContextHandle, LaunchForce);
 		UPantheliaAbilitySystemLibrary::SetKnockbackIsHeavy(ContextHandle, bKnockbackIsHeavyThisTarget);
 
+		// El mismo context se reutiliza entre objetivos. Unresolved evita heredar el
+		// resultado defensivo del objetivo anterior si este spec no ejecutara el ExecCalc.
+		UPantheliaAbilitySystemLibrary::SetHitOutcome(
+			ContextHandle, EPantheliaHitOutcome::Unresolved);
+
 		// Si este swing es un ataque básico del jugador, permite que el lock-on se fije
 		// automáticamente al enemigo golpeado. La propia función del LockonComponent protege
 		// la regla principal: si ya hay lock-on activo, no cambia de target.
@@ -580,6 +585,13 @@ void UWeaponTraceComponent::PerformTrace()
 
 		TargetASC->ApplyGameplayEffectSpecToSelf(*DamageSpecHandle.Data.Get());
 
+		// ApplyGameplayEffectSpecToSelf ejecuta el ExecCalc de forma síncrona. Al volver,
+		// el context contiene el resultado defensivo de ESTE objetivo.
+		const EPantheliaHitOutcome HitOutcome =
+			UPantheliaAbilitySystemLibrary::GetHitOutcome(ContextHandle);
+		const bool bShouldPlayDamageImpactFeedback =
+			HitOutcome == EPantheliaHitOutcome::Accepted;
+
 		if (bLogTraceDebug || bDebugMode)
 		{
 			const FPantheliaGameplayTags& GameplayTags = FPantheliaGameplayTags::Get();
@@ -588,58 +600,64 @@ void UWeaponTraceComponent::PerformTrace()
 			const float PoiseDamage = DamageSpecHandle.Data->GetSetByCallerMagnitude(
 				GameplayTags.Damage_Poise, false, 0.f);
 
-			UE_LOG(LogPanthelia, Log, TEXT("WeaponTrace damage applied: Owner=%s Target=%s Effect=%s Level=%.1f Physical=%.1f Poise=%.1f Invulnerable=%s"),
+			UE_LOG(LogPanthelia, Log, TEXT("WeaponTrace damage applied: Owner=%s Target=%s Effect=%s Level=%.1f Physical=%.1f Poise=%.1f Invulnerable=%s Outcome=%d"),
 				*GetNameSafe(Owner),
 				*GetNameSafe(HitActor),
 				*GetNameSafe(DamageSpecHandle.Data->Def),
 				DamageSpecHandle.Data->GetLevel(),
 				PhysicalDamage,
 				PoiseDamage,
-				TargetASC->HasMatchingGameplayTag(GameplayTags.State_Invulnerable) ? TEXT("true") : TEXT("false"));
+				TargetASC->HasMatchingGameplayTag(GameplayTags.State_Invulnerable) ? TEXT("true") : TEXT("false"),
+				static_cast<int32>(HitOutcome));
 		}
 
-		// Disparar el Gameplay Cue de impacto melee (efectos visuales + sonido).
-		// Usamos el ASC del ATACANTE (Owner) para el dispatch, que garantiza replicacion
-		// correcta incluso para enemigos IA (cuyo ASC no pertenece a ningun player).
-		// Parametros del Cue:
-		// Location = punto de impacto real en la superficie del actor golpeado.
-		// SourceObject = la victima (HitActor): GC_MeleeImpact llama GetBloodEffect
-		// sobre este para obtener las particulas propias del personaje.
-		// EffectCauser = el atacante (Owner): GC_MeleeImpact busca en su array de
-		// TaggedMontages el ImpactSound del montage activo.
-		// AggregatedSourceTags = contiene el ActiveMontageTag para que el GC identifique
-		// que sonido usar sin necesidad de un cast.
-		UAbilitySystemComponent* OwnerASC =
-			UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Owner);
-
-		if (OwnerASC)
+		// El feedback de carne/sangre solo corresponde a impactos ofensivos aceptados.
+		// I-frames, parry perfecto y bloqueo usan sus propias respuestas defensivas.
+		if (bShouldPlayDamageImpactFeedback)
 		{
-			FGameplayCueParameters CueParams;
-			CueParams.Location = Hit.ImpactPoint;
-			CueParams.SourceObject = HitActor;
-			CueParams.EffectCauser = Owner;
+			// Disparar el Gameplay Cue de impacto melee (efectos visuales + sonido).
+			// Usamos el ASC del ATACANTE (Owner) para el dispatch, que garantiza replicacion
+			// correcta incluso para enemigos IA (cuyo ASC no pertenece a ningun player).
+			// Parametros del Cue:
+			// Location = punto de impacto real en la superficie del actor golpeado.
+			// SourceObject = la victima (HitActor): GC_MeleeImpact llama GetBloodEffect
+			// sobre este para obtener las particulas propias del personaje.
+			// EffectCauser = el atacante (Owner): GC_MeleeImpact busca en su array de
+			// TaggedMontages el ImpactSound del montage activo.
+			// AggregatedSourceTags = contiene el ActiveMontageTag para que el GC identifique
+			// que sonido usar sin necesidad de un cast.
+			UAbilitySystemComponent* OwnerASC =
+				UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Owner);
 
-			if (ActiveMontageTag.IsValid())
+			if (OwnerASC)
 			{
-				CueParams.AggregatedSourceTags.AddTag(ActiveMontageTag);
+				FGameplayCueParameters CueParams;
+				CueParams.Location = Hit.ImpactPoint;
+				CueParams.SourceObject = HitActor;
+				CueParams.EffectCauser = Owner;
+
+				if (ActiveMontageTag.IsValid())
+				{
+					CueParams.AggregatedSourceTags.AddTag(ActiveMontageTag);
+				}
+
+				OwnerASC->ExecuteGameplayCue(
+					FPantheliaGameplayTags::Get().GameplayCue_Melee_Impact,
+					CueParams);
 			}
 
-			OwnerASC->ExecuteGameplayCue(
-				FPantheliaGameplayTags::Get().GameplayCue_Melee_Impact,
-				CueParams);
-		}
+			// Reproducir el sonido de impacto del ataque (si la ability asigno uno). Directo con
+			// PlaySoundAtLocation porque el juego es single-player (no necesita replicacion por Cue).
+			// Solo suena cuando hay hit real; un swing al aire no reproduce nada. Usamos un flag
+			// local para reproducir UNA sola vez por frame aunque el sweep golpee a varios actores
+			// (dos clangs solapados sonarian mal). El blood/Cue si se dispara por cada victima.
+			if (ActiveImpactSound && !bImpactSoundPlayedThisTrace)
+			{
+				UGameplayStatics::PlaySoundAtLocation(this, ActiveImpactSound, Hit.ImpactPoint);
+				bImpactSoundPlayedThisTrace = true;
+			}
 
-		// Reproducir el sonido de impacto del ataque (si la ability asigno uno). Directo con
-		// PlaySoundAtLocation porque el juego es single-player (no necesita replicacion por Cue).
-		// Solo suena cuando hay hit real; un swing al aire no reproduce nada. Usamos un flag
-		// local para reproducir UNA sola vez por frame aunque el sweep golpee a varios actores
-		// (dos clangs solapados sonarian mal). El blood/Cue si se dispara por cada victima.
-		if (ActiveImpactSound && !bImpactSoundPlayedThisTrace)
-		{
-			UGameplayStatics::PlaySoundAtLocation(this, ActiveImpactSound, Hit.ImpactPoint);
-			bImpactSoundPlayedThisTrace = true;
 		}
-
 		// Marcamos al actor como ya golpeado en este swing.
 		IgnoredActors.AddUnique(HitActor);
 	}

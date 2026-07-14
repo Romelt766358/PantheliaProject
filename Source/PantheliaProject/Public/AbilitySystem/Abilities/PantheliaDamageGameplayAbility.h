@@ -49,6 +49,12 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Damage|Dodge")
 	EPantheliaDodgeResponse DodgeResponse = EPantheliaDodgeResponse::Dodgeable;
 
+	// Regla defensiva del ataque. Normal es el comportamiento base; Heavy multiplica
+	// el coste de guardia; Fury/Ultimate no puede bloquearse y atraviesa los i-frames
+	// normales salvo que el target tenga Capability.Dodge.Fury.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Damage|Defense")
+	EPantheliaDefenseAttackType DefenseAttackType = EPantheliaDefenseAttackType::Normal;
+
 	// Escalados por atributos secundarios/vitales del caster (spec §1.7).
 	// Máximo 2 entradas. Ver FAbilityAttributeScaling para detalles y restricciones.
 	// Ej: { Attributes.Secondary.MagicDamage, 0.5 } → +50% MagicDamage al daño total.

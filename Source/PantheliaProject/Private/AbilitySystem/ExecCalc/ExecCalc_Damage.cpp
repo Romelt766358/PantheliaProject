@@ -32,6 +32,7 @@ struct PantheliaDamageStatics
     DECLARE_ATTRIBUTE_CAPTUREDEF(CritDamage);
     DECLARE_ATTRIBUTE_CAPTUREDEF(ArmorPenetration);
     DECLARE_ATTRIBUTE_CAPTUREDEF(MagicPenetration);
+    DECLARE_ATTRIBUTE_CAPTUREDEF(Stamina);
 
     // Sumando genérico de daño físico (modelo AD de LoL).
     // Se añade ANTES de la mitigación de Armor a TODOS los tipos físicos.
@@ -51,6 +52,7 @@ struct PantheliaDamageStatics
         DEFINE_ATTRIBUTE_CAPTUREDEF(UPantheliaAttributeSet, CritDamage, Source, false);
         DEFINE_ATTRIBUTE_CAPTUREDEF(UPantheliaAttributeSet, ArmorPenetration, Source, false);
         DEFINE_ATTRIBUTE_CAPTUREDEF(UPantheliaAttributeSet, MagicPenetration, Source, false);
+        DEFINE_ATTRIBUTE_CAPTUREDEF(UPantheliaAttributeSet, Stamina, Target, false);
         DEFINE_ATTRIBUTE_CAPTUREDEF(UPantheliaAttributeSet, PhysicalDamage, Source, false);
         DEFINE_ATTRIBUTE_CAPTUREDEF(UPantheliaAttributeSet, FireResistance, Target, false);
         DEFINE_ATTRIBUTE_CAPTUREDEF(UPantheliaAttributeSet, WaterResistance, Target, false);
@@ -95,6 +97,7 @@ UExecCalc_Damage::UExecCalc_Damage()
     RelevantAttributesToCapture.Add(DamageStatics().CritDamageDef);
     RelevantAttributesToCapture.Add(DamageStatics().ArmorPenetrationDef);
     RelevantAttributesToCapture.Add(DamageStatics().MagicPenetrationDef);
+    RelevantAttributesToCapture.Add(DamageStatics().StaminaDef);
     RelevantAttributesToCapture.Add(DamageStatics().PhysicalDamageDef);
     RelevantAttributesToCapture.Add(DamageStatics().FireResistanceDef);
     RelevantAttributesToCapture.Add(DamageStatics().WaterResistanceDef);
@@ -120,17 +123,23 @@ static void ApplyParryBlockMitigation(
     AActor* TargetAvatar,
     const FGameplayTagContainer& TargetTags,
     const FPantheliaGameplayTags& Tags,
+    EPantheliaDefenseAttackType DefenseAttackType,
+    float CurrentStamina,
     bool bIncomingIsPhysical,
     bool bIncomingIsMagic,
     float& PhysicalSubtotal,
     float& MagicSubtotal,
     bool& bOutWasPerfectParry,
     bool& bOutWasBlocked,
-    float& OutPoiseToAttacker)
+    bool& bOutWasGuardBroken,
+    float& OutPoiseToAttacker,
+    float& OutDefenseStaminaCost)
 {
     bOutWasPerfectParry = false;
     bOutWasBlocked = false;
+    bOutWasGuardBroken = false;
     OutPoiseToAttacker = 0.f;
+    OutDefenseStaminaCost = 0.f;
 
     // Detectar el estado defensivo activo (solo uno deberia estar activo a la vez).
     const bool bParryPhysical = TargetTags.HasTagExact(Tags.State_Parry_Physical);
@@ -144,20 +153,25 @@ static void ApplyParryBlockMitigation(
         return;
     }
 
-    // Leer los multiplicadores y danos de postura del arma equipada del defensor.
-    // Si no hay arma, usamos defaults neutros conservadores para no crashear.
+    // Leer los multiplicadores, costes y daño de postura del arma equipada del defensor.
+    // Si no hay arma, usamos defaults seguros que coinciden con la definición base.
     float PhysImperfect = 0.6f;
     float MagicOnPhysParry = 0.8f;
     float MagicImperfect = 0.5f;
     float PhysOnMagicParry = 0.7f;
     float PhysParryPoise = 30.f;
     float MagicParryPoise = 12.f;
+    float BaseBlockStaminaCost = 10.f;
+    float HeavyBlockStaminaMultiplier = 4.f;
+    float PerfectParryStaminaMultiplier = 0.5f;
 
     if (TargetAvatar)
     {
-        if (UPantheliaEquipmentComponent* Equip = TargetAvatar->FindComponentByClass<UPantheliaEquipmentComponent>())
+        if (UPantheliaEquipmentComponent* Equip =
+            TargetAvatar->FindComponentByClass<UPantheliaEquipmentComponent>())
         {
-            if (const UPantheliaWeaponDefinition* WeaponDef = Equip->GetEquippedWeaponDefinition())
+            if (const UPantheliaWeaponDefinition* WeaponDef =
+                Equip->GetEquippedWeaponDefinition())
             {
                 PhysImperfect = WeaponDef->PhysicalImperfectBlockMultiplier;
                 MagicOnPhysParry = WeaponDef->MagicOnPhysicalParryMultiplier;
@@ -165,60 +179,124 @@ static void ApplyParryBlockMitigation(
                 PhysOnMagicParry = WeaponDef->PhysicalOnMagicParryMultiplier;
                 PhysParryPoise = WeaponDef->PhysicalParryPoiseDamage;
                 MagicParryPoise = WeaponDef->MagicParryPoiseDamage;
+                BaseBlockStaminaCost = WeaponDef->BlockStaminaCost;
+                HeavyBlockStaminaMultiplier =
+                    WeaponDef->HeavyBlockStaminaCostMultiplier;
+                PerfectParryStaminaMultiplier =
+                    WeaponDef->PerfectParryStaminaCostMultiplier;
             }
         }
     }
 
+    const bool bIsFury = DefenseAttackType == EPantheliaDefenseAttackType::Fury;
+
     // --- PARRY FISICO (perfecto) ---
     if (bParryPhysical)
     {
-        PhysicalSubtotal = 0.f;                  // anula el dano fisico
-        MagicSubtotal *= MagicOnPhysParry;     // mitiga el magico (sin anular)
-        // Solo es parry "correcto" (con dano de postura al enemigo) si el ataque era fisico.
+        // Un parry físico solo es perfecto si el golpe contiene componente físico.
+        // Una vez reconocido como perfecto, anula TODO el paquete ofensivo, también Fury.
         if (bIncomingIsPhysical)
         {
+            PhysicalSubtotal = 0.f;
+            MagicSubtotal = 0.f;
             bOutWasPerfectParry = true;
             OutPoiseToAttacker = PhysParryPoise;
         }
-        else
+        else if (!bIsFury)
         {
-            // Parar magia con parry fisico mitiga pero NO da postura ni beneficios.
+            // La mitigación cruzada cuenta como bloqueo imperfecto en ataques Normal/Heavy.
+            // Fury no admite bloqueo ni parry cruzado: atraviesa la guardia con daño completo.
+            MagicSubtotal *= MagicOnPhysParry;
             bOutWasBlocked = true;
         }
-        UE_LOG(LogTemp, Warning, TEXT("[Parry] MITIGACION Parry Fisico: Fis=0 Mag*%.2f | Postura enemigo=%.1f"), MagicOnPhysParry, OutPoiseToAttacker);
+
+        UE_LOG(LogTemp, Warning,
+            TEXT("[Parry] MITIGACION Parry Fisico: Tipo=%d Perfecto=%s Bloqueado=%s | Fis=%.1f Mag=%.1f | Postura enemigo=%.1f"),
+            static_cast<int32>(DefenseAttackType),
+            bOutWasPerfectParry ? TEXT("true") : TEXT("false"),
+            bOutWasBlocked ? TEXT("true") : TEXT("false"),
+            PhysicalSubtotal, MagicSubtotal, OutPoiseToAttacker);
     }
     // --- PARRY MAGICO (perfecto) ---
     else if (bParryMagic)
     {
-        MagicSubtotal = 0.f;                  // anula el dano magico
-        PhysicalSubtotal *= PhysOnMagicParry;    // mitiga el fisico (sin anular)
         if (bIncomingIsMagic)
         {
+            PhysicalSubtotal = 0.f;
+            MagicSubtotal = 0.f;
             bOutWasPerfectParry = true;
             OutPoiseToAttacker = MagicParryPoise;
         }
-        else
+        else if (!bIsFury)
         {
+            PhysicalSubtotal *= PhysOnMagicParry;
             bOutWasBlocked = true;
         }
-        UE_LOG(LogTemp, Warning, TEXT("[Parry] MITIGACION Parry Magico: Mag=0 Fis*%.2f | Postura enemigo=%.1f"), PhysOnMagicParry, OutPoiseToAttacker);
+
+        UE_LOG(LogTemp, Warning,
+            TEXT("[Parry] MITIGACION Parry Magico: Tipo=%d Perfecto=%s Bloqueado=%s | Fis=%.1f Mag=%.1f | Postura enemigo=%.1f"),
+            static_cast<int32>(DefenseAttackType),
+            bOutWasPerfectParry ? TEXT("true") : TEXT("false"),
+            bOutWasBlocked ? TEXT("true") : TEXT("false"),
+            PhysicalSubtotal, MagicSubtotal, OutPoiseToAttacker);
     }
-    // --- BLOQUEO FISICO (imperfecto) ---
-    else if (bBlockPhysical)
+    // --- BLOQUEO FISICO IMPERFECTO ---
+    else if (bBlockPhysical && !bIsFury)
     {
         PhysicalSubtotal *= PhysImperfect;
         MagicSubtotal *= MagicOnPhysParry;
         bOutWasBlocked = true;
-        UE_LOG(LogTemp, Warning, TEXT("[Parry] MITIGACION Bloqueo Fisico: Fis*%.2f Mag*%.2f"), PhysImperfect, MagicOnPhysParry);
+
+        UE_LOG(LogTemp, Warning,
+            TEXT("[Parry] MITIGACION Bloqueo Fisico: Tipo=%d Fis*%.2f Mag*%.2f"),
+            static_cast<int32>(DefenseAttackType),
+            PhysImperfect,
+            MagicOnPhysParry);
     }
-    // --- BLOQUEO MAGICO (imperfecto) ---
-    else if (bBlockMagic)
+    // --- BLOQUEO MAGICO IMPERFECTO ---
+    else if (bBlockMagic && !bIsFury)
     {
         MagicSubtotal *= MagicImperfect;
         PhysicalSubtotal *= PhysOnMagicParry;
         bOutWasBlocked = true;
-        UE_LOG(LogTemp, Warning, TEXT("[Parry] MITIGACION Bloqueo Magico: Mag*%.2f Fis*%.2f"), MagicImperfect, PhysOnMagicParry);
+
+        UE_LOG(LogTemp, Warning,
+            TEXT("[Parry] MITIGACION Bloqueo Magico: Tipo=%d Mag*%.2f Fis*%.2f"),
+            static_cast<int32>(DefenseAttackType),
+            MagicImperfect,
+            PhysOnMagicParry);
     }
+    else if (bIsFury)
+    {
+        UE_LOG(LogTemp, Warning,
+            TEXT("[Parry] Ataque Fury/Ultimate atraviesa la guardia: solo un parry perfecto valido puede anularlo."));
+    }
+
+    // El parry perfecto paga siempre el mismo coste, independientemente del tipo de ataque.
+    if (bOutWasPerfectParry)
+    {
+        OutDefenseStaminaCost =
+            FMath::Max(0.f, BaseBlockStaminaCost * PerfectParryStaminaMultiplier);
+        return;
+    }
+
+    if (!bOutWasBlocked)
+    {
+        return;
+    }
+
+    const float AttackCostMultiplier =
+        DefenseAttackType == EPantheliaDefenseAttackType::Heavy
+            ? FMath::Max(1.f, HeavyBlockStaminaMultiplier)
+            : 1.f;
+
+    OutDefenseStaminaCost =
+        FMath::Max(0.f, BaseBlockStaminaCost * AttackCostMultiplier);
+
+    // Igualdad exacta es válida: puede dejar stamina en 0 y la guardia continúa.
+    // Solo una cantidad estrictamente insuficiente rompe la guardia en ESTE impacto.
+    bOutWasGuardBroken =
+        CurrentStamina + KINDA_SMALL_NUMBER < OutDefenseStaminaCost;
 }
 
 // ================================================================
@@ -269,8 +347,23 @@ void UExecCalc_Damage::Execute_Implementation(
     const FGameplayEffectSpec& Spec = ExecutionParams.GetOwningSpec();
     FGameplayEffectContextHandle EffectContextHandle = Spec.GetContext();
 
+    // Un mismo context puede reutilizarse al aplicar el spec a varios objetivos. Antes
+    // de cualquier salida temprana limpiamos SIEMPRE los resultados del objetivo previo.
+    if (FPantheliaGameplayEffectContext* PantheliaContext =
+        static_cast<FPantheliaGameplayEffectContext*>(EffectContextHandle.Get()))
+    {
+        PantheliaContext->SetIsCriticalHit(false);
+        PantheliaContext->SetParryResult(false, 0.f);
+        PantheliaContext->SetWasBlocked(false);
+        PantheliaContext->SetWasGuardBroken(false);
+        PantheliaContext->SetHitOutcome(EPantheliaHitOutcome::Unresolved);
+    }
+
     const FGameplayTagContainer* SourceTags = Spec.CapturedSourceTags.GetAggregatedTags();
     const FGameplayTagContainer* TargetTags = Spec.CapturedTargetTags.GetAggregatedTags();
+
+    const EPantheliaDefenseAttackType DefenseAttackType =
+        UPantheliaAbilitySystemLibrary::GetDefenseAttackType(EffectContextHandle);
 
     // --- INVULNERABILIDAD ABSOLUTA E I-FRAMES DE EVASIÓN ---
     // La jerarquía separa dos conceptos:
@@ -291,17 +384,32 @@ void UExecCalc_Damage::Execute_Implementation(
         // un hijo activo. Es invulnerabilidad absoluta: ningún tipo de daño la atraviesa.
         if (TargetTags->HasTagExact(InvulnerabilityTags.State_Invulnerable))
         {
+            UPantheliaAbilitySystemLibrary::SetHitOutcome(
+                EffectContextHandle, EPantheliaHitOutcome::NegatedInvulnerability);
             return;
         }
 
-        const EPantheliaDodgeResponse DodgeResponse =
+        EPantheliaDodgeResponse EffectiveDodgeResponse =
             UPantheliaAbilitySystemLibrary::GetDodgeResponse(EffectContextHandle);
 
-        if (DodgeResponse != EPantheliaDodgeResponse::Unavoidable)
+        // Fury/Ultimate ignora los i-frames normales. Un perk u objeto puede conceder
+        // Capability.Dodge.Fury; en ese caso vuelve a comportarse como Dodgeable y
+        // participa en el mismo sistema de esquive perfecto del resto de ataques.
+        if (DefenseAttackType == EPantheliaDefenseAttackType::Fury)
+        {
+            const bool bCanDodgeFury =
+                TargetTags->HasTagExact(InvulnerabilityTags.Capability_Dodge_Fury);
+            EffectiveDodgeResponse =
+                bCanDodgeFury
+                    ? EPantheliaDodgeResponse::Dodgeable
+                    : EPantheliaDodgeResponse::Unavoidable;
+        }
+
+        if (EffectiveDodgeResponse != EPantheliaDodgeResponse::Unavoidable)
         {
             // Solo el hijo exacto del dodge puede generar el evento crudo. Jump y
             // cualquier otra evasión futura anulan el golpe sin premiar un perfecto.
-            if (DodgeResponse == EPantheliaDodgeResponse::Dodgeable &&
+            if (EffectiveDodgeResponse == EPantheliaDodgeResponse::Dodgeable &&
                 TargetTags->HasTagExact(InvulnerabilityTags.State_Invulnerable_Dodge) &&
                 IsValid(SourceAvatar) && IsValid(TargetAvatar) &&
                 SourceAvatar != TargetAvatar &&
@@ -325,6 +433,8 @@ void UExecCalc_Damage::Execute_Implementation(
 
             // Dodgeable y AvoidableNoReward quedan anulados antes de resistencias,
             // crítico, parry, postura, buildup o cualquier otro resultado del golpe.
+            UPantheliaAbilitySystemLibrary::SetHitOutcome(
+                EffectContextHandle, EPantheliaHitOutcome::NegatedInvulnerability);
             return;
         }
 
@@ -343,6 +453,11 @@ void UExecCalc_Damage::Execute_Implementation(
     float MagicResistance = 0.f;
     ExecutionParams.AttemptCalculateCapturedAttributeMagnitude(DamageStatics().MagicResistanceDef, EvalParams, MagicResistance);
     MagicResistance = FMath::Max(0.f, MagicResistance);
+
+    float CurrentStamina = 0.f;
+    ExecutionParams.AttemptCalculateCapturedAttributeMagnitude(
+        DamageStatics().StaminaDef, EvalParams, CurrentStamina);
+    CurrentStamina = FMath::Max(0.f, CurrentStamina);
 
     // --- ATRIBUTOS DEL SOURCE ---
     float CritChance = 0.f;
@@ -519,14 +634,12 @@ void UExecCalc_Damage::Execute_Implementation(
     // PARRY / BLOQUEO (modelo Lies of P) — mitigacion segun estado defensivo
     // ================================================================
     // Leemos el estado defensivo del TARGET (el que recibe el dano) de sus tags.
-    // Matriz (Fase 2 — solo mitigacion de dano a la vida; postura del enemigo y
-    // efectos elementales llegan en Fase 3):
-    //   Parry Fisico  perfecto vs Fisico -> anula 100% del fisico.
-    //   Parry Fisico  perfecto vs Magico -> mitiga (MagicOnPhysicalParryMultiplier).
-    //   Parry Magico  perfecto vs Magico -> anula 100% del magico.
-    //   Parry Magico  perfecto vs Fisico -> mitiga (PhysicalOnMagicParryMultiplier).
-    //   Bloqueo Fisico (imperfecto) vs Fisico -> PhysicalImperfectBlockMultiplier.
-    //   Bloqueo Magico (imperfecto) vs Magico -> MagicImperfectBlockMultiplier.
+    // Matriz vigente:
+    //   Parry Fisico + golpe con componente fisico -> parry perfecto; anula TODO el golpe.
+    //   Parry Magico + golpe con componente magico -> parry perfecto; anula TODO el golpe.
+    //   Parry Fisico vs golpe puramente magico -> mitigacion cruzada, no parry perfecto.
+    //   Parry Magico vs golpe puramente fisico -> mitigacion cruzada, no parry perfecto.
+    //   Bloqueos imperfectos -> aplican los multiplicadores configurados de ambos subtotales.
     // Sin estado defensivo -> dano completo.
     // Booleanos del resultado defensivo, IZADOS fuera del if (TargetTags) — dos motivos:
     // (1) el fix de contaminación de contexto de abajo necesita escribirlos SIEMPRE,
@@ -534,7 +647,9 @@ void UExecCalc_Damage::Execute_Implementation(
     // necesita bWasPerfectParry: un parry perfecto niega el buildup del golpe.
     bool bWasPerfectParry = false;
     bool bWasBlocked = false;
+    bool bWasGuardBroken = false;
     float PoiseToAttacker = 0.f;
+    float DefenseStaminaCost = 0.f;
 
     if (TargetTags)
     {
@@ -544,9 +659,11 @@ void UExecCalc_Damage::Execute_Implementation(
 
         ApplyParryBlockMitigation(
             TargetAvatar, *TargetTags, Tags,
+            DefenseAttackType, CurrentStamina,
             bIncomingIsPhysical, bIncomingIsMagic,
             PhysicalSubtotal, MagicSubtotal,
-            bWasPerfectParry, bWasBlocked, PoiseToAttacker);
+            bWasPerfectParry, bWasBlocked, bWasGuardBroken,
+            PoiseToAttacker, DefenseStaminaCost);
 
         // Recalcular el total tras la mitigacion defensiva.
         TotalDamage = PhysicalSubtotal + MagicSubtotal;
@@ -570,30 +687,63 @@ void UExecCalc_Damage::Execute_Implementation(
         // en el caso "no hubo parry" esto resetea correctamente a (false, 0).
         PantheliaContext->SetParryResult(bWasPerfectParry, bWasPerfectParry ? PoiseToAttacker : 0.f);
         PantheliaContext->SetWasBlocked(bWasBlocked);
+        PantheliaContext->SetWasGuardBroken(bWasGuardBroken);
     }
+
+    // Resultado defensivo final. Se escribe antes del crítico para que un parry perfecto
+    // no pueda quedar marcado como crítico ni recrear daño mediante el término plano.
+    const EPantheliaHitOutcome HitOutcome =
+        bWasPerfectParry
+            ? EPantheliaHitOutcome::NegatedPerfectParry
+            : (bWasBlocked
+                ? EPantheliaHitOutcome::MitigatedBlock
+                : EPantheliaHitOutcome::Accepted);
+    UPantheliaAbilitySystemLibrary::SetHitOutcome(EffectContextHandle, HitOutcome);
 
     // --- CRÍTICO (sobre el total) ---
     // REUBICADO (sistema de buildup): antes vivía después de esta posición; ahora va
     // ANTES de la sección de buildup porque esta necesita bCriticalHit (el crítico
-    // multiplica también el buildup que deposita el golpe — decisión cerrada). El
-    // orden de los cálculos de daño no cambia: TotalDamage ya está completo aquí
-    // (loop de tipos + mitigación defensiva del parry), solo faltaban los outputs.
-    const bool bCriticalHit = FMath::RandRange(1, 100) <= CritChance;
+    // multiplica también el buildup que deposita el golpe — decisión cerrada).
+    //
+    // Un parry perfecto anula el golpe completo. No hacemos la tirada ni escribimos
+    // un crítico fantasma en el context, y el CritDamage plano no puede recrear daño.
+    const bool bCriticalHit = !bWasPerfectParry && FMath::RandRange(1, 100) <= CritChance;
     TotalDamage = bCriticalHit ? 1.5f * TotalDamage + CritDamage : TotalDamage;
     UPantheliaAbilitySystemLibrary::SetIsCriticalHit(EffectContextHandle, bCriticalHit);
 
+    // --- COSTE DEFENSIVO DE STAMINA ---
+    // Parry perfecto: coste fijo relativo al coste base, sin importar Normal/Heavy/Fury.
+    // Bloqueo: coste base para Normal y multiplicador pesado para Heavy.
+    // Si el bloqueo no puede pagar, consume la stamina restante, mantiene el daño de
+    // vida mitigado y marca guardia rota. Llegar EXACTAMENTE a 0 no rompe la guardia.
+    if ((bWasPerfectParry || bWasBlocked) && DefenseStaminaCost > 0.f)
+    {
+        const float StaminaToConsume =
+            bWasGuardBroken
+                ? CurrentStamina
+                : FMath::Min(CurrentStamina, DefenseStaminaCost);
+
+        if (StaminaToConsume > 0.f)
+        {
+            OutExecutionOutput.AddOutputModifier(FGameplayModifierEvaluatedData(
+                UPantheliaAttributeSet::GetStaminaAttribute(),
+                EGameplayModOp::Additive,
+                -StaminaToConsume));
+        }
+    }
+
     // --- ESCRIBIR IncomingDamage PRIMERO ---
-    // El orden de los output modifiers importa para los callbacks del AttributeSet:
-    // primero se resuelve el golpe directo y su posible muerte; después postura y
-    // buildup. Si el golpe mata, el guard de PostGameplayEffectExecute limpia los
-    // outputs posteriores en vez de permitir que un cadáver proque un estado.
+    // Dentro del paquete ofensivo, el orden de los modifiers importa: primero se
+    // resuelve el golpe directo y su posible muerte; después postura y buildup.
+    // El coste defensivo anterior es un recurso del defensor y debe quedar cobrado
+    // antes de que HandleIncomingDamage procese la reacción de guardia rota.
     OutExecutionOutput.AddOutputModifier(FGameplayModifierEvaluatedData(
         UPantheliaAttributeSet::GetIncomingDamageAttribute(),
         EGameplayModOp::Additive, TotalDamage));
 
     // --- DAÑO A POSTURA ---
     const float BasePoiseDamage = Spec.GetSetByCallerMagnitude(Tags.Damage_Poise, false);
-    if (BasePoiseDamage > 0.f)
+    if (!bWasPerfectParry && BasePoiseDamage > 0.f)
     {
         OutExecutionOutput.AddOutputModifier(FGameplayModifierEvaluatedData(
             UPantheliaAttributeSet::GetIncomingPoiseDamageAttribute(),

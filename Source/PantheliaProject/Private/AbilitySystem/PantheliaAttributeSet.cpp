@@ -395,41 +395,71 @@ void UPantheliaAttributeSet::PostGameplayEffectExecute(const FGameplayEffectModC
 		const float LocalIncomingPoiseDamage = GetIncomingPoiseDamage();
 		SetIncomingPoiseDamage(0.f);
 
-		if (LocalIncomingPoiseDamage > 0.f && IsValid(Props.TargetAvatarActor))
-		{
-			float FlinchThreshold = 10.f;
-			if (ICombatInterface* CI = Cast<ICombatInterface>(Props.TargetAvatarActor))
-				FlinchThreshold = CI->GetFlinchThreshold();
-
-			if (GetMaxPoise() > 0.f)
-			{
-				const float PoiseDamagePercent = (LocalIncomingPoiseDamage / GetMaxPoise()) * 100.f;
-				if (PoiseDamagePercent >= FlinchThreshold)
-				{
-					FGameplayTagContainer HitReactContainer;
-					HitReactContainer.AddTag(FPantheliaGameplayTags::Get().Effects_HitReact);
-					Props.TargetASC->TryActivateAbilitiesByTag(HitReactContainer);
-				}
-			}
-
-			const float NewPoise = FMath::Clamp(GetPoise() - LocalIncomingPoiseDamage, 0.f, GetMaxPoise());
-			SetPoise(NewPoise);
-
-			if (NewPoise <= 0.f)
-			{
-				FGameplayTagContainer StaggerContainer;
-				StaggerContainer.AddTag(FPantheliaGameplayTags::Get().Effects_Stagger);
-				Props.TargetASC->TryActivateAbilitiesByTag(StaggerContainer);
-				SetPoise(GetMaxPoise()); // reset postura al stagear (como Elden Ring)
-			}
-
-			if (ICombatInterface* CI = Cast<ICombatInterface>(Props.TargetAvatarActor))
-				CI->ResetPoiseRegenTimer();
-		}
+		ApplyPoiseDamage(
+			Props.TargetASC,
+			Props.TargetAvatarActor,
+			LocalIncomingPoiseDamage);
 	}
 	else if (Data.EvaluatedData.Attribute == GetIncomingXPAttribute())
 	{
 		HandleIncomingXP(Props);
+	}
+}
+
+void UPantheliaAttributeSet::ApplyPoiseDamage(
+	UAbilitySystemComponent* TargetASC,
+	AActor* TargetAvatarActor,
+	float PoiseDamage) const
+{
+	if (PoiseDamage <= 0.f || !IsValid(TargetASC) || !IsValid(TargetAvatarActor))
+	{
+		return;
+	}
+
+	const UPantheliaAttributeSet* TargetAttributes =
+		TargetASC->GetSet<UPantheliaAttributeSet>();
+	if (!TargetAttributes)
+	{
+		return;
+	}
+
+	const float TargetMaxPoise = TargetAttributes->GetMaxPoise();
+	const float CurrentPoise = TargetAttributes->GetPoise();
+
+	float FlinchThreshold = 10.f;
+	if (ICombatInterface* CombatInterface = Cast<ICombatInterface>(TargetAvatarActor))
+	{
+		FlinchThreshold = CombatInterface->GetFlinchThreshold();
+	}
+
+	if (TargetMaxPoise > 0.f)
+	{
+		const float PoiseDamagePercent = (PoiseDamage / TargetMaxPoise) * 100.f;
+		if (PoiseDamagePercent >= FlinchThreshold)
+		{
+			FGameplayTagContainer HitReactContainer;
+			HitReactContainer.AddTag(FPantheliaGameplayTags::Get().Effects_HitReact);
+			TargetASC->TryActivateAbilitiesByTag(HitReactContainer);
+		}
+	}
+
+	const float NewPoise = FMath::Clamp(CurrentPoise - PoiseDamage, 0.f, TargetMaxPoise);
+	TargetASC->SetNumericAttributeBase(GetPoiseAttribute(), NewPoise);
+
+	if (NewPoise <= 0.f)
+	{
+		FGameplayTagContainer StaggerContainer;
+		StaggerContainer.AddTag(FPantheliaGameplayTags::Get().Effects_Stagger);
+		TargetASC->TryActivateAbilitiesByTag(StaggerContainer);
+
+		// La postura se recarga al romperse, igual que en el pipeline original de
+		// IncomingPoiseDamage. El stagger controla la ventana de vulnerabilidad.
+		TargetASC->SetNumericAttributeBase(GetPoiseAttribute(), TargetMaxPoise);
+	}
+
+	if (ICombatInterface* CombatInterface = Cast<ICombatInterface>(TargetAvatarActor))
+	{
+		CombatInterface->ResetPoiseRegenTimer();
 	}
 }
 
@@ -1469,16 +1499,21 @@ void UPantheliaAttributeSet::HandleParryReaction(const FEffectProperties& Props)
 
 	const bool bParried = PantheliaContext->WasParried();
 	const bool bBlocked = PantheliaContext->WasBlocked();
+	const bool bGuardBroken = PantheliaContext->WasGuardBroken();
 
-	// Si hubo parry o bloqueo, avisar a la ability de parry del DEFENSOR (el que recibe el
-	// golpe = TargetASC) para que reproduzca el retroceso (ParryHit o BlockHit). Esto pasa
-	// tanto en parry como en bloqueo; la diferencia (postura al atacante) se maneja abajo.
+	// Si hubo parry o bloqueo, avisar a la ability defensiva del TARGET para que dispare
+	// su cue. Una guardia rota termina primero la guardia y después reutiliza Stagger.
 	if ((bParried || bBlocked) && IsValid(Props.TargetASC))
 	{
 		if (UPantheliaAbilitySystemComponent* PantheliaASC =
 			Cast<UPantheliaAbilitySystemComponent>(Props.TargetASC))
 		{
-			PantheliaASC->NotifyParryImpact(bParried);
+			PantheliaASC->NotifyParryImpact(bParried, bGuardBroken);
+
+			if (bGuardBroken)
+			{
+				PantheliaASC->TriggerGuardBreak();
+			}
 		}
 	}
 
@@ -1494,30 +1529,17 @@ void UPantheliaAttributeSet::HandleParryReaction(const FEffectProperties& Props)
 	AActor* AttackerAvatar = Props.SourceAvatarActor;
 	if (!IsValid(AttackerASC) || !IsValid(AttackerAvatar)) return;
 
-	// Obtener el AttributeSet del atacante para leer/escribir su postura.
-	// GetSet<T>() es la API canonica de GAS para obtener un AttributeSet tipado del ASC.
+	// Aplicar exactamente el mismo pipeline de postura que usa IncomingPoiseDamage:
+	// flinch por umbral, stagger a cero, reset a MaxPoise y reinicio de regeneración.
 	const UPantheliaAttributeSet* AttackerAttributes =
 		AttackerASC->GetSet<UPantheliaAttributeSet>();
 	if (!AttackerAttributes) return;
 
-	const float AttackerMaxPoise = AttackerAttributes->GetMaxPoise();
 	const float AttackerCurrentPoise = AttackerAttributes->GetPoise();
-	const float NewAttackerPoise = FMath::Clamp(AttackerCurrentPoise - PoiseToAttacker, 0.f, AttackerMaxPoise);
+	ApplyPoiseDamage(AttackerASC, AttackerAvatar, PoiseToAttacker);
 
-	// Aplicar el dano de postura directamente al atributo del atacante.
-	AttackerASC->SetNumericAttributeBase(UPantheliaAttributeSet::GetPoiseAttribute(), NewAttackerPoise);
-
-	UE_LOG(LogTemp, Warning, TEXT("[Parry] PARRY PERFECTO -> dano de postura al atacante %s: %.1f (postura %.1f -> %.1f)"),
-		*AttackerAvatar->GetName(), PoiseToAttacker, AttackerCurrentPoise, NewAttackerPoise);
-
-	// Si la postura del atacante llega a 0, se aturde (stagger) — abierto a riposte.
-	if (NewAttackerPoise <= 0.f)
-	{
-		FGameplayTagContainer StaggerContainer;
-		StaggerContainer.AddTag(FPantheliaGameplayTags::Get().Effects_Stagger);
-		AttackerASC->TryActivateAbilitiesByTag(StaggerContainer);
-		UE_LOG(LogTemp, Warning, TEXT("[Parry] El atacante %s quedo STAGGER por el parry."), *AttackerAvatar->GetName());
-	}
+	UE_LOG(LogTemp, Warning, TEXT("[Parry] PARRY PERFECTO -> dano de postura al atacante %s: %.1f (postura inicial %.1f)"),
+		*AttackerAvatar->GetName(), PoiseToAttacker, AttackerCurrentPoise);
 
 	// --- GANCHOS (sin implementar todavia) ---
 	// TODO[Elemental]: disparar el efecto del corazon elemental equipado en parry perfecto.

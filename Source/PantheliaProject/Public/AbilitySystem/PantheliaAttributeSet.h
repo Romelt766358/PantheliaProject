@@ -294,6 +294,14 @@ private:
 	void SetEffectProperties(const FGameplayEffectModCallbackData& Data, FEffectProperties& Props) const;
 	void HandleParryReaction(const FEffectProperties& Props);
 
+	// Fuente única de verdad para daño de postura, tanto para IncomingPoiseDamage como
+	// para la reacción ofensiva de un parry perfecto. Aplica flinch, stagger, reset de
+	// postura y reinicio del timer de regeneración con las mismas reglas.
+	void ApplyPoiseDamage(
+		UAbilitySystemComponent* TargetASC,
+		AActor* TargetAvatarActor,
+		float PoiseDamage) const;
+
 	// Extraído de PostGameplayEffectExecute (clase 309): toda la reacción al meta atributo
 	// IncomingDamage (parry/bloqueo, reducción de vida, muerte, XP) vivía inline en un solo
 	// bloque enorme. Se separa en su propia función por la misma razón que Health/Mana/Stamina

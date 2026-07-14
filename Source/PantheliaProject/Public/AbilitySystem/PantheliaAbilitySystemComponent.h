@@ -214,9 +214,16 @@ public:
 	// A diferencia de las otras funciones Notify*, NO busca por InputTag porque la
 	// notificación no viene del input del jugador sino del pipeline de daño: simplemente
 	// encuentra la parry ability activa por tipo y le pasa el resultado.
-	//   bParried = true  → parry perfecto  → salta a la sección ParryHit del montage
-	//   bParried = false → bloqueo imperfecto → salta a la sección BlockHit del montage
-	void NotifyParryImpact(bool bParried);
+	//   bParried = true  → parry perfecto
+	//   bParried = false → bloqueo imperfecto
+	//   bGuardBroken     → el bloqueo no pudo pagar stamina; termina la guardia antes
+	//                      de reutilizar la ability/animación de Stagger.
+	void NotifyParryImpact(bool bParried, bool bGuardBroken);
+
+	// Reutiliza el pipeline de Stagger para una guardia rota y concede
+	// State.GuardBroken durante la misma ventana. El tag adicional permite a UI,
+	// enemigos y perks distinguir la causa sin duplicar la implementación de stagger.
+	void TriggerGuardBreak();
 
 	// Gasta un punto de atributo disponible para mejorar el atributo primario indicado.
 	// Llamado desde UAttributeMenuWidgetController::UpgradeAttribute cuando el jugador
@@ -261,6 +268,14 @@ protected:
 	bool bPassiveAbilitiesGiven = false;
 
 private:
+	// Observa el ciclo del tag Effects.Stagger para retirar State.GuardBroken cuando
+	// termina la misma reacción. Un único guard break puede estar activo por ASC.
+	void OnGuardBreakStaggerTagChanged(const FGameplayTag Tag, int32 NewCount);
+	void ClearGuardBreakState();
+
+	FDelegateHandle GuardBreakStaggerTagDelegateHandle;
+	bool bGuardBreakObservedStagger = false;
+
 	// Solo existe entre SetPendingAttackEntryContext y el comienzo de la próxima ability
 	// de ataque. ConsumeAttackEntryContext lo devuelve y lo resetea en la misma llamada.
 	EPantheliaAttackEntryContext PendingAttackEntryContext =

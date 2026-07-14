@@ -506,6 +506,12 @@ void FPantheliaGameplayTags::InitializeNativeGameplayTags()
 	GameplayTags.State_Parry_Magic = Manager.AddNativeGameplayTag(FName("State.Parry.Magic"), FString("Ventana de parry magico activa (bloqueo perfecto). La concede GA_Parry_Magic."));
 	GameplayTags.State_Block_Physical = Manager.AddNativeGameplayTag(FName("State.Block.Physical"), FString("Bloqueo fisico imperfecto sostenido (tras la ventana de parry)."));
 	GameplayTags.State_Block_Magic = Manager.AddNativeGameplayTag(FName("State.Block.Magic"), FString("Bloqueo magico imperfecto sostenido (tras la ventana de parry)."));
+	GameplayTags.State_GuardBroken = Manager.AddNativeGameplayTag(
+		FName("State.GuardBroken"),
+		FString("La guardia se rompio por falta de stamina. Reutiliza el pipeline de Stagger."));
+	GameplayTags.Capability_Dodge_Fury = Manager.AddNativeGameplayTag(
+		FName("Capability.Dodge.Fury"),
+		FString("Permite que State.Invulnerable.Dodge evite ataques Fury/Ultimate."));
 
 	// --- INVULNERABILIDAD ABSOLUTA E I-FRAMES DE EVASIÓN ---
 	GameplayTags.State_Invulnerable = Manager.AddNativeGameplayTag(

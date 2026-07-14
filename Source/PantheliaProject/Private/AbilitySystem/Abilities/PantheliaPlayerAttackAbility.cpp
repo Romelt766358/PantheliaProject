@@ -179,6 +179,19 @@ void UPantheliaPlayerAttackAbility::ActivateAbility(
 		CurrentAttackEntryContext = PantheliaASC->ConsumeAttackEntryContext();
 	}
 
+	// Validar el contenido antes de cobrar. Una activación sin arma, definición o
+	// montage válido termina cerrada y conserva la stamina del jugador.
+	if (!HasValidActivationMontage())
+	{
+		UE_LOG(LogPanthelia, Error,
+			TEXT("[ATTACK] Activación rechazada antes del coste: no existe un montage válido. Tipo=%s Contexto=%d"),
+			AttackType == EPlayerAttackType::Heavy ? TEXT("Heavy") : TEXT("Light"),
+			static_cast<int32>(CurrentAttackEntryContext));
+
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		return;
+	}
+
 	// Aplicar el coste de stamina (y cooldown si lo hubiera). Si no hay stamina
 	// suficiente, CommitAbility falla y no atacamos (modelo Dark Souls).
 	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
@@ -288,6 +301,43 @@ void UPantheliaPlayerAttackAbility::CloseComboWindow()
 
 	// Si no hay buffer, no hacemos nada: el montage actual seguira hasta su fin y
 	// OnMontageCompleted terminara la ability. Eso resetea el combo (en EndAbility).
+}
+
+bool UPantheliaPlayerAttackAbility::HasValidActivationMontage() const
+{
+	const UPantheliaWeaponDefinition* WeaponDef = GetEquippedWeaponDefinition();
+	if (!WeaponDef)
+	{
+		return false;
+	}
+
+	// El follow-up de dodge usa su montage dedicado si existe; de lo contrario cae
+	// explícitamente al primer golpe normal de la cadena.
+	if (IsDodgeFollowupEntry())
+	{
+		UAnimMontage* DodgeMontage =
+			AttackType == EPlayerAttackType::Heavy
+				? WeaponDef->DodgeHeavyAttackMontage.Get()
+				: WeaponDef->DodgeLightAttackMontage.Get();
+
+		if (IsValid(DodgeMontage))
+		{
+			return true;
+		}
+	}
+
+	const TArray<TObjectPtr<UAnimMontage>>& Montages =
+		(AttackType == EPlayerAttackType::Heavy)
+			? WeaponDef->HeavyAttackMontages
+			: WeaponDef->LightAttackMontages;
+
+	if (Montages.Num() == 0)
+	{
+		return false;
+	}
+
+	const int32 SafeIndex = Montages.IsValidIndex(ComboIndex) ? ComboIndex : 0;
+	return Montages.IsValidIndex(SafeIndex) && IsValid(Montages[SafeIndex].Get());
 }
 
 void UPantheliaPlayerAttackAbility::PlayCurrentComboMontage()

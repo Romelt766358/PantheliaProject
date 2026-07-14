@@ -87,6 +87,39 @@ public:
 		UPARAM(ref) FGameplayEffectContextHandle& EffectContextHandle,
 		EPantheliaDodgeResponse InDodgeResponse);
 
+	// Categoría defensiva declarada por la fuente del daño. Heavy modifica el coste
+	// de bloqueo y Fury bloquea guardia/i-frames salvo capacidades desbloqueadas.
+	UFUNCTION(BlueprintPure, Category = "PantheliaAbilitySystemLibrary|GameplayEffects|Defense")
+	static EPantheliaDefenseAttackType GetDefenseAttackType(
+		const FGameplayEffectContextHandle& EffectContextHandle);
+
+	UFUNCTION(BlueprintCallable, Category = "PantheliaAbilitySystemLibrary|GameplayEffects|Defense")
+	static void SetDefenseAttackType(
+		UPARAM(ref) FGameplayEffectContextHandle& EffectContextHandle,
+		EPantheliaDefenseAttackType InDefenseAttackType);
+
+	// Lee el resultado defensivo final escrito por ExecCalc_Damage. Unresolved indica
+	// que el spec no pasó por ese cálculo o que todavía no terminó de aplicarse.
+	UFUNCTION(BlueprintPure, Category = "PantheliaAbilitySystemLibrary|GameplayEffects|HitOutcome")
+	static EPantheliaHitOutcome GetHitOutcome(
+		const FGameplayEffectContextHandle& EffectContextHandle);
+
+	// Escribe el resultado final del golpe. ExecCalc_Damage lo reinicia y actualiza
+	// para cada aplicación, porque un mismo context puede reutilizarse entre objetivos.
+	UFUNCTION(BlueprintCallable, Category = "PantheliaAbilitySystemLibrary|GameplayEffects|HitOutcome")
+	static void SetHitOutcome(
+		UPARAM(ref) FGameplayEffectContextHandle& EffectContextHandle,
+		EPantheliaHitOutcome InHitOutcome);
+
+	// Guardia rota resuelta por el ExecCalc cuando un bloqueo no puede pagar stamina.
+	UFUNCTION(BlueprintPure, Category = "PantheliaAbilitySystemLibrary|GameplayEffects|Defense")
+	static bool WasGuardBroken(const FGameplayEffectContextHandle& EffectContextHandle);
+
+	UFUNCTION(BlueprintCallable, Category = "PantheliaAbilitySystemLibrary|GameplayEffects|Defense")
+	static void SetWasGuardBroken(
+		UPARAM(ref) FGameplayEffectContextHandle& EffectContextHandle,
+		bool bInWasGuardBroken);
+
 	// ============================================================
 	// LECTURA DEL RESULTADO DE DEBUFF (clase 307-308)
 	// ============================================================

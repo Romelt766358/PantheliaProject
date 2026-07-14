@@ -29,6 +29,9 @@ bool FPantheliaGameplayEffectContext::NetSerialize(FArchive& Ar, UPackageMap* Ma
     //   bit 12 — LaunchForce (FVector, solo si no es el vector cero)
     //   bit 13 — bKnockbackIsHeavy (bool, solo si true)
     //   bit 14 — DodgeResponse (2 bits, solo si difiere de AvoidableNoReward)
+    //   bit 15 — HitOutcome (3 bits, solo si difiere de Unresolved)
+    //   bit 16 — DefenseAttackType (2 bits, solo si difiere de Normal)
+    //   bit 17 — bWasGuardBroken (bool, solo si true)
     // ----------------------------------------------------------------
 
     uint32 RepBits = 0;
@@ -112,10 +115,26 @@ bool FPantheliaGameplayEffectContext::NetSerialize(FArchive& Ar, UPackageMap* Ma
         {
             RepBits |= 1 << 14;
         }
+
+        if (HitOutcome != EPantheliaHitOutcome::Unresolved)
+        {
+            RepBits |= 1 << 15;
+        }
+
+        if (DefenseAttackType != EPantheliaDefenseAttackType::Normal)
+        {
+            RepBits |= 1 << 16;
+        }
+
+        if (bWasGuardBroken)
+        {
+            RepBits |= 1 << 17;
+        }
     }
 
-    // 15 bits usados en total (el bit 14 indica si se serializa DodgeResponse).
-    Ar.SerializeBits(&RepBits, 15);
+    // 18 bits usados en total. Los bits 14-17 cubren las reglas defensivas
+    // añadidas al context sin alterar los campos base anteriores.
+    Ar.SerializeBits(&RepBits, 18);
 
     if (RepBits & (1 << 0))
     {
@@ -232,6 +251,84 @@ bool FPantheliaGameplayEffectContext::NetSerialize(FArchive& Ar, UPackageMap* Ma
     else if (Ar.IsLoading())
     {
         DodgeResponse = EPantheliaDodgeResponse::AvoidableNoReward;
+    }
+
+    // HitOutcome tiene cinco valores; tres bits dejan margen para ampliar el enum sin
+    // cambiar el formato inmediatamente. Ante un valor desconocido volvemos a Unresolved.
+    if (RepBits & (1 << 15))
+    {
+        uint8 HitOutcomeValue = static_cast<uint8>(HitOutcome);
+        Ar.SerializeBits(&HitOutcomeValue, 3);
+
+        if (Ar.IsLoading())
+        {
+            switch (HitOutcomeValue)
+            {
+                case static_cast<uint8>(EPantheliaHitOutcome::Accepted):
+                    HitOutcome = EPantheliaHitOutcome::Accepted;
+                    break;
+
+                case static_cast<uint8>(EPantheliaHitOutcome::NegatedInvulnerability):
+                    HitOutcome = EPantheliaHitOutcome::NegatedInvulnerability;
+                    break;
+
+                case static_cast<uint8>(EPantheliaHitOutcome::NegatedPerfectParry):
+                    HitOutcome = EPantheliaHitOutcome::NegatedPerfectParry;
+                    break;
+
+                case static_cast<uint8>(EPantheliaHitOutcome::MitigatedBlock):
+                    HitOutcome = EPantheliaHitOutcome::MitigatedBlock;
+                    break;
+
+                case static_cast<uint8>(EPantheliaHitOutcome::Unresolved):
+                default:
+                    HitOutcome = EPantheliaHitOutcome::Unresolved;
+                    break;
+            }
+        }
+    }
+    else if (Ar.IsLoading())
+    {
+        HitOutcome = EPantheliaHitOutcome::Unresolved;
+    }
+
+    // DefenseAttackType tiene tres valores; dos bits son suficientes.
+    if (RepBits & (1 << 16))
+    {
+        uint8 DefenseAttackTypeValue = static_cast<uint8>(DefenseAttackType);
+        Ar.SerializeBits(&DefenseAttackTypeValue, 2);
+
+        if (Ar.IsLoading())
+        {
+            switch (DefenseAttackTypeValue)
+            {
+                case static_cast<uint8>(EPantheliaDefenseAttackType::Heavy):
+                    DefenseAttackType = EPantheliaDefenseAttackType::Heavy;
+                    break;
+
+                case static_cast<uint8>(EPantheliaDefenseAttackType::Fury):
+                    DefenseAttackType = EPantheliaDefenseAttackType::Fury;
+                    break;
+
+                case static_cast<uint8>(EPantheliaDefenseAttackType::Normal):
+                default:
+                    DefenseAttackType = EPantheliaDefenseAttackType::Normal;
+                    break;
+            }
+        }
+    }
+    else if (Ar.IsLoading())
+    {
+        DefenseAttackType = EPantheliaDefenseAttackType::Normal;
+    }
+
+    if (RepBits & (1 << 17))
+    {
+        Ar << bWasGuardBroken;
+    }
+    else if (Ar.IsLoading())
+    {
+        bWasGuardBroken = false;
     }
 
     // Al cargar, reconstruir InstigatorAbilitySystemComponent desde el Instigator.

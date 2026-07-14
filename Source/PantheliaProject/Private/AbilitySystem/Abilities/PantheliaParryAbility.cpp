@@ -3,6 +3,9 @@
 #include "AbilitySystem/Abilities/PantheliaParryAbility.h"
 #include "PantheliaGameplayTags.h"
 #include "AbilitySystemComponent.h"
+#include "AbilitySystem/PantheliaAbilitySystemComponent.h"
+#include "AbilitySystem/PantheliaAttributeSet.h"
+#include "GameplayEffect.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
@@ -24,15 +27,18 @@ void UPantheliaParryAbility::ActivateAbility(const FGameplayAbilitySpecHandle Ha
 {
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 
-	// Aplicar coste (estamina). Si no hay suficiente, en Fase 1 igual seguimos (el manejo
-	// fino de "sin estamina" llega en Fase 3). CommitAbility aplica el CostGE del Blueprint.
+	// Aplicar el coste de entrada. La regla definitiva exige pagar antes de abrir la
+	// ventana: si CommitAbility falla, no se conceden tags, no se reproduce la guardia
+	// y la ability termina inmediatamente.
 	if (!CommitAbility(Handle, ActorInfo, ActivationInfo))
 	{
-		// Nota Fase 1: aun sin estamina permitimos entrar a la guardia para poder probar
-		// el flujo. La penalizacion real (guardia rota) se implementa en Fase 3.
+		RuntimeState = EPantheliaParryRuntimeState::Ending;
+		EndAbility(Handle, ActorInfo, ActivationInfo, true, true);
+		return;
 	}
 
 	bInputHeld = true;
+	RuntimeState = EPantheliaParryRuntimeState::PerfectWindow;
 
 	UE_LOG(LogTemp, Warning, TEXT("[Parry] ActivateAbility. Tipo=%d Ventana=%.2fs"),
 		(int32)ParryType, ParryWindow);
@@ -78,8 +84,19 @@ void UPantheliaParryAbility::EnterParryWindow()
 
 void UPantheliaParryAbility::OnParryWindowExpired()
 {
+	// Un callback tardío no debe reabrir ni terminar dos veces una ability que ya salió.
+	if (RuntimeState != EPantheliaParryRuntimeState::PerfectWindow)
+	{
+		return;
+	}
+
 	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
-	if (!ASC) return;
+	if (!ASC)
+	{
+		RuntimeState = EPantheliaParryRuntimeState::Ending;
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+		return;
+	}
 
 	// La ventana de parry termino. Quitar el tag de parry.
 	ASC->RemoveLooseGameplayTag(GetParryStateTag());
@@ -88,30 +105,24 @@ void UPantheliaParryAbility::OnParryWindowExpired()
 	// Si ya lo solto -> terminamos la guardia.
 	if (bInputHeld)
 	{
+		RuntimeState = EPantheliaParryRuntimeState::SustainedGuard;
 		// El tag State.Block.X ya se concedio en EnterParryWindow (para que la animacion
 		// arrancara sin delay). Aqui solo confirmamos el paso a bloqueo sostenido; no hay
 		// que volver a anadirlo. La pose de guardia ya esta sonando desde ActivateAbility.
 		UE_LOG(LogTemp, Warning, TEXT("[Parry] Ventana expirada -> BLOQUEO sostenido: %s"), *GetBlockStateTag().ToString());
 
 		// --- SEGUNDO COSTE (transicion a bloqueo) ---
-		// Aplicar el GE de coste de bloqueo UNA SOLA VEZ al entrar en el sostenido.
-		// Este GE es independiente del Cost Gameplay Effect Class estandar (que ya se
-		// cobro al activar la ability). Representa el esfuerzo de aguantar un golpe que
-		// no se pudo parry. Si no se asigno BlockTransitionCostEffectClass en el
-		// Blueprint, no pasa nada (comportamiento seguro).
-		if (BlockTransitionCostEffectClass)
+		// Se valida antes de aplicarlo. Si no puede pagarse, la transición provoca
+		// guardia rota inmediata y reutiliza el pipeline/animación de Stagger.
+		if (!TryPayBlockTransitionCost())
 		{
-			ApplyGameplayEffectToOwner(
-				CurrentSpecHandle,
-				CurrentActorInfo,
-				CurrentActivationInfo,
-				BlockTransitionCostEffectClass->GetDefaultObject<UGameplayEffect>(),
-				GetAbilityLevel());
+			return;
 		}
 	}
 	else
 	{
 		UE_LOG(LogTemp, Warning, TEXT("[Parry] Ventana expirada y boton ya soltado -> fin."));
+		RuntimeState = EPantheliaParryRuntimeState::Ending;
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
 	}
 }
@@ -120,14 +131,19 @@ void UPantheliaParryAbility::NotifyBlockInputReleased()
 {
 	bInputHeld = false;
 
-	UE_LOG(LogTemp, Warning, TEXT("[Parry] Input soltado."));
+	UE_LOG(LogTemp, Warning, TEXT("[Parry] Input soltado. Estado=%d"), static_cast<int32>(RuntimeState));
 
-	// Si soltamos durante la ventana de parry, la dejamos correr (el timer la cerrara y,
-	// como bInputHeld ya es false, terminara la ability). Si ya estabamos en bloqueo
-	// sostenido, terminamos de inmediato.
-	UAbilitySystemComponent* ASC = GetAbilitySystemComponentFromActorInfo();
-	if (ASC && ASC->HasMatchingGameplayTag(GetBlockStateTag()))
+	// Soltar durante PerfectWindow NO cancela el parry: la ventana conserva su duración
+	// completa y OnParryWindowExpired terminará la ability sin entrar en guardia sostenida.
+	if (RuntimeState == EPantheliaParryRuntimeState::PerfectWindow)
 	{
+		return;
+	}
+
+	// Una guardia ya sostenida sí termina inmediatamente al soltar el input.
+	if (RuntimeState == EPantheliaParryRuntimeState::SustainedGuard)
+	{
+		RuntimeState = EPantheliaParryRuntimeState::Ending;
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, false);
 	}
 }
@@ -137,6 +153,9 @@ void UPantheliaParryAbility::EndAbility(const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActivationInfo ActivationInfo,
 	bool bReplicateEndAbility, bool bWasCancelled)
 {
+	// Evitar que callbacks tardíos interpreten el tag visual como una fase todavía activa.
+	RuntimeState = EPantheliaParryRuntimeState::Ending;
+
 	// Limpieza: quitar tags de estado y cancelar el timer.
 	if (UWorld* World = GetWorld())
 	{
@@ -161,6 +180,7 @@ void UPantheliaParryAbility::EndAbility(const FGameplayAbilitySpecHandle Handle,
 
 	ClearParryBlockTags();
 	bInputHeld = false;
+	RuntimeState = EPantheliaParryRuntimeState::Inactive;
 
 	Super::EndAbility(Handle, ActorInfo, ActivationInfo, bReplicateEndAbility, bWasCancelled);
 }
@@ -204,18 +224,34 @@ void UPantheliaParryAbility::PlayGuardLoopMontage()
 	}
 }
 
-void UPantheliaParryAbility::NotifyParryImpact(bool bWasPerfectParry)
+void UPantheliaParryAbility::NotifyParryImpact(bool bWasPerfectParry, bool bGuardBroken)
 {
-	// El golpe fue parado. Damos feel de impacto con un RETROCESO FISICO (knockback), sin
-	// tocar ningun montage. Antes saltabamos a una seccion del GuardMontage, pero eso
-	// arrancaba el montage de entrada (full body, en DefaultSlot) por encima del
-	// GuardLoopMontage que sostiene la pose (en GuardSlot), lo que rompia la animacion y
-	// dejaba la pose deforme. Dejando intacto el GuardLoopMontage, la pose de guardia se
-	// mantiene y el knockback aporta el impacto. El retroceso de la pose superior se puede
-	// anadir despues con un montage aditivo en GuardSlot si se quiere mas detalle.
-	UE_LOG(LogTemp, Warning, TEXT("[Parry] NotifyParryImpact. PerfectParry=%d"), bWasPerfectParry ? 1 : 0);
+	// El golpe fue defendido sin interrumpir el GuardLoopMontage. Antes se saltaba a una
+	// sección del montage de entrada (full body, DefaultSlot), lo que rompía la pose upper-body
+	// del GuardSlot. El bloqueo imperfecto conserva un retroceso físico; el parry perfecto
+	// anula la consecuencia ofensiva y usa únicamente su cue/reacción positiva.
+	UE_LOG(LogTemp, Warning,
+		TEXT("[Parry] NotifyParryImpact. PerfectParry=%d GuardBroken=%d"),
+		bWasPerfectParry ? 1 : 0,
+		bGuardBroken ? 1 : 0);
 
-	ApplyGuardKnockback(bWasPerfectParry);
+	// El golpe que rompe la guardia conserva el cue de bloqueo, pero no aplica el
+	// retroceso ordinario: la reacción completa la gobierna Stagger.
+	if (bGuardBroken)
+	{
+		FireParryCue(false);
+		RuntimeState = EPantheliaParryRuntimeState::Ending;
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+		return;
+	}
+
+	// Un parry perfecto anula por completo el golpe y no desplaza al jugador. El
+	// bloqueo imperfecto sí conserva el retroceso defensivo de la guardia.
+	if (!bWasPerfectParry)
+	{
+		ApplyGuardKnockback();
+	}
+
 	FireParryCue(bWasPerfectParry);
 }
 
@@ -231,7 +267,109 @@ FGameplayTag UPantheliaParryAbility::GetBlockStateTag() const
 	return ParryType == EParryType::Physical ? Tags.State_Block_Physical : Tags.State_Block_Magic;
 }
 
-void UPantheliaParryAbility::ApplyGuardKnockback(bool bWasPerfectParry)
+bool UPantheliaParryAbility::TryPayBlockTransitionCost()
+{
+	if (!BlockTransitionCostEffectClass)
+	{
+		return true;
+	}
+
+	UPantheliaAbilitySystemComponent* ASC =
+		Cast<UPantheliaAbilitySystemComponent>(GetAbilitySystemComponentFromActorInfo());
+	if (!ASC)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Parry] No hay PantheliaASC para validar el coste de transición."));
+		RuntimeState = EPantheliaParryRuntimeState::Ending;
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+		return false;
+	}
+
+	FGameplayEffectContextHandle CostContext = ASC->MakeEffectContext();
+	CostContext.AddSourceObject(this);
+
+	FGameplayEffectSpecHandle CostSpec = ASC->MakeOutgoingSpec(
+		BlockTransitionCostEffectClass,
+		GetAbilityLevel(),
+		CostContext);
+
+	if (!CostSpec.IsValid() || !CostSpec.Data.IsValid())
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Parry] No se pudo construir el GE de coste de transición; guardia rota."));
+		RuntimeState = EPantheliaParryRuntimeState::Ending;
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+		ASC->TriggerGuardBreak();
+		return false;
+	}
+
+	CostSpec.Data->CalculateModifierMagnitudes();
+
+	float RequiredStamina = 0.f;
+	const FGameplayAttribute StaminaAttribute = UPantheliaAttributeSet::GetStaminaAttribute();
+	const UGameplayEffect* CostDefinition = CostSpec.Data->Def;
+
+	if (CostDefinition)
+	{
+		for (int32 ModifierIndex = 0;
+			ModifierIndex < CostDefinition->Modifiers.Num() &&
+			ModifierIndex < CostSpec.Data->Modifiers.Num();
+			++ModifierIndex)
+		{
+			const FGameplayModifierInfo& ModifierInfo = CostDefinition->Modifiers[ModifierIndex];
+			if (ModifierInfo.Attribute != StaminaAttribute ||
+				ModifierInfo.ModifierOp != EGameplayModOp::Additive)
+			{
+				continue;
+			}
+
+			const float ModifierMagnitude =
+				CostSpec.Data->GetModifierMagnitude(ModifierIndex, true);
+			if (ModifierMagnitude < 0.f)
+			{
+				RequiredStamina += -ModifierMagnitude;
+			}
+		}
+	}
+
+	// Si el GE no contiene un modificador negativo de Stamina, se aplica normalmente.
+	// Esto conserva compatibilidad con efectos de transición que solo otorguen tags.
+	if (RequiredStamina <= 0.f)
+	{
+		ASC->ApplyGameplayEffectSpecToSelf(*CostSpec.Data.Get());
+		return true;
+	}
+
+	const float CurrentStamina = ASC->GetNumericAttribute(StaminaAttribute);
+	if (CurrentStamina + KINDA_SMALL_NUMBER < RequiredStamina)
+	{
+		if (CurrentStamina > 0.f)
+		{
+			ASC->ApplyModToAttribute(
+				StaminaAttribute,
+				EGameplayModOp::Additive,
+				-CurrentStamina);
+		}
+
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Parry] Transición no pagable: actual=%.1f requerida=%.1f -> GUARD BREAK."),
+			CurrentStamina,
+			RequiredStamina);
+
+		RuntimeState = EPantheliaParryRuntimeState::Ending;
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+		ASC->TriggerGuardBreak();
+		return false;
+	}
+
+	// Aplicamos el spec construido en vez de llamar ApplyGameplayEffectToOwner para que
+	// la misma magnitud evaluada sea la que se cobre. Igualdad exacta está permitida:
+	// puede dejar Stamina en 0 sin romper la guardia hasta el siguiente impacto.
+	ASC->ApplyGameplayEffectSpecToSelf(*CostSpec.Data.Get());
+	return true;
+}
+
+void UPantheliaParryAbility::ApplyGuardKnockback()
 {
 	// Obtener el Character del defensor (el que paro el golpe) para empujarlo hacia atras.
 	const FGameplayAbilityActorInfo* Info = GetCurrentActorInfo();
@@ -248,8 +386,7 @@ void UPantheliaParryAbility::ApplyGuardKnockback(bool bWasPerfectParry)
 	// GetActorForwardVector apunta al frente; negandolo obtenemos el "atras".
 	const FVector Backward = -Character->GetActorForwardVector();
 
-	// Fuerza segun el tipo: el parry perfecto repele mas que el bloqueo (que absorbe).
-	const float Speed = bWasPerfectParry ? ParryKnockbackSpeed : BlockKnockbackSpeed;
+	const float Speed = BlockKnockbackSpeed;
 
 	// LaunchCharacter aplica una velocidad instantanea respetando el sistema de movimiento
 	// del Character (no atraviesa paredes ni rompe el lock-on). Lo mantenemos horizontal
@@ -258,8 +395,8 @@ void UPantheliaParryAbility::ApplyGuardKnockback(bool bWasPerfectParry)
 	const FVector LaunchVelocity = Backward * Speed;
 	Character->LaunchCharacter(LaunchVelocity, /*bXYOverride=*/true, /*bZOverride=*/false);
 
-	UE_LOG(LogTemp, Warning, TEXT("[Parry] Knockback aplicado: %.0f cm/s hacia atras (perfecto=%d)."),
-		Speed, bWasPerfectParry ? 1 : 0);
+	UE_LOG(LogTemp, Warning, TEXT("[Parry] Knockback de bloqueo aplicado: %.0f cm/s hacia atras."),
+		Speed);
 }
 
 void UPantheliaParryAbility::FireParryCue(bool bWasPerfectParry)

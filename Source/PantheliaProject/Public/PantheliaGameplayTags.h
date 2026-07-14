@@ -486,6 +486,14 @@ public:
 	FGameplayTag State_Block_Physical;
 	FGameplayTag State_Block_Magic;
 
+	// Se concede mientras el personaje reutiliza el pipeline/animación de Stagger por
+	// no poder pagar un impacto bloqueado o la transición a guardia sostenida.
+	FGameplayTag State_GuardBroken;
+
+	// Capacidad desbloqueable por perk u objeto. Sin este tag, los ataques Fury/Ultimate
+	// atraviesan State.Invulnerable.Dodge. Cualquier sistema puede concederlo mediante GE.
+	FGameplayTag Capability_Dodge_Fury;
+
 	// --- INVULNERABILIDAD E I-FRAMES DE EVASIÓN ---
 	// El PADRE EXACTO State.Invulnerable representa invulnerabilidad absoluta
 	// (GetUp hoy; cinemáticas/respawn/transiciones futuras). Ni Unavoidable lo atraviesa.

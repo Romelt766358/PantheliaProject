@@ -254,17 +254,30 @@ public:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Defense", meta = (ClampMin = "0.0"))
 	float MagicParryPoiseDamage = 12.f;
 
-	// Stamina consumida al ejecutar un Parry (bloqueo perfecto).
+	// Campo legacy conservado para no invalidar assets existentes. El coste runtime
+	// del parry perfecto ya no usa un valor fijo: se calcula como BlockStaminaCost ×
+	// PerfectParryStaminaCostMultiplier para mantener una relación configurable y
+	// compatible con futuros modificadores del árbol/equipamiento.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Defense", meta = (ClampMin = "0.0"))
 	float ParryStaminaCost = 12.f;
 
-	// Stamina consumida al mantener un Bloqueo (imperfecto).
+	// Coste BASE de stamina al bloquear un ataque Normal.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Defense", meta = (ClampMin = "0.0"))
 	float BlockStaminaCost = 10.f;
 
-	// Multiplicador del dano de POSTURA que RECIBE el jugador si bloquea SIN estamina
-	// suficiente (guardia rota). 3.0 = triplica el dano de postura recibido. Ajustable por
-	// corazon/tipo de dano via ganchos.
+	// Multiplicador del coste base para bloquear un ataque Heavy.
+	// Decisión cerrada: un pesado consume cuatro veces el coste normal.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Defense", meta = (ClampMin = "1.0"))
+	float HeavyBlockStaminaCostMultiplier = 4.f;
+
+	// Multiplicador fijo del coste base que paga CUALQUIER parry perfecto, sin importar
+	// si el golpe era Normal, Heavy o Fury. 0.5 = mitad del coste normal.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Defense", meta = (ClampMin = "0.0"))
+	float PerfectParryStaminaCostMultiplier = 0.5f;
+
+	// Campo legacy conservado para no invalidar WeaponDefinitions existentes. La regla
+	// definitiva de guardia rota reutiliza directamente Stagger y ya no multiplica el dano
+	// de postura; no usar este valor en contenido nuevo.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Defense", meta = (ClampMin = "1.0"))
 	float NoStaminaBlockPoiseMultiplier = 3.0f;
 

@@ -72,6 +72,7 @@ void UPantheliaDamageGameplayAbility::ApplyDamageScalingToSpec(
 	// resetea correctamente un context reutilizado por varios targets.
 	FGameplayEffectContextHandle EffectContextHandle = SpecHandle.Data->GetContext();
 	UPantheliaAbilitySystemLibrary::SetDodgeResponse(EffectContextHandle, DodgeResponse);
+	UPantheliaAbilitySystemLibrary::SetDefenseAttackType(EffectContextHandle, DefenseAttackType);
 
 	// ----------------------------------------------------------------
 	// ESCALADO POR ATRIBUTOS (spec §1.7)

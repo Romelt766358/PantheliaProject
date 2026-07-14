@@ -160,6 +160,11 @@ protected:
 		return CurrentAttackEntryContext == EPantheliaAttackEntryContext::DodgeFollowup;
 	}
 
+	// Valida que la activación tenga al menos un montage ejecutable ANTES de cobrar
+	// stamina. Las hijas pueden ampliar la validación si ofrecen rutas alternativas
+	// (por ejemplo, el heavy cargado además de su cadena normal).
+	virtual bool HasValidActivationMontage() const;
+
 	// Reproduce el montage del golpe actual (ComboIndex) y engancha sus callbacks.
 	// Si no hay montage valido, termina la ability. Protected para que las hijas
 	// puedan reproducir golpes del combo (el especial encadenable reutiliza esto).

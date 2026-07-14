@@ -35,6 +35,62 @@ enum class EPantheliaDodgeResponse : uint8
 };
 
 // ============================================================
+// EPantheliaDefenseAttackType
+// ============================================================
+// Clasifica cómo una fuente de daño interactúa con guardia, parry y dodge.
+// No describe el daño ni la animación del ataque: solo su regla defensiva.
+// La propiedad vive en cada Damage Gameplay Ability para que bosses, enemigos
+// normales y futuras variantes puedan configurarla sin hardcodes por clase.
+// ============================================================
+UENUM(BlueprintType)
+enum class EPantheliaDefenseAttackType : uint8
+{
+    // Ataque ordinario: puede bloquearse con coste base y puede parrearse.
+    Normal UMETA(DisplayName = "Normal"),
+
+    // Ataque pesado: puede bloquearse, pero consume el multiplicador pesado.
+    Heavy UMETA(DisplayName = "Heavy"),
+
+    // Ataque Fury/Ultimate: no puede bloquearse y atraviesa los i-frames normales
+    // del dodge. Solo un parry perfecto lo anula, salvo que el target posea la
+    // capacidad desbloqueable Capability.Dodge.Fury.
+    Fury UMETA(DisplayName = "Fury / Ultimate")
+};
+
+// ============================================================
+// EPantheliaHitOutcome
+// ============================================================
+// Resultado defensivo final de una aplicación de daño. El ExecCalc lo escribe
+// SIEMPRE antes de terminar y los productores físicos del golpe (trace/proyectil)
+// lo leen después de ApplyGameplayEffectSpecToSelf para decidir si deben reproducir
+// feedback de impacto sobre la víctima.
+//
+// No sustituye WasParried/WasBlocked: esos flags transportan datos específicos de
+// la reacción defensiva. HitOutcome responde una pregunta más general:
+// "¿el contacto produjo un impacto ofensivo aceptado sobre este objetivo?".
+// ============================================================
+UENUM(BlueprintType)
+enum class EPantheliaHitOutcome : uint8
+{
+    // Estado inicial o spec que no pasó por ExecCalc_Damage.
+    Unresolved UMETA(DisplayName = "Unresolved"),
+
+    // El golpe fue aceptado por el pipeline normal. Puede causar daño o quedar en
+    // cero por resistencias, pero no fue negado por una defensa absoluta.
+    Accepted UMETA(DisplayName = "Accepted"),
+
+    // El golpe fue rechazado por State.Invulnerable o por i-frames de evasión.
+    NegatedInvulnerability UMETA(DisplayName = "Negated by Invulnerability"),
+
+    // Un parry perfecto válido anuló por completo el golpe.
+    NegatedPerfectParry UMETA(DisplayName = "Negated by Perfect Parry"),
+
+    // El golpe fue bloqueado de forma imperfecta. La reacción visual de guardia
+    // sustituye al feedback de carne/sangre del impacto normal.
+    MitigatedBlock UMETA(DisplayName = "Mitigated by Block")
+};
+
+// ============================================================
 // EPantheliaAttackEntryContext
 // ============================================================
 // Describe desde qué sistema comenzó una activación de ataque. El contexto vive
@@ -141,6 +197,11 @@ struct FDamageEffectParams
     // produzcan esquives perfectos gratuitos.
     UPROPERTY()
     EPantheliaDodgeResponse DodgeResponse = EPantheliaDodgeResponse::AvoidableNoReward;
+
+    // Categoría defensiva del ataque. Normal por defecto para que fuentes antiguas
+    // conserven su comportamiento hasta que el diseñador marque Heavy o Fury.
+    UPROPERTY()
+    EPantheliaDefenseAttackType DefenseAttackType = EPantheliaDefenseAttackType::Normal;
 
     // --- Parámetros de efecto de estado (clase 304, actualizado por buildup) ---
     // DebuffChance fue ELIMINADO (decisión cerrada): los estados no tienen azar —
@@ -309,6 +370,16 @@ public:
     // Política de este paquete de daño frente a los i-frames de evasión.
     EPantheliaDodgeResponse GetDodgeResponse() const { return DodgeResponse; }
 
+    // Resultado defensivo final del golpe. Lo escribe ExecCalc_Damage y lo leen
+    // los componentes que deciden si reproducir feedback físico de impacto.
+    EPantheliaHitOutcome GetHitOutcome() const { return HitOutcome; }
+
+    // Categoría defensiva transportada desde la ability que creó el spec.
+    EPantheliaDefenseAttackType GetDefenseAttackType() const { return DefenseAttackType; }
+
+    // True si el bloqueo no pudo pagar su coste y debe reutilizar el pipeline de Stagger.
+    bool WasGuardBroken() const { return bWasGuardBroken; }
+
     // Setters — usados en ExecCalc_Damage para escribir el resultado del golpe
     void SetIsCriticalHit(bool bInIsCriticalHit) { bIsCriticalHit = bInIsCriticalHit; }
 
@@ -374,6 +445,21 @@ public:
     void SetDodgeResponse(EPantheliaDodgeResponse InDodgeResponse)
     {
         DodgeResponse = InDodgeResponse;
+    }
+
+    void SetHitOutcome(EPantheliaHitOutcome InHitOutcome)
+    {
+        HitOutcome = InHitOutcome;
+    }
+
+    void SetDefenseAttackType(EPantheliaDefenseAttackType InDefenseAttackType)
+    {
+        DefenseAttackType = InDefenseAttackType;
+    }
+
+    void SetWasGuardBroken(bool bInWasGuardBroken)
+    {
+        bWasGuardBroken = bInWasGuardBroken;
     }
 
     // GAS requiere que las subclases sobreescriban GetScriptStruct().
@@ -476,6 +562,21 @@ protected:
     // escribe Dodgeable en el context antes de crear/aplicar el spec.
     UPROPERTY()
     EPantheliaDodgeResponse DodgeResponse = EPantheliaDodgeResponse::AvoidableNoReward;
+
+    // Se reinicia y escribe para cada aplicación del spec. Unresolved permite detectar
+    // rutas que no pasaron por ExecCalc_Damage sin confundirlas con un impacto aceptado.
+    UPROPERTY()
+    EPantheliaHitOutcome HitOutcome = EPantheliaHitOutcome::Unresolved;
+
+    // Regla defensiva de la fuente de daño. Normal mantiene compatibilidad con specs
+    // antiguos y con fuentes secundarias que todavía no declaran categoría.
+    UPROPERTY()
+    EPantheliaDefenseAttackType DefenseAttackType = EPantheliaDefenseAttackType::Normal;
+
+    // Resultado adicional del bloqueo. Se resetea en cada aplicación del spec para que
+    // un context compartido entre varios targets no propague una guardia rota anterior.
+    UPROPERTY()
+    bool bWasGuardBroken = false;
 };
 
 // ============================================================
