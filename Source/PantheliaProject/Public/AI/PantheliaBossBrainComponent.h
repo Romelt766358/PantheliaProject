@@ -5,12 +5,17 @@
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
 #include "GameplayTagContainer.h"
+#include "GameplayAbilitySpecHandle.h"
 #include "AI/Data/PantheliaBossProfile.h"
 #include "PantheliaBossBrainComponent.generated.h"
 
 class APantheliaEnemy;
 class UAbilitySystemComponent;
 class UPantheliaAttributeSet;
+struct FAbilityEndedData;
+struct FOnAttributeChangeData;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_ThreeParams(FBossPhaseChangedSignature, FName, NewPhaseID, FGameplayTag, NewPhaseTag, float, HealthPercent);
 
 UENUM(BlueprintType)
 enum class EPantheliaBossActionRuntimeState : uint8
@@ -62,6 +67,11 @@ public:
 	UPROPERTY(BlueprintReadOnly, Category = "Panthelia|Boss")
 	FGameplayTag ActivePhaseTag;
 
+	// Se emite cuando la vida cruza un umbral y cambia la fase activa.
+	// El cambio no interrumpe la acción actual: afecta a la siguiente selección.
+	UPROPERTY(BlueprintAssignable, Category = "Panthelia|Boss")
+	FBossPhaseChangedSignature OnBossPhaseChanged;
+
 	// Logs ligeros para validar selección ponderada desde Output Log.
 	// Mantener desactivado fuera de pruebas para no ensuciar el log.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Panthelia|Boss|Debug")
@@ -71,6 +81,12 @@ public:
 	// se parecen o se interrumpen demasiado rápido para identificarlas visualmente.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Panthelia|Boss|Debug")
 	bool bShowActionDebugOnScreen = false;
+
+	// Logs compactos del lifecycle real de cada acción: Starting, Running,
+	// Finished, Failed o Interrupted. Se mantiene separado de los logs de
+	// selección para poder auditar combate rápido sin imprimir cada rechazo.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Panthelia|Boss|Debug")
+	bool bLogActionLifecycle = true;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Panthelia|Boss|Debug", meta = (ClampMin = "0.1", UIMin = "0.1", UIMax = "5.0"))
 	float ActionDebugScreenDuration = 1.25f;
@@ -127,6 +143,21 @@ public:
 	UFUNCTION(BlueprintPure, Category = "Panthelia|Boss")
 	bool HasActionFailed() const;
 
+	UFUNCTION(BlueprintPure, Category = "Panthelia|Boss")
+	bool IsActionTerminal() const;
+
+	UFUNCTION(BlueprintPure, Category = "Panthelia|Boss")
+	bool DidActionSucceed() const;
+
+	UFUNCTION(BlueprintPure, Category = "Panthelia|Boss")
+	bool WasActionInterrupted() const;
+
+	// Tras una interrupción, Wait For Boss Action mantiene el estado vivo mientras
+	// Effects.HitReact o Effects.Stagger sigan activos. Así el boss no reselecciona
+	// una acción a mitad de su reacción.
+	UFUNCTION(BlueprintPure, Category = "Panthelia|Boss")
+	bool IsInterruptionRecoveryActive() const;
+
 	UFUNCTION(BlueprintCallable, Category = "Panthelia|Boss")
 	void ClearCurrentAction();
 
@@ -144,6 +175,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 private:
 	// Initialization
@@ -178,6 +210,14 @@ private:
 	UPROPERTY(Transient)
 	bool bActionActivationRequested = false;
 
+	// Handle exacto de la spec activada. El tag no es suficiente si en el futuro
+	// dos specs comparten una familia de tags o una ability se reemplaza en runtime.
+	FGameplayAbilitySpecHandle CurrentAbilitySpecHandle;
+
+	FDelegateHandle AbilityEndedDelegateHandle;
+	FDelegateHandle HealthChangedDelegateHandle;
+	FDelegateHandle MaxHealthChangedDelegateHandle;
+
 	UPROPERTY(Transient)
 	TArray<FGameplayTag> RecentActionMemoryGroups;
 
@@ -188,6 +228,10 @@ private:
 	int32 ConsecutiveMemoryGroupUses = 0;
 
 	void CacheOwnerData();
+	void BindRuntimeDelegates();
+	void UnbindRuntimeDelegates();
+	void HandleOwnerAbilityEnded(const FAbilityEndedData& AbilityEndedData);
+	void HandleOwnerHealthChanged(const FOnAttributeChangeData& AttributeChangeData);
 	void TryInitializeNextTick();
 	void DeferredInitializeBossFromProfile();
 	bool ApplyStatsPreset(const FPantheliaBossStatsPreset& StatsPreset) const;
@@ -221,9 +265,11 @@ private:
 	void ShowActionDebugMessage(const TCHAR* Prefix, const FPantheliaBossActionDefinition& Action, AActor* TargetActor) const;
 
 	// Action Execution
-	bool ActivateActionAbility(const FPantheliaBossActionDefinition& Action) const;
+	bool ActivateActionAbility(const FPantheliaBossActionDefinition& Action);
 	void SetSelectedAction(AActor* TargetActor, const FPantheliaBossActionDefinition& Action);
 	void SetActionFailure(EPantheliaBossActionFailureReason FailureReason, bool bClearAction);
+	bool TrySetTerminalState(EPantheliaBossActionRuntimeState TerminalState, EPantheliaBossActionFailureReason Reason, const TCHAR* Source);
+	void LogActionLifecycleTransition(EPantheliaBossActionRuntimeState PreviousState, EPantheliaBossActionRuntimeState NewState, EPantheliaBossActionFailureReason Reason, const TCHAR* Source) const;
 
 	// Utility / Queries
 	float GetCurrentTimeSeconds() const;

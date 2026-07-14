@@ -5,6 +5,7 @@
 #include "AIController.h"
 #include "AI/PantheliaBossBrainComponent.h"
 #include "AI/Data/PantheliaBossProfile.h"
+#include "GameFramework/Character.h"
 #include "GameFramework/Pawn.h"
 #include "Kismet/GameplayStatics.h"
 #include "StateTreeExecutionContext.h"
@@ -203,9 +204,9 @@ EStateTreeRunStatus FPantheliaStateTreeWaitForBossActionTask::Tick(FStateTreeExe
 
 	BossBrain->RefreshActionRuntimeState();
 
-	if (BossBrain->HasActionFinished())
+	if (!BossBrain->IsActionTerminal())
 	{
-		return EStateTreeRunStatus::Succeeded;
+		return EStateTreeRunStatus::Running;
 	}
 
 	if (BossBrain->HasActionFailed())
@@ -213,7 +214,17 @@ EStateTreeRunStatus FPantheliaStateTreeWaitForBossActionTask::Tick(FStateTreeExe
 		return EStateTreeRunStatus::Failed;
 	}
 
-	return EStateTreeRunStatus::Running;
+	if (BossBrain->WasActionInterrupted() && BossBrain->IsInterruptionRecoveryActive())
+	{
+		// La ability ofensiva ya terminó, pero el boss todavía está ejecutando
+		// HitReact/Stagger. El StateTree no debe entrar en Recover ni reseleccionar
+		// hasta que esa reacción haya terminado.
+		return EStateTreeRunStatus::Running;
+	}
+
+	// La task de espera cumplió su trabajo tanto para Finished como para Interrupted.
+	// La semántica de éxito de la ACCIÓN permanece en BossBrain::DidActionSucceed().
+	return EStateTreeRunStatus::Succeeded;
 }
 
 FPantheliaStateTreeClearBossActionTask::FPantheliaStateTreeClearBossActionTask()

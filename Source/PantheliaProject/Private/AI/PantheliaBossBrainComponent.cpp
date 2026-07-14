@@ -3,6 +3,7 @@
 #include "AI/PantheliaBossBrainComponent.h"
 
 #include "AbilitySystemComponent.h"
+#include "Abilities/GameplayAbilityTypes.h"
 #include "AbilitySystem/PantheliaAbilitySystemComponent.h"
 #include "AbilitySystem/PantheliaAttributeSet.h"
 #include "Characters/PantheliaEnemy.h"
@@ -29,6 +30,12 @@ void UPantheliaBossBrainComponent::BeginPlay()
 	TryInitializeNextTick();
 }
 
+void UPantheliaBossBrainComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	UnbindRuntimeDelegates();
+	Super::EndPlay(EndPlayReason);
+}
+
 void UPantheliaBossBrainComponent::CacheOwnerData()
 {
 	OwnerEnemy = Cast<APantheliaEnemy>(GetOwner());
@@ -39,6 +46,98 @@ void UPantheliaBossBrainComponent::CacheOwnerData()
 
 	OwnerASC = OwnerEnemy->GetAbilitySystemComponent();
 	OwnerAttributeSet = Cast<UPantheliaAttributeSet>(OwnerEnemy->GetAttributeSet());
+}
+
+void UPantheliaBossBrainComponent::BindRuntimeDelegates()
+{
+	if (!OwnerASC || !OwnerAttributeSet)
+	{
+		return;
+	}
+
+	if (!AbilityEndedDelegateHandle.IsValid())
+	{
+		AbilityEndedDelegateHandle = OwnerASC->OnAbilityEnded.AddUObject(
+			this,
+			&UPantheliaBossBrainComponent::HandleOwnerAbilityEnded);
+	}
+
+	if (!HealthChangedDelegateHandle.IsValid())
+	{
+		HealthChangedDelegateHandle = OwnerASC->GetGameplayAttributeValueChangeDelegate(
+			UPantheliaAttributeSet::GetHealthAttribute()).AddUObject(
+				this,
+				&UPantheliaBossBrainComponent::HandleOwnerHealthChanged);
+	}
+
+	if (!MaxHealthChangedDelegateHandle.IsValid())
+	{
+		MaxHealthChangedDelegateHandle = OwnerASC->GetGameplayAttributeValueChangeDelegate(
+			UPantheliaAttributeSet::GetMaxHealthAttribute()).AddUObject(
+				this,
+				&UPantheliaBossBrainComponent::HandleOwnerHealthChanged);
+	}
+}
+
+void UPantheliaBossBrainComponent::UnbindRuntimeDelegates()
+{
+	if (!OwnerASC)
+	{
+		AbilityEndedDelegateHandle.Reset();
+		HealthChangedDelegateHandle.Reset();
+		MaxHealthChangedDelegateHandle.Reset();
+		return;
+	}
+
+	if (AbilityEndedDelegateHandle.IsValid())
+	{
+		OwnerASC->OnAbilityEnded.Remove(AbilityEndedDelegateHandle);
+		AbilityEndedDelegateHandle.Reset();
+	}
+
+	if (HealthChangedDelegateHandle.IsValid())
+	{
+		OwnerASC->GetGameplayAttributeValueChangeDelegate(
+			UPantheliaAttributeSet::GetHealthAttribute()).Remove(HealthChangedDelegateHandle);
+		HealthChangedDelegateHandle.Reset();
+	}
+
+	if (MaxHealthChangedDelegateHandle.IsValid())
+	{
+		OwnerASC->GetGameplayAttributeValueChangeDelegate(
+			UPantheliaAttributeSet::GetMaxHealthAttribute()).Remove(MaxHealthChangedDelegateHandle);
+		MaxHealthChangedDelegateHandle.Reset();
+	}
+}
+
+void UPantheliaBossBrainComponent::HandleOwnerAbilityEnded(const FAbilityEndedData& AbilityEndedData)
+{
+	if (!CurrentAbilitySpecHandle.IsValid()
+		|| AbilityEndedData.AbilitySpecHandle != CurrentAbilitySpecHandle)
+	{
+		return;
+	}
+
+	const EPantheliaBossActionRuntimeState TerminalState = AbilityEndedData.bWasCancelled
+		? EPantheliaBossActionRuntimeState::Interrupted
+		: EPantheliaBossActionRuntimeState::Finished;
+	const EPantheliaBossActionFailureReason Reason = AbilityEndedData.bWasCancelled
+		? EPantheliaBossActionFailureReason::Interrupted
+		: EPantheliaBossActionFailureReason::AbilityEnded;
+
+	TrySetTerminalState(TerminalState, Reason, TEXT("OnAbilityEnded"));
+}
+
+void UPantheliaBossBrainComponent::HandleOwnerHealthChanged(const FOnAttributeChangeData& AttributeChangeData)
+{
+	if (FMath::IsNearlyEqual(AttributeChangeData.OldValue, AttributeChangeData.NewValue))
+	{
+		return;
+	}
+
+	// La fase se actualiza al cruzar el umbral, pero la acción en curso no se cancela.
+	// La nueva fase entra en vigor en la siguiente llamada a SelectAction().
+	UpdatePhaseFromHealth();
 }
 
 void UPantheliaBossBrainComponent::TryInitializeNextTick()
@@ -73,6 +172,7 @@ bool UPantheliaBossBrainComponent::InitializeBossFromProfile()
 	}
 
 	ApplyStatsPreset(*StatsPreset);
+	BindRuntimeDelegates();
 	UpdatePhaseFromHealth();
 	ResetAllActionCooldowns();
 	ResetActionMemory();
@@ -218,13 +318,20 @@ bool UPantheliaBossBrainComponent::UpdatePhaseFromHealth()
 	ActivePhaseID = BestPhase->PhaseID;
 	ActivePhaseTag = NewPhaseTag;
 
-	if (bChangedPhase && bLogActionSelection)
+	if (bChangedPhase)
 	{
-		UE_LOG(LogPanthelia, Log, TEXT("BossBrain [%s] changed phase to %s (%s) at HealthPercent %.2f"),
-			*GetNameSafe(GetOwner()),
-			*ActivePhaseID.ToString(),
-			*ActivePhaseTag.ToString(),
-			HealthPercent);
+		OnBossPhaseChanged.Broadcast(ActivePhaseID, ActivePhaseTag, HealthPercent);
+
+		if (bLogActionLifecycle || bLogActionSelection)
+		{
+			UE_LOG(LogPanthelia, Log, TEXT("[BOSS PHASE] Boss=%s PhaseID=%s PhaseTag=%s HealthPercent=%.3f CurrentAction=%s ActionState=%s Policy=ApplyOnNextSelection"),
+				*GetNameSafe(GetOwner()),
+				*ActivePhaseID.ToString(),
+				*ActivePhaseTag.ToString(),
+				HealthPercent,
+				*CurrentActionTag.ToString(),
+				*StaticEnum<EPantheliaBossActionRuntimeState>()->GetNameStringByValue(static_cast<int64>(CurrentActionState)));
+		}
 	}
 
 	return bChangedPhase;
@@ -760,7 +867,11 @@ bool UPantheliaBossBrainComponent::TryExecuteAction(AActor* TargetActor, const F
 		return false;
 	}
 
-	SetSelectedAction(TargetActor, *Action);
+	if (!CurrentActionTag.MatchesTagExact(Action->ActionTag)
+		|| CurrentActionState != EPantheliaBossActionRuntimeState::Selected)
+	{
+		SetSelectedAction(TargetActor, *Action);
+	}
 
 	float ActionWeight = 0.f;
 	if (!IsActionAvailable(*Action, TargetActor, ActionWeight, true))
@@ -772,16 +883,15 @@ bool UPantheliaBossBrainComponent::TryExecuteAction(AActor* TargetActor, const F
 		return false;
 	}
 
+	const EPantheliaBossActionRuntimeState PreviousState = CurrentActionState;
 	CurrentActionState = EPantheliaBossActionRuntimeState::Starting;
-	bActionActivationRequested = false;
+	LastFailureReason = EPantheliaBossActionFailureReason::None;
+	bActionActivationRequested = true;
+	CurrentAbilitySpecHandle = FGameplayAbilitySpecHandle();
+	LogActionLifecycleTransition(PreviousState, CurrentActionState, LastFailureReason, TEXT("TryExecuteAction"));
 
 	SetCombatTarget(TargetActor);
 	const bool bActivated = ActivateActionAbility(*Action);
-
-	if (bActivated)
-	{
-		ShowActionDebugMessage(TEXT("EXEC"), *Action, TargetActor);
-	}
 
 	if (!bActivated)
 	{
@@ -789,9 +899,17 @@ bool UPantheliaBossBrainComponent::TryExecuteAction(AActor* TargetActor, const F
 		return false;
 	}
 
-	CurrentActionState = EPantheliaBossActionRuntimeState::Running;
-	LastFailureReason = EPantheliaBossActionFailureReason::None;
-	bActionActivationRequested = true;
+	ShowActionDebugMessage(TEXT("EXEC"), *Action, TargetActor);
+
+	// Una ability muy corta puede terminar dentro de TryActivateAbility(). En ese caso
+	// OnAbilityEnded ya escribió el estado terminal y no debemos pisarlo con Running.
+	if (!IsActionTerminal())
+	{
+		const EPantheliaBossActionRuntimeState StateBeforeRunning = CurrentActionState;
+		CurrentActionState = EPantheliaBossActionRuntimeState::Running;
+		LastFailureReason = EPantheliaBossActionFailureReason::None;
+		LogActionLifecycleTransition(StateBeforeRunning, CurrentActionState, LastFailureReason, TEXT("AbilityActivated"));
+	}
 
 	RecordActionMemory(*Action);
 
@@ -805,25 +923,21 @@ bool UPantheliaBossBrainComponent::TryExecuteAction(AActor* TargetActor, const F
 
 void UPantheliaBossBrainComponent::RefreshActionRuntimeState()
 {
-	if (CurrentActionState != EPantheliaBossActionRuntimeState::Running)
+	if (IsActionTerminal() || CurrentActionState != EPantheliaBossActionRuntimeState::Running)
 	{
 		return;
 	}
 
-	if (!CurrentAbilityTag.IsValid())
+	if (!CurrentAbilitySpecHandle.IsValid() || !OwnerASC)
 	{
-		SetActionFailure(EPantheliaBossActionFailureReason::InvalidAction, false);
+		SetActionFailure(!OwnerASC
+			? EPantheliaBossActionFailureReason::MissingASC
+			: EPantheliaBossActionFailureReason::InvalidAction,
+			false);
 		return;
 	}
 
-	if (!OwnerEnemy)
-	{
-		SetActionFailure(EPantheliaBossActionFailureReason::InvalidAction, false);
-		return;
-	}
-
-	UPantheliaAbilitySystemComponent* PantheliaASC =
-		Cast<UPantheliaAbilitySystemComponent>(OwnerEnemy->GetAbilitySystemComponent());
+	UPantheliaAbilitySystemComponent* PantheliaASC = Cast<UPantheliaAbilitySystemComponent>(OwnerASC);
 	if (!PantheliaASC)
 	{
 		SetActionFailure(EPantheliaBossActionFailureReason::MissingASC, false);
@@ -831,7 +945,7 @@ void UPantheliaBossBrainComponent::RefreshActionRuntimeState()
 	}
 
 	const FGameplayAbilitySpec* AbilitySpec = PantheliaASC->GetSpecFromAbilityTag(CurrentAbilityTag);
-	if (!AbilitySpec)
+	if (!AbilitySpec || AbilitySpec->Handle != CurrentAbilitySpecHandle)
 	{
 		SetActionFailure(EPantheliaBossActionFailureReason::InvalidAction, false);
 		return;
@@ -842,23 +956,32 @@ void UPantheliaBossBrainComponent::RefreshActionRuntimeState()
 		return;
 	}
 
-	CurrentActionState = EPantheliaBossActionRuntimeState::Finished;
-	LastFailureReason = EPantheliaBossActionFailureReason::AbilityEnded;
-	bActionActivationRequested = false;
+	// Red de seguridad: normalmente OnAbilityEnded llega primero y distingue cancelación
+	// de final normal. Si no llegó, solo podemos afirmar que la spec ya no está activa.
+	TrySetTerminalState(
+		EPantheliaBossActionRuntimeState::Finished,
+		EPantheliaBossActionFailureReason::AbilityEnded,
+		TEXT("PollingFallback"));
 }
 
 void UPantheliaBossBrainComponent::MarkActionInterrupted()
 {
-	if (CurrentActionState != EPantheliaBossActionRuntimeState::Selected
-		&& CurrentActionState != EPantheliaBossActionRuntimeState::Starting
-		&& CurrentActionState != EPantheliaBossActionRuntimeState::Running)
+	if (CurrentActionState == EPantheliaBossActionRuntimeState::Running
+		|| CurrentActionState == EPantheliaBossActionRuntimeState::Starting)
 	{
+		TrySetTerminalState(
+			EPantheliaBossActionRuntimeState::Interrupted,
+			EPantheliaBossActionFailureReason::Interrupted,
+			TEXT("ManualMarkActionInterrupted"));
 		return;
 	}
 
-	CurrentActionState = EPantheliaBossActionRuntimeState::Interrupted;
-	LastFailureReason = EPantheliaBossActionFailureReason::Interrupted;
-	bActionActivationRequested = false;
+	if (CurrentActionState == EPantheliaBossActionRuntimeState::Selected)
+	{
+		// Todavía no había una ability en ejecución, por lo que no cuenta como
+		// interrupción de una acción comenzada sino como fallo previo al arranque.
+		SetActionFailure(EPantheliaBossActionFailureReason::Interrupted, false);
+	}
 }
 
 bool UPantheliaBossBrainComponent::HasSelectedAction() const
@@ -881,17 +1004,50 @@ bool UPantheliaBossBrainComponent::HasActionFailed() const
 	return CurrentActionState == EPantheliaBossActionRuntimeState::Failed;
 }
 
+bool UPantheliaBossBrainComponent::IsActionTerminal() const
+{
+	return CurrentActionState == EPantheliaBossActionRuntimeState::Finished
+		|| CurrentActionState == EPantheliaBossActionRuntimeState::Failed
+		|| CurrentActionState == EPantheliaBossActionRuntimeState::Interrupted;
+}
+
+bool UPantheliaBossBrainComponent::DidActionSucceed() const
+{
+	return CurrentActionState == EPantheliaBossActionRuntimeState::Finished;
+}
+
+bool UPantheliaBossBrainComponent::WasActionInterrupted() const
+{
+	return CurrentActionState == EPantheliaBossActionRuntimeState::Interrupted;
+}
+
+bool UPantheliaBossBrainComponent::IsInterruptionRecoveryActive() const
+{
+	if (!WasActionInterrupted() || !OwnerASC)
+	{
+		return false;
+	}
+
+	const FPantheliaGameplayTags& Tags = FPantheliaGameplayTags::Get();
+	return OwnerASC->HasMatchingGameplayTag(Tags.Effects_HitReact)
+		|| OwnerASC->HasMatchingGameplayTag(Tags.Effects_Stagger);
+}
+
 void UPantheliaBossBrainComponent::ClearCurrentAction()
 {
+	const EPantheliaBossActionRuntimeState PreviousState = CurrentActionState;
+	LogActionLifecycleTransition(PreviousState, EPantheliaBossActionRuntimeState::None, LastFailureReason, TEXT("ClearCurrentAction"));
+
 	CurrentActionTag = FGameplayTag();
 	CurrentAbilityTag = FGameplayTag();
+	CurrentAbilitySpecHandle = FGameplayAbilitySpecHandle();
 	CurrentActionState = EPantheliaBossActionRuntimeState::None;
 	LastFailureReason = EPantheliaBossActionFailureReason::None;
 	CurrentTargetActor.Reset();
 	bActionActivationRequested = false;
 }
 
-bool UPantheliaBossBrainComponent::ActivateActionAbility(const FPantheliaBossActionDefinition& Action) const
+bool UPantheliaBossBrainComponent::ActivateActionAbility(const FPantheliaBossActionDefinition& Action)
 {
 	if (!OwnerASC || !Action.AbilityTag.IsValid())
 	{
@@ -907,9 +1063,9 @@ bool UPantheliaBossBrainComponent::ActivateActionAbility(const FPantheliaBossAct
 	FGameplayAbilitySpec* AbilitySpec = PantheliaASC->GetSpecFromAbilityTag(Action.AbilityTag);
 	if (!AbilitySpec)
 	{
-		if (bLogActionSelection)
+		if (bLogActionSelection || bLogActionLifecycle)
 		{
-			UE_LOG(LogPanthelia, Warning, TEXT("BossBrain [%s] cannot activate Action=%s because Ability=%s was not granted to the ASC"),
+			UE_LOG(LogPanthelia, Warning, TEXT("[BOSS ACTION] Boss=%s Action=%s Ability=%s Activation=MissingGrantedSpec"),
 				*GetNameSafe(GetOwner()),
 				*Action.ActionTag.ToString(),
 				*Action.AbilityTag.ToString());
@@ -918,10 +1074,11 @@ bool UPantheliaBossBrainComponent::ActivateActionAbility(const FPantheliaBossAct
 		return false;
 	}
 
-	const bool bActivated = PantheliaASC->TryActivateAbility(AbilitySpec->Handle);
-	if (!bActivated && bLogActionSelection)
+	CurrentAbilitySpecHandle = AbilitySpec->Handle;
+	const bool bActivated = PantheliaASC->TryActivateAbility(CurrentAbilitySpecHandle);
+	if (!bActivated && (bLogActionSelection || bLogActionLifecycle))
 	{
-		UE_LOG(LogPanthelia, Warning, TEXT("BossBrain [%s] failed to activate Action=%s Ability=%s"),
+		UE_LOG(LogPanthelia, Warning, TEXT("[BOSS ACTION] Boss=%s Action=%s Ability=%s Activation=Failed"),
 			*GetNameSafe(GetOwner()),
 			*Action.ActionTag.ToString(),
 			*Action.AbilityTag.ToString());
@@ -932,26 +1089,105 @@ bool UPantheliaBossBrainComponent::ActivateActionAbility(const FPantheliaBossAct
 
 void UPantheliaBossBrainComponent::SetSelectedAction(AActor* TargetActor, const FPantheliaBossActionDefinition& Action)
 {
+	const EPantheliaBossActionRuntimeState PreviousState = CurrentActionState;
 	CurrentActionTag = Action.ActionTag;
 	CurrentAbilityTag = Action.AbilityTag;
+	CurrentAbilitySpecHandle = FGameplayAbilitySpecHandle();
 	CurrentTargetActor = TargetActor;
 	CurrentActionState = EPantheliaBossActionRuntimeState::Selected;
 	LastFailureReason = EPantheliaBossActionFailureReason::None;
 	bActionActivationRequested = false;
+	LogActionLifecycleTransition(PreviousState, CurrentActionState, LastFailureReason, TEXT("SetSelectedAction"));
 }
 
 void UPantheliaBossBrainComponent::SetActionFailure(EPantheliaBossActionFailureReason FailureReason, bool bClearAction)
 {
+	if (IsActionTerminal())
+	{
+		return;
+	}
+
+	const EPantheliaBossActionRuntimeState PreviousState = CurrentActionState;
+
 	if (bClearAction)
 	{
 		CurrentActionTag = FGameplayTag();
 		CurrentAbilityTag = FGameplayTag();
+		CurrentAbilitySpecHandle = FGameplayAbilitySpecHandle();
 		CurrentTargetActor.Reset();
 	}
 
 	CurrentActionState = EPantheliaBossActionRuntimeState::Failed;
 	LastFailureReason = FailureReason;
 	bActionActivationRequested = false;
+	LogActionLifecycleTransition(PreviousState, CurrentActionState, LastFailureReason, TEXT("SetActionFailure"));
+}
+
+bool UPantheliaBossBrainComponent::TrySetTerminalState(
+	const EPantheliaBossActionRuntimeState TerminalState,
+	const EPantheliaBossActionFailureReason Reason,
+	const TCHAR* Source)
+{
+	const bool bValidTerminalState = TerminalState == EPantheliaBossActionRuntimeState::Finished
+		|| TerminalState == EPantheliaBossActionRuntimeState::Failed
+		|| TerminalState == EPantheliaBossActionRuntimeState::Interrupted;
+
+	if (!bValidTerminalState || IsActionTerminal())
+	{
+		return false;
+	}
+
+	if (CurrentActionState != EPantheliaBossActionRuntimeState::Starting
+		&& CurrentActionState != EPantheliaBossActionRuntimeState::Running)
+	{
+		return false;
+	}
+
+	const EPantheliaBossActionRuntimeState PreviousState = CurrentActionState;
+	CurrentActionState = TerminalState;
+	LastFailureReason = Reason;
+	bActionActivationRequested = false;
+	LogActionLifecycleTransition(PreviousState, CurrentActionState, LastFailureReason, Source);
+	return true;
+}
+
+void UPantheliaBossBrainComponent::LogActionLifecycleTransition(
+	const EPantheliaBossActionRuntimeState PreviousState,
+	const EPantheliaBossActionRuntimeState NewState,
+	const EPantheliaBossActionFailureReason Reason,
+	const TCHAR* Source) const
+{
+	if (!bLogActionLifecycle || PreviousState == NewState)
+	{
+		return;
+	}
+
+	const UEnum* StateEnum = StaticEnum<EPantheliaBossActionRuntimeState>();
+	const UEnum* ReasonEnum = StaticEnum<EPantheliaBossActionFailureReason>();
+	const float CooldownRemaining = CurrentActionTag.IsValid() && IsActionOnCooldown(CurrentActionTag)
+		? FMath::Max(0.f, ActionCooldownEndTimes.FindRef(CurrentActionTag) - GetCurrentTimeSeconds())
+		: 0.f;
+
+	FGameplayTag MemoryGroup;
+	if (BossProfile && CurrentActionTag.IsValid())
+	{
+		if (const FPantheliaBossActionDefinition* Action = BossProfile->FindAction(CurrentActionTag))
+		{
+			MemoryGroup = GetActionMemoryGroup(*Action);
+		}
+	}
+
+	UE_LOG(LogPanthelia, Log, TEXT("[BOSS ACTION] Boss=%s Action=%s Ability=%s State=%s->%s Reason=%s Source=%s CooldownRemaining=%.2f MemoryGroup=%s Consecutive=%d"),
+		*GetNameSafe(GetOwner()),
+		*CurrentActionTag.ToString(),
+		*CurrentAbilityTag.ToString(),
+		StateEnum ? *StateEnum->GetNameStringByValue(static_cast<int64>(PreviousState)) : TEXT("Unknown"),
+		StateEnum ? *StateEnum->GetNameStringByValue(static_cast<int64>(NewState)) : TEXT("Unknown"),
+		ReasonEnum ? *ReasonEnum->GetNameStringByValue(static_cast<int64>(Reason)) : TEXT("Unknown"),
+		Source ? Source : TEXT("Unknown"),
+		CooldownRemaining,
+		*MemoryGroup.ToString(),
+		ConsecutiveMemoryGroupUses);
 }
 
 // Utility / Queries

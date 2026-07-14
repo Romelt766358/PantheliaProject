@@ -324,7 +324,7 @@ bool UPantheliaParryAbility::TryPayBlockTransitionCost()
 			}
 
 			const float ModifierMagnitude =
-				CostSpec.Data->GetModifierMagnitude(ModifierIndex, true);
+				CostSpec.Data->GetModifierMagnitude(ModifierIndex);
 			if (ModifierMagnitude < 0.f)
 			{
 				RequiredStamina += -ModifierMagnitude;
