@@ -54,7 +54,13 @@ protected:
 		UPrimitiveComponent* OtherComp, int32 OtherBodyIndex,
 		bool bFromSweep, const FHitResult& SweepResult);
 
+	// UProjectileMovementComponent la emite al detenerse por una colisión bloqueante.
+	// Se usa para geometría porque una pared no necesita GenerateOverlapEvents.
+	UFUNCTION()
+	void OnProjectileStopped(const FHitResult& ImpactResult);
+
 private:
+	void ConsumeProjectile(bool bPlayImpactFeedback, const FVector& ImpactLocation);
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<USphereComponent> Sphere;
 

@@ -64,8 +64,8 @@ APantheliaProjectile::APantheliaProjectile()
 	Sphere->SetCollisionObjectType(ECC_Projectile);
 	Sphere->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
 	Sphere->SetCollisionResponseToAllChannels(ECR_Ignore);
-	Sphere->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Overlap);
-	Sphere->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Overlap);
+	Sphere->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
+	Sphere->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
 	Sphere->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
 
 	ProjectileMovement = CreateDefaultSubobject<UProjectileMovementComponent>(TEXT("ProjectileMovement"));
@@ -79,7 +79,26 @@ void APantheliaProjectile::BeginPlay()
 	Super::BeginPlay();
 
 	SetLifeSpan(Lifespan);
+
+	// Reaplicamos la política de colisión en runtime porque los defaults de un
+	// Blueprint hijo pueden conservar respuestas serializadas de una versión anterior.
+	// Pawn usa overlap para permitir atravesar aliados e i-frames; la geometría usa
+	// blocking hit para no depender de GenerateOverlapEvents en cada pared del mapa.
+	Sphere->SetCollisionObjectType(ECC_Projectile);
+	Sphere->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	Sphere->SetGenerateOverlapEvents(true);
+	Sphere->SetCollisionResponseToAllChannels(ECR_Ignore);
+	Sphere->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
+	Sphere->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
+	Sphere->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
+
 	Sphere->OnComponentBeginOverlap.AddDynamic(this, &APantheliaProjectile::OnSphereOverlap);
+
+	if (ProjectileMovement)
+	{
+		ProjectileMovement->OnProjectileStop.AddDynamic(
+			this, &APantheliaProjectile::OnProjectileStopped);
+	}
 
 	if (IsValid(LoopingSound))
 	{
@@ -293,6 +312,37 @@ void APantheliaProjectile::OnSphereOverlap(UPrimitiveComponent* OverlappedCompon
 
 	// A partir de aquí el overlap consume el proyectil. Cualquier overlap adicional
 	// que llegue antes de que Destroy() se procese queda bloqueado por bHit.
+	ConsumeProjectile(bShouldPlayImpactFeedback, GetActorLocation());
+}
+
+void APantheliaProjectile::OnProjectileStopped(const FHitResult& ImpactResult)
+{
+	// Los personajes nunca deberían llegar por esta ruta: sus cápsulas ignoran el
+	// canal Projectile y sus meshes generan overlap. Esta callback queda reservada
+	// para paredes, suelo y props que bloquean el canal.
+	if (bHit)
+	{
+		return;
+	}
+
+	FVector ImpactLocation = GetActorLocation();
+	if (ImpactResult.bBlockingHit)
+	{
+		ImpactLocation = FVector(ImpactResult.ImpactPoint);
+	}
+
+	ConsumeProjectile(/*bPlayImpactFeedback=*/true, ImpactLocation);
+}
+
+void APantheliaProjectile::ConsumeProjectile(
+	const bool bPlayImpactFeedback,
+	const FVector& ImpactLocation)
+{
+	if (bHit)
+	{
+		return;
+	}
+
 	bHit = true;
 
 	if (IsValid(LoopingSoundComponent))
@@ -300,16 +350,18 @@ void APantheliaProjectile::OnSphereOverlap(UPrimitiveComponent* OverlappedCompon
 		LoopingSoundComponent->Stop();
 	}
 
-	if (bShouldPlayImpactFeedback)
+	if (bPlayImpactFeedback)
 	{
 		if (IsValid(ImpactSound))
 		{
-			UGameplayStatics::PlaySoundAtLocation(this, ImpactSound, GetActorLocation(), FRotator::ZeroRotator);
+			UGameplayStatics::PlaySoundAtLocation(
+				this, ImpactSound, ImpactLocation, FRotator::ZeroRotator);
 		}
 
 		if (IsValid(ImpactEffect))
 		{
-			UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, ImpactEffect, GetActorLocation());
+			UNiagaraFunctionLibrary::SpawnSystemAtLocation(
+				this, ImpactEffect, ImpactLocation);
 		}
 	}
 
