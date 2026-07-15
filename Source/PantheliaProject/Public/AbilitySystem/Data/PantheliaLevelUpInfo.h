@@ -4,6 +4,9 @@
 
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
+#if WITH_EDITOR
+#include "Misc/DataValidation.h"
+#endif
 #include "PantheliaLevelUpInfo.generated.h"
 
 // Información de un único nivel de la tabla de progresión.
@@ -61,4 +64,9 @@ public:
 	// se cruza el umbral. Si la XP supera todos los niveles definidos, devuelve
 	// el nivel máximo (no se sale del array).
 	int32 FindLevelForXP(int32 InXP) const;
+
+#if WITH_EDITOR
+	// Valida las invariantes del asset mediante Data Validation del editor.
+	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+#endif
 };

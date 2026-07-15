@@ -9,6 +9,9 @@
 // struct completo, no basta un forward declaration (misma lección documentada en
 // Code_Review.md para FActiveGameplayEffectHandle).
 #include "ScalableFloat.h"
+#if WITH_EDITOR
+#include "Misc/DataValidation.h"
+#endif
 #include "PantheliaSkillTreeInfo.generated.h"
 
 class UGameplayAbility;
@@ -141,4 +144,9 @@ public:
 	const FPantheliaSkillNodeInfo* FindNodeInfoForTag(
 		const FGameplayTag& NodeTag,
 		bool bLogNotFound = false) const;
+
+#if WITH_EDITOR
+	// Valida las invariantes del asset mediante Data Validation del editor.
+	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+#endif
 };

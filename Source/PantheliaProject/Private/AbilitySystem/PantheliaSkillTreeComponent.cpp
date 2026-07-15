@@ -1,6 +1,7 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "AbilitySystem/PantheliaSkillTreeComponent.h"
+#include "AbilitySystem/PantheliaAbilityTagUtils.h"
 #include "AbilitySystem/Data/PantheliaSkillTreeInfo.h"
 #include "AbilitySystem/PantheliaAbilitySystemComponent.h"
 #include "Player/PantheliaPlayerState.h"
@@ -219,8 +220,8 @@ bool UPantheliaSkillTreeComponent::ApplyNodeToGAS(
 		if (!AbilityTag.IsValid())
 		{
 			UE_LOG(LogPanthelia, Error,
-				TEXT("[SkillTree] La ability '%s' del nodo '%s' no tiene un Ability Tag "
-				     "válido bajo la raíz 'Abilities'. Compra cancelada."),
+				TEXT("[SkillTree] La ability '%s' del nodo '%s' no tiene exactamente "
+				     "una hoja identificadora válida bajo la raíz 'Abilities'. Compra cancelada."),
 				*GetNameSafe(NodeInfo.GrantedAbility), *NodeInfo.NodeTag.ToString());
 			return false;
 		}
@@ -399,14 +400,16 @@ FGameplayTag UPantheliaSkillTreeComponent::GetAbilityTagFromClass(TSubclassOf<UG
 	const UGameplayAbility* AbilityCDO = AbilityClass.GetDefaultObject();
 	if (!AbilityCDO) return FGameplayTag();
 
-	// Mismo criterio que GetAbilityTagFromSpec en el ASC: el tag identificador de
-	// una ability es el que cuelga de la raíz nativa "Abilities" (Etapa 1).
-	for (const FGameplayTag& Tag : AbilityCDO->GetAssetTags())
-	{
-		if (Tag.MatchesTag(FPantheliaGameplayTags::Get().Abilities))
-		{
-			return Tag;
-		}
-	}
-	return FGameplayTag();
+	// El identificador estable es exactamente UNA hoja explícita bajo "Abilities".
+	// Si el CDO contiene a la vez un padre y su hijo, conservamos la hoja específica;
+	// si contiene varias hojas incompatibles, fallamos cerrado en vez de elegir una
+	// según el orden interno del container. Es el mismo contrato del Data Validator.
+	const TArray<FGameplayTag> AbilityLeafTags =
+		PantheliaAbilityTagUtils::FindLeafTagsUnderRoot(
+			AbilityCDO->GetAssetTags(),
+			FPantheliaGameplayTags::Get().Abilities);
+
+	return AbilityLeafTags.Num() == 1
+		? AbilityLeafTags[0]
+		: FGameplayTag();
 }

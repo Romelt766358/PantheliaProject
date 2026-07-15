@@ -5,6 +5,9 @@
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
 #include "GameplayTagContainer.h"
+#if WITH_EDITOR
+#include "Misc/DataValidation.h"
+#endif
 #include "PantheliaAbilityInfo.generated.h"
 
 // Struct que agrupa la información de una habilidad/hechizo para la UI.
@@ -83,4 +86,9 @@ public:
 	FPantheliaAbilityInfo FindAbilityInfoForTag(
 		const FGameplayTag& AbilityTag,
 		bool bLogNotFound = false) const;
+
+#if WITH_EDITOR
+	// Valida las invariantes del asset mediante Data Validation del editor.
+	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+#endif
 };

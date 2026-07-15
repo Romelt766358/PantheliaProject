@@ -5,6 +5,9 @@
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
 #include "PantheliaElementTypes.h"
+#if WITH_EDITOR
+#include "Misc/DataValidation.h"
+#endif
 #include "PantheliaElementalStatusConfig.generated.h"
 
 /**
@@ -167,4 +170,9 @@ public:
 	const FPantheliaElementalStatusDefinition* FindStatusDefinition(
 		EPantheliaElement Element,
 		bool bLogNotFound = false) const;
+
+#if WITH_EDITOR
+	// Valida las invariantes del asset mediante Data Validation del editor.
+	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+#endif
 };

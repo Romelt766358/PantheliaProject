@@ -40,3 +40,86 @@ int32 UPantheliaLevelUpInfo::FindLevelForXP(int32 InXP) const
 		}
 	}
 }
+#if WITH_EDITOR
+
+#include "Validation/PantheliaDataValidationUtils.h"
+
+EDataValidationResult UPantheliaLevelUpInfo::IsDataValid(FDataValidationContext& Context) const
+{
+	using namespace PantheliaDataValidation;
+
+	EDataValidationResult Result = MakeInitialResult(Super::IsDataValid(Context));
+
+	if (LevelUpInformation.Num() < 2)
+	{
+		AddError(Context, Result, FString::Printf(
+			TEXT("'%s' necesita al menos las entradas [0] placeholder y [1] nivel inicial."),
+			*GetNameSafe(this)));
+		return Result;
+	}
+
+	if (LevelUpInformation[0].LevelUpRequirement != 0)
+	{
+		AddError(Context, Result,
+			TEXT("LevelUpInformation[0] es un placeholder y debe tener LevelUpRequirement=0."));
+	}
+
+	if (LevelUpInformation[1].LevelUpRequirement != 0)
+	{
+		AddError(Context, Result,
+			TEXT("LevelUpInformation[1] representa el nivel inicial y debe tener LevelUpRequirement=0."));
+	}
+
+	int64 AccumulatedXP = 0;
+	for (int32 LevelIndex = 0; LevelIndex < LevelUpInformation.Num(); ++LevelIndex)
+	{
+		const FPantheliaLevelUpEntry& Entry = LevelUpInformation[LevelIndex];
+
+		if (Entry.LevelUpRequirement < 0)
+		{
+			AddError(Context, Result, FString::Printf(
+				TEXT("Nivel %d: LevelUpRequirement no puede ser negativo (%d)."),
+				LevelIndex,
+				Entry.LevelUpRequirement));
+		}
+		else if (LevelIndex >= 2 && Entry.LevelUpRequirement == 0)
+		{
+			AddError(Context, Result, FString::Printf(
+				TEXT("Nivel %d: el requisito incremental debe ser mayor que 0."),
+				LevelIndex));
+		}
+
+		if (Entry.AttributePointAward < 0)
+		{
+			AddError(Context, Result, FString::Printf(
+				TEXT("Nivel %d: AttributePointAward no puede ser negativo (%d)."),
+				LevelIndex,
+				Entry.AttributePointAward));
+		}
+
+		if (Entry.SkillPointAward < 0)
+		{
+			AddError(Context, Result, FString::Printf(
+				TEXT("Nivel %d: SkillPointAward no puede ser negativo (%d)."),
+				LevelIndex,
+				Entry.SkillPointAward));
+		}
+
+		if (LevelIndex >= 2 && Entry.LevelUpRequirement > 0)
+		{
+			AccumulatedXP += static_cast<int64>(Entry.LevelUpRequirement);
+			if (AccumulatedXP > static_cast<int64>(TNumericLimits<int32>::Max()))
+			{
+				AddError(Context, Result, FString::Printf(
+					TEXT("Nivel %d: la XP acumulada (%lld) excede int32_MAX y desbordaría FindLevelForXP."),
+					LevelIndex,
+					AccumulatedXP));
+				break;
+			}
+		}
+	}
+
+	return Result;
+}
+
+#endif // WITH_EDITOR

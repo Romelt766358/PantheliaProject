@@ -6,6 +6,9 @@
 #include "Engine/DataAsset.h"
 #include "GameplayTagContainer.h"
 #include "PantheliaElementTypes.h"
+#if WITH_EDITOR
+#include "Misc/DataValidation.h"
+#endif
 #include "PantheliaBossProfile.generated.h"
 
 UENUM(BlueprintType)
@@ -207,4 +210,9 @@ public:
 	const FPantheliaBossStatsPreset* FindStatsPreset(const FName PresetID) const;
 	const FPantheliaBossPhaseDefinition* FindPhase(const FName PhaseID) const;
 	const FPantheliaBossActionDefinition* FindAction(const FGameplayTag& ActionTag) const;
+
+#if WITH_EDITOR
+	// Valida las invariantes del asset mediante Data Validation del editor.
+	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+#endif
 };

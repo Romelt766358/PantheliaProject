@@ -5,6 +5,9 @@
 #include "CoreMinimal.h"
 #include "Engine/DataAsset.h"
 #include "GameplayTagContainer.h"
+#if WITH_EDITOR
+#include "Misc/DataValidation.h"
+#endif
 #include "PantheliaInputConfig.generated.h"
 
 class UInputAction;
@@ -53,4 +56,9 @@ public:
 	// Se rellena desde el Blueprint del Data Asset (DA_InputConfig).
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly)
 	TArray<FPantheliaInputAction> AbilityInputActions;
+
+#if WITH_EDITOR
+	// Valida las invariantes del asset mediante Data Validation del editor.
+	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+#endif
 };

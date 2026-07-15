@@ -9,6 +9,9 @@
 #include "AbilitySystem/Abilities/PantheliaGameplayAbility.h" // FAbilityAttributeScaling
 #include "Combat/PantheliaWeaponTypes.h"                       // EWeaponType
 #include "PantheliaElementTypes.h"                              // EPantheliaElement
+#if WITH_EDITOR
+#include "Misc/DataValidation.h"
+#endif
 #include "PantheliaWeaponDefinition.generated.h"
 
 class UAnimMontage;
@@ -369,4 +372,9 @@ public:
 	// Nombre del socket en la punta de la hoja (fin del sweep de daño).
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Weapon|Trace")
 	FName WeaponTipSocketName = FName("WeaponTip");
+
+#if WITH_EDITOR
+	// Valida las invariantes del asset mediante Data Validation del editor.
+	virtual EDataValidationResult IsDataValid(FDataValidationContext& Context) const override;
+#endif
 };
