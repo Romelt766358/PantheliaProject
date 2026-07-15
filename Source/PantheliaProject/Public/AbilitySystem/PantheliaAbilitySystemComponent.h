@@ -105,6 +105,9 @@ public:
 	// si alguna ability se concede o remueve mientras iteramos (cosa que GAS puede hacer
 	// en respuesta a tags), el cambio se pone en cola y se aplica al terminar, evitando
 	// corromper la iteración. Por eso esta iteración vive AQUÍ y no en el WidgetController.
+	// El callback puede operar sobre specs ya existentes, pero no debe llamar GiveAbility
+	// y esperar encontrar/activar esa spec nueva dentro de esta misma iteración: la mutación
+	// puede quedar diferida hasta que el lock salga de scope.
 	void ForEachAbility(const FForEachAbility& Delegate);
 
 	// Utilidad estática: extrae el AbilityTag (el que empieza por "Abilities") de un spec.

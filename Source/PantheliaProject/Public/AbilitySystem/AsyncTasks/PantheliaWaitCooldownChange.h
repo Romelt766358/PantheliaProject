@@ -65,11 +65,16 @@ public:
 
 	// Limpia las suscripciones a delegates y marca el nodo para destruccion.
 	// Se llama manualmente desde Blueprint (p. ej. en Event Destruct del widget) para
-	// evitar que el nodo siga vivo y escuchando cuando el widget desaparece.
+	// dejar de escuchar inmediatamente cuando el widget desaparece. El widget conserva
+	// la referencia fuerte en WaitCooldownTask; este proxy no se registra globalmente con
+	// la GameInstance, así que BeginDestroy sigue siendo alcanzable si el Blueprint falla.
+	// Es idempotente: llamarlo dos veces no intenta retirar delegates ya eliminados.
 	UFUNCTION(BlueprintCallable)
 	void EndTask();
 
 protected:
+	virtual void BeginDestroy() override;
+
 	// El ASC que estamos escuchando. UPROPERTY para que el GC no lo recolecte mientras
 	// el nodo este vivo.
 	UPROPERTY()
@@ -77,6 +82,19 @@ protected:
 
 	// El tag de cooldown concreto que este nodo escucha (p. ej. Cooldown.Spell.Fire.Firebolt).
 	FGameplayTag CooldownTag;
+
+	// Handles exactos de las dos suscripciones. Guardarlos evita depender de RemoveAll y
+	// permite demostrar que EndTask retira exactamente lo que esta instancia registro.
+	FDelegateHandle CooldownTagChangedDelegateHandle;
+	FDelegateHandle ActiveEffectAddedDelegateHandle;
+
+	// Protege EndTask y los callbacks contra dobles cierres o callbacks tardios durante
+	// la destruccion del widget/proxy.
+	bool bTaskEnded = false;
+
+	// Retira ambas suscripciones si siguen activas. Se usa desde EndTask y BeginDestroy
+	// para cubrir tanto el cierre normal del widget como la destruccion defensiva por GC.
+	void UnbindFromAbilitySystemComponent();
 
 	// Callback: el ASC lo llama cuando el CONTEO de CooldownTag cambia (se anade o se quita).
 	// Firma impuesta por el delegate de RegisterGameplayTagEvent: el FGameplayTag va por

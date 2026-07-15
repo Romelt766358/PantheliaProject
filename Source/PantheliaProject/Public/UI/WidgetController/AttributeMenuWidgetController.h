@@ -66,4 +66,9 @@ private:
 
 	// Función auxiliar para broadcastear la info de un atributo dado su tag y valor.
 	void BroadcastAttributeInfo(const FGameplayTag& AttributeTag, const FGameplayAttribute& Attribute) const;
+
+	// Reenvíos UObject explícitos para los delegates C++ del PlayerState. AddUObject
+	// respeta el lifetime del controller y evita lambdas con this crudo.
+	void OnAttributePointsChanged(int32 NewValue);
+	void OnSkillPointsChanged(int32 NewValue);
 };

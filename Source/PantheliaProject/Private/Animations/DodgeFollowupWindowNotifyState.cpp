@@ -3,6 +3,7 @@
 #include "Animations/DodgeFollowupWindowNotifyState.h"
 
 #include "AbilitySystem/Abilities/PantheliaDodgeAbility.h"
+#include "AbilitySystem/PantheliaAbilitySystemComponent.h"
 #include "AbilitySystemBlueprintLibrary.h"
 #include "AbilitySystemComponent.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -24,19 +25,32 @@ namespace
 			UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(OwnerActor);
 		if (!ASC) return nullptr;
 
-		for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
-		{
-			if (UPantheliaDodgeAbility* DodgeAbility =
-				Cast<UPantheliaDodgeAbility>(Spec.GetPrimaryInstance()))
-			{
-				if (DodgeAbility->IsActive())
-				{
-					return DodgeAbility;
-				}
-			}
-		}
+		// Centralizamos el recorrido en UPantheliaAbilitySystemComponent::ForEachAbility,
+		// que ya protege la lista interna con FScopedAbilityListLock. El notify no toca
+		// directamente el array mutable de specs.
+		UPantheliaAbilitySystemComponent* PantheliaASC =
+			Cast<UPantheliaAbilitySystemComponent>(ASC);
+		if (!PantheliaASC) return nullptr;
 
-		return nullptr;
+		UPantheliaDodgeAbility* FoundAbility = nullptr;
+		FForEachAbility FindActiveAbilityDelegate;
+		FindActiveAbilityDelegate.BindLambda(
+			[&FoundAbility](const FGameplayAbilitySpec& Spec)
+			{
+				if (FoundAbility) return;
+
+				if (UPantheliaDodgeAbility* DodgeAbility =
+					Cast<UPantheliaDodgeAbility>(Spec.GetPrimaryInstance()))
+				{
+					if (DodgeAbility->IsActive())
+					{
+						FoundAbility = DodgeAbility;
+					}
+				}
+			});
+
+		PantheliaASC->ForEachAbility(FindActiveAbilityDelegate);
+		return FoundAbility;
 	}
 }
 

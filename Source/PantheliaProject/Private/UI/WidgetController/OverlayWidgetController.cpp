@@ -37,6 +37,14 @@ void UOverlayWidgetController::BroadcastInitialValues()
 
 void UOverlayWidgetController::BindCallbacksToDependencies()
 {
+	// Los delegates nativos son aditivos. Si el HUD o un Blueprint llama esta función dos
+	// veces sobre la misma instancia, no debemos duplicar cada callback de atributos/UI.
+	if (bCallbacksBound)
+	{
+		return;
+	}
+	bCallbacksBound = true;
+
 	// --- PlayerState: XP ---
 	// Casteamos una vez y bindeamos el callback para que la barra de XP
 	// se actualice cada vez que el jugador gane experiencia.
@@ -47,81 +55,53 @@ void UOverlayWidgetController::BindCallbacksToDependencies()
 	// --- AttributeSet: atributos vitales y de combate ---
 	const UPantheliaAttributeSet* PantheliaAS = CastChecked<UPantheliaAttributeSet>(AttributeSet);
 
-	// Reemplazamos todos los callbacks por lambdas.
-	// Capturamos [this] para poder acceder a los delegates del widget controller.
-	// La firma del lambda debe coincidir con la del delegate de GAS: const FOnAttributeChangeData&
-
+	// Usamos callbacks UObject nombrados. AddUObject vincula el lifetime del callback al
+	// controller y evita que un ASC/PlayerState persistente invoque una lambda con un this
+	// destruido después de reconstruir la UI.
 	// SALUD
 	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(
-		PantheliaAS->GetHealthAttribute()).AddLambda([this](const FOnAttributeChangeData& Data)
-			{
-				OnHealthChanged.Broadcast(Data.NewValue);
-			});
+		PantheliaAS->GetHealthAttribute()).AddUObject(
+			this, &UOverlayWidgetController::OnHealthAttributeChanged);
 
 	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(
-		PantheliaAS->GetMaxHealthAttribute()).AddLambda([this](const FOnAttributeChangeData& Data)
-			{
-				OnMaxHealthChanged.Broadcast(Data.NewValue);
-			});
+		PantheliaAS->GetMaxHealthAttribute()).AddUObject(
+			this, &UOverlayWidgetController::OnMaxHealthAttributeChanged);
 
 	// ESTAMINA
 	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(
-		PantheliaAS->GetStaminaAttribute()).AddLambda([this](const FOnAttributeChangeData& Data)
-			{
-				OnStaminaChanged.Broadcast(Data.NewValue);
-			});
+		PantheliaAS->GetStaminaAttribute()).AddUObject(
+			this, &UOverlayWidgetController::OnStaminaAttributeChanged);
 
 	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(
-		PantheliaAS->GetMaxStaminaAttribute()).AddLambda([this](const FOnAttributeChangeData& Data)
-			{
-				OnMaxStaminaChanged.Broadcast(Data.NewValue);
-			});
+		PantheliaAS->GetMaxStaminaAttribute()).AddUObject(
+			this, &UOverlayWidgetController::OnMaxStaminaAttributeChanged);
 
 	// MANÁ
 	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(
-		PantheliaAS->GetManaAttribute()).AddLambda([this](const FOnAttributeChangeData& Data)
-			{
-				OnManaChanged.Broadcast(Data.NewValue);
-			});
+		PantheliaAS->GetManaAttribute()).AddUObject(
+			this, &UOverlayWidgetController::OnManaAttributeChanged);
 
 	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(
-		PantheliaAS->GetMaxManaAttribute()).AddLambda([this](const FOnAttributeChangeData& Data)
-			{
-				OnMaxManaChanged.Broadcast(Data.NewValue);
-			});
+		PantheliaAS->GetMaxManaAttribute()).AddUObject(
+			this, &UOverlayWidgetController::OnMaxManaAttributeChanged);
 
 	// POSTURA
 	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(
-		PantheliaAS->GetPoiseAttribute()).AddLambda([this](const FOnAttributeChangeData& Data)
-			{
-				OnPoiseChanged.Broadcast(Data.NewValue);
-			});
+		PantheliaAS->GetPoiseAttribute()).AddUObject(
+			this, &UOverlayWidgetController::OnPoiseAttributeChanged);
 
 	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(
-		PantheliaAS->GetMaxPoiseAttribute()).AddLambda([this](const FOnAttributeChangeData& Data)
-			{
-				OnMaxPoiseChanged.Broadcast(Data.NewValue);
-			});
+		PantheliaAS->GetMaxPoiseAttribute()).AddUObject(
+			this, &UOverlayWidgetController::OnMaxPoiseAttributeChanged);
 
 	// Suscripción a delegates del PantheliaAbilitySystemComponent.
 	// Casteamos una sola vez y reutilizamos el puntero para todos los binds de este bloque.
 	if (UPantheliaAbilitySystemComponent* PantheliaASC = Cast<UPantheliaAbilitySystemComponent>(AbilitySystemComponent))
 	{
 		// --- Mensajes de pickup (efectos GE con asset tags de categoría "Message") ---
-		PantheliaASC->EffectAssetTags.AddLambda([this](const FGameplayTagContainer& AssetTags)
-			{
-				for (const FGameplayTag& Tag : AssetTags)
-				{
-					const FGameplayTag MessageTag = FGameplayTag::RequestGameplayTag(FName("Message"));
-					if (!Tag.MatchesTag(MessageTag)) { continue; }
-
-					const FUIWidgetRow* Row = GetDataTableRowByTag<FUIWidgetRow>(MessageWidgetDataTable, Tag);
-					if (Row)
-					{
-						MessageWidgetRowDelegate.Broadcast(*Row);
-					}
-				}
-			});
+		PantheliaASC->EffectAssetTags.AddUObject(
+			this,
+			&UOverlayWidgetController::OnEffectAssetTagsReceived);
 
 		// --- Inicialización de la UI de hechizos ---
 		// Resolvemos la carrera de inicialización entre el ASC (que da abilities en BeginPlay)
@@ -145,6 +125,64 @@ void UOverlayWidgetController::BindCallbacksToDependencies()
 			PantheliaASC->AbilitiesGivenDelegate.AddUObject(
 				this,
 				&UOverlayWidgetController::OnInitializeStartupAbilities);
+		}
+	}
+}
+
+void UOverlayWidgetController::OnHealthAttributeChanged(const FOnAttributeChangeData& Data)
+{
+	OnHealthChanged.Broadcast(Data.NewValue);
+}
+
+void UOverlayWidgetController::OnMaxHealthAttributeChanged(const FOnAttributeChangeData& Data)
+{
+	OnMaxHealthChanged.Broadcast(Data.NewValue);
+}
+
+void UOverlayWidgetController::OnStaminaAttributeChanged(const FOnAttributeChangeData& Data)
+{
+	OnStaminaChanged.Broadcast(Data.NewValue);
+}
+
+void UOverlayWidgetController::OnMaxStaminaAttributeChanged(const FOnAttributeChangeData& Data)
+{
+	OnMaxStaminaChanged.Broadcast(Data.NewValue);
+}
+
+void UOverlayWidgetController::OnManaAttributeChanged(const FOnAttributeChangeData& Data)
+{
+	OnManaChanged.Broadcast(Data.NewValue);
+}
+
+void UOverlayWidgetController::OnMaxManaAttributeChanged(const FOnAttributeChangeData& Data)
+{
+	OnMaxManaChanged.Broadcast(Data.NewValue);
+}
+
+void UOverlayWidgetController::OnPoiseAttributeChanged(const FOnAttributeChangeData& Data)
+{
+	OnPoiseChanged.Broadcast(Data.NewValue);
+}
+
+void UOverlayWidgetController::OnMaxPoiseAttributeChanged(const FOnAttributeChangeData& Data)
+{
+	OnMaxPoiseChanged.Broadcast(Data.NewValue);
+}
+
+void UOverlayWidgetController::OnEffectAssetTagsReceived(const FGameplayTagContainer& AssetTags)
+{
+	for (const FGameplayTag& Tag : AssetTags)
+	{
+		const FGameplayTag MessageTag = FGameplayTag::RequestGameplayTag(FName("Message"));
+		if (!Tag.MatchesTag(MessageTag))
+		{
+			continue;
+		}
+
+		const FUIWidgetRow* Row = GetDataTableRowByTag<FUIWidgetRow>(MessageWidgetDataTable, Tag);
+		if (Row)
+		{
+			MessageWidgetRowDelegate.Broadcast(*Row);
 		}
 	}
 }

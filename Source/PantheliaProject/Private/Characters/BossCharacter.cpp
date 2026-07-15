@@ -16,18 +16,24 @@ void ABossCharacter::BeginPlay()
 	const UPantheliaAttributeSet* PantheliaAS = CastChecked<UPantheliaAttributeSet>(AttributeSet);
 
 	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(
-		PantheliaAS->GetHealthAttribute()
-	).AddLambda([this](const FOnAttributeChangeData& Data)
-		{
-			OnBossHealthChanged.Broadcast(Data.NewValue);
-		});
+		PantheliaAS->GetHealthAttribute()).AddUObject(
+			this,
+			&ABossCharacter::OnHealthAttributeChanged);
 
 	AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(
-		PantheliaAS->GetMaxHealthAttribute()
-	).AddLambda([this](const FOnAttributeChangeData& Data)
-		{
-			OnBossMaxHealthChanged.Broadcast(Data.NewValue);
-		});
+		PantheliaAS->GetMaxHealthAttribute()).AddUObject(
+			this,
+			&ABossCharacter::OnMaxHealthAttributeChanged);
+}
+
+void ABossCharacter::OnHealthAttributeChanged(const FOnAttributeChangeData& Data)
+{
+	OnBossHealthChanged.Broadcast(Data.NewValue);
+}
+
+void ABossCharacter::OnMaxHealthAttributeChanged(const FOnAttributeChangeData& Data)
+{
+	OnBossMaxHealthChanged.Broadcast(Data.NewValue);
 }
 
 void ABossCharacter::BroadcastInitialValues()

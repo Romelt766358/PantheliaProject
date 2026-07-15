@@ -29,47 +29,48 @@ void UAttributeMenuWidgetController::BroadcastInitialValues()
 
 void UAttributeMenuWidgetController::BindCallbacksToDependencies()
 {
+	// Los delegates son aditivos. Esta guarda evita que una segunda llamada accidental
+	// duplique todos los broadcasts del menú sobre la misma instancia de controller.
+	if (bCallbacksBound)
+	{
+		return;
+	}
+	bCallbacksBound = true;
+
 	const UPantheliaAttributeSet* AS = CastChecked<UPantheliaAttributeSet>(AttributeSet);
 
 	// Iteramos el mismo mapa que en BroadcastInitialValues.
 	// Para cada atributo, nos suscribimos al delegate que el ASC broadcastea
-	// cuando ese atributo cambia. Cuando cambia, ejecutamos una lambda que
-	// broadcastea el nuevo valor al widget.
-	// Capturamos Pair por valor (no por referencia) porque cuando la lambda
-	// se ejecute, el Pair local del for loop habrá salido de scope.
-	// Capturamos AS por valor también para acceder al AttributeSet al ejecutar.
-	for (auto& Pair : AS->TagsToAttributes)
+	// cuando ese atributo cambia. Capturamos solo el tag y el FGameplayAttribute por valor.
+	// AddWeakLambda comprueba el lifetime de este UObject antes de ejecutar el callback;
+	// el ASC persistente no puede llamar a un controller ya destruido tras recrear la UI.
+	for (const auto& Pair : AS->TagsToAttributes)
 	{
-		AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(
-			Pair.Value()).AddLambda([this, Pair, AS](const FOnAttributeChangeData& Data)
-				{
-					BroadcastAttributeInfo(Pair.Key, Pair.Value());
-				});
+		const FGameplayTag AttributeTag = Pair.Key;
+		const FGameplayAttribute Attribute = Pair.Value();
+
+		AbilitySystemComponent->GetGameplayAttributeValueChangeDelegate(Attribute).AddWeakLambda(
+			this,
+			[this, AttributeTag, Attribute](const FOnAttributeChangeData& /*Data*/)
+			{
+				BroadcastAttributeInfo(AttributeTag, Attribute);
+			});
 	}
 
 	// --- Puntos de atributo y habilidad ---
 	//
 	// El PlayerState broadcastea FOnPlayerStatChanged (C++-only) cuando cambian
-	// estos contadores. Nos bindeamos aquí en C++ y, dentro de cada lambda,
-	// reenviamos el valor a través de nuestro delegate DINÁMICO (BlueprintAssignable),
-	// que es el que el widget del menú puede escuchar desde Blueprint.
-	//
-	// Este patrón (C++ delegate del PlayerState → lambda → delegate dinámico del
-	// controller) es el mismo que el curso usa: el PlayerState no debe conocer
-	// tipos de UI, y los widgets no acceden directamente al PlayerState.
+	// estos contadores. Nos bindeamos con AddUObject y reenviamos el valor mediante
+	// los delegates dinámicos que escuchan los widgets Blueprint.
 	APantheliaPlayerState* PS = CastChecked<APantheliaPlayerState>(PlayerState);
 
-	PS->OnAttributePointsChangedDelegate.AddLambda(
-		[this](int32 NewValue)
-		{
-			AttributePointsChangedDelegate.Broadcast(NewValue);
-		});
+	PS->OnAttributePointsChangedDelegate.AddUObject(
+		this,
+		&UAttributeMenuWidgetController::OnAttributePointsChanged);
 
-	PS->OnSkillPointsChangedDelegate.AddLambda(
-		[this](int32 NewValue)
-		{
-			SkillPointsChangedDelegate.Broadcast(NewValue);
-		});
+	PS->OnSkillPointsChangedDelegate.AddUObject(
+		this,
+		&UAttributeMenuWidgetController::OnSkillPointsChanged);
 }
 
 void UAttributeMenuWidgetController::BroadcastAttributeInfo(
@@ -87,6 +88,16 @@ void UAttributeMenuWidgetController::BroadcastAttributeInfo(
 
 	// Broadcasteamos el struct completo al delegate.
 	AttributeInfoDelegate.Broadcast(Info);
+}
+
+void UAttributeMenuWidgetController::OnAttributePointsChanged(int32 NewValue)
+{
+	AttributePointsChangedDelegate.Broadcast(NewValue);
+}
+
+void UAttributeMenuWidgetController::OnSkillPointsChanged(int32 NewValue)
+{
+	SkillPointsChangedDelegate.Broadcast(NewValue);
 }
 
 void UAttributeMenuWidgetController::UpgradeAttribute(const FGameplayTag& AttributeTag)

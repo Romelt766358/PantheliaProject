@@ -125,7 +125,9 @@ void UPantheliaAbilitySystemComponent::ForEachAbility(const FForEachAbility& Del
 	// Bloqueamos la lista de abilities mientras iteramos. Si durante el for alguna ability
 	// se concede o se remueve (GAS puede hacerlo en respuesta a tags), el cambio se pone en
 	// cola y se aplica al destruirse este lock (al salir de la función), evitando corromper
-	// la iteración o causar un crash. El lock requiere el ASC por referencia, de ahí *this.
+	// la iteración o causar un crash. Por esa misma razón, un callback no debe conceder una
+	// spec nueva y esperar encontrarla dentro de esta iteración. El lock requiere el ASC por
+	// referencia, de ahí *this.
 	FScopedAbilityListLock ActiveScopeLock(*this);
 
 	for (const FGameplayAbilitySpec& AbilitySpec : GetActivatableAbilities())
@@ -266,6 +268,9 @@ void UPantheliaAbilitySystemComponent::AbilityInputTagPressed(const FGameplayTag
 	// la activación normal de todas las abilities actuales de Panthelia.
 	if (!InputTag.IsValid()) return;
 
+	// Mantiene estable la lista interna de specs durante toda la iteración. Cualquier
+	// mutación reentrante solicitada por GAS se difiere hasta salir de esta función.
+	FScopedAbilityListLock ActiveScopeLock(*this);
 	for (FGameplayAbilitySpec& AbilitySpec : GetActivatableAbilities())
 	{
 		// Match exacto: InputTag.Spell no debe activar InputTag.Spell.1.
@@ -298,6 +303,9 @@ void UPantheliaAbilitySystemComponent::AbilityInputTagHeld(const FGameplayTag& I
 	// WhileInputActive pueden reintentar su activación desde esta ruta.
 	if (!InputTag.IsValid()) return;
 
+	// Mantiene estable la lista interna de specs durante toda la iteración. Cualquier
+	// mutación reentrante solicitada por GAS se difiere hasta salir de esta función.
+	FScopedAbilityListLock ActiveScopeLock(*this);
 	for (FGameplayAbilitySpec& AbilitySpec : GetActivatableAbilities())
 	{
 		if (!AbilitySpec.GetDynamicSpecSourceTags().HasTagExact(InputTag)) continue;
@@ -320,6 +328,9 @@ void UPantheliaAbilitySystemComponent::AbilityInputTagReleased(const FGameplayTa
 	// Misma validación que en Held.
 	if (!InputTag.IsValid()) return;
 
+	// Mantiene estable la lista interna de specs durante toda la iteración. Cualquier
+	// mutación reentrante solicitada por GAS se difiere hasta salir de esta función.
+	FScopedAbilityListLock ActiveScopeLock(*this);
 	for (FGameplayAbilitySpec& AbilitySpec : GetActivatableAbilities())
 	{
 		if (AbilitySpec.GetDynamicSpecSourceTags().HasTagExact(InputTag))
@@ -340,6 +351,10 @@ bool UPantheliaAbilitySystemComponent::TryActivateAbilityByInputTag(const FGamep
 	// Activamos una sola spec. Esto evita que dos abilities que compartan accidentalmente
 	// el mismo input se ejecuten a la vez desde un follow-up. Si una spec no satisface
 	// costes/tags, continuamos buscando otra candidata con ese InputTag.
+
+	// Mantiene estable la lista interna de specs durante toda la iteración. Cualquier
+	// mutación reentrante solicitada por GAS se difiere hasta salir de esta función.
+	FScopedAbilityListLock ActiveScopeLock(*this);
 	for (FGameplayAbilitySpec& AbilitySpec : GetActivatableAbilities())
 	{
 		if (!AbilitySpec.GetDynamicSpecSourceTags().HasTagExact(InputTag)) continue;
@@ -380,6 +395,10 @@ bool UPantheliaAbilitySystemComponent::NotifyDodgeFollowupInputPressed(
 
 	// El input se ofrece únicamente al dodge del jugador que esté activo. La propia
 	// ability valida la ventana, distingue ligero/pesado y aplica la regla primer-input-gana.
+
+	// Mantiene estable la lista interna de specs durante toda la iteración. Cualquier
+	// mutación reentrante solicitada por GAS se difiere hasta salir de esta función.
+	FScopedAbilityListLock ActiveScopeLock(*this);
 	for (FGameplayAbilitySpec& AbilitySpec : GetActivatableAbilities())
 	{
 		if (UPantheliaPlayerDodgeAbility* DodgeAbility =
@@ -412,6 +431,10 @@ void UPantheliaAbilitySystemComponent::NotifyComboInputPressed(const FGameplayTa
 	// Si esta activa (reproduciendo el combo), le marcamos el buffer de combo.
 	// Esto se llama una sola vez por pulsacion real (AbilityInputTagPressed), no cada
 	// frame, evitando la desincronizacion que causaba el override InputPressed con Held.
+
+	// Mantiene estable la lista interna de specs durante toda la iteración. Cualquier
+	// mutación reentrante solicitada por GAS se difiere hasta salir de esta función.
+	FScopedAbilityListLock ActiveScopeLock(*this);
 	for (FGameplayAbilitySpec& AbilitySpec : GetActivatableAbilities())
 	{
 		if (AbilitySpec.GetDynamicSpecSourceTags().HasTagExact(InputTag))
@@ -436,6 +459,10 @@ void UPantheliaAbilitySystemComponent::NotifyHeavyInputReleased(const FGameplayT
 	// Busca la ability de ataque PESADO activa y le notifica que el boton se solto.
 	// Esto alimenta la deteccion tap-vs-hold del cargado (sustituye a WaitInputRelease,
 	// que no detectaba el release con el sistema de input custom del proyecto).
+
+	// Mantiene estable la lista interna de specs durante toda la iteración. Cualquier
+	// mutación reentrante solicitada por GAS se difiere hasta salir de esta función.
+	FScopedAbilityListLock ActiveScopeLock(*this);
 	for (FGameplayAbilitySpec& AbilitySpec : GetActivatableAbilities())
 	{
 		if (AbilitySpec.GetDynamicSpecSourceTags().HasTagExact(InputTag))
@@ -459,6 +486,10 @@ void UPantheliaAbilitySystemComponent::NotifyBlockInputReleased(const FGameplayT
 
 	// Busca la ability de parry/bloqueo activa con este InputTag y le notifica el release.
 	// La ability decide: si estaba en bloqueo sostenido, termina la guardia.
+
+	// Mantiene estable la lista interna de specs durante toda la iteración. Cualquier
+	// mutación reentrante solicitada por GAS se difiere hasta salir de esta función.
+	FScopedAbilityListLock ActiveScopeLock(*this);
 	for (FGameplayAbilitySpec& AbilitySpec : GetActivatableAbilities())
 	{
 		if (AbilitySpec.GetDynamicSpecSourceTags().HasTagExact(InputTag))
@@ -485,6 +516,10 @@ void UPantheliaAbilitySystemComponent::NotifyParryImpact(bool bParried, bool bGu
 	// Puede haber hasta dos abilities de parry concedidas (GA_Parry_Physical y GA_Parry_Magic),
 	// pero solo una puede estar activa a la vez (el jugador no puede hacer ambas a la vez).
 	// En cuanto encontramos la activa, llamamos y salimos con return para no iterar de más.
+
+	// Mantiene estable la lista interna de specs durante toda la iteración. Cualquier
+	// mutación reentrante solicitada por GAS se difiere hasta salir de esta función.
+	FScopedAbilityListLock ActiveScopeLock(*this);
 	for (FGameplayAbilitySpec& AbilitySpec : GetActivatableAbilities())
 	{
 		if (UPantheliaParryAbility* ParryAbility =

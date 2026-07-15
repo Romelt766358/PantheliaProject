@@ -2,6 +2,7 @@
 
 #include "Combat/ComboWindowNotifyState.h"
 #include "AbilitySystem/Abilities/PantheliaPlayerAttackAbility.h"
+#include "AbilitySystem/PantheliaAbilitySystemComponent.h"
 #include "AbilitySystemComponent.h"
 #include "AbilitySystemBlueprintLibrary.h"
 #include "Components/SkeletalMeshComponent.h"
@@ -23,19 +24,33 @@ namespace
 		if (!ASC) return nullptr;
 
 		// Recorrer las abilities activas y quedarnos con la de ataque del jugador.
-		for (const FGameplayAbilitySpec& Spec : ASC->GetActivatableAbilities())
-		{
-			if (UPantheliaPlayerAttackAbility* AttackAbility =
-				Cast<UPantheliaPlayerAttackAbility>(Spec.GetPrimaryInstance()))
+		// Centralizamos el recorrido en UPantheliaAbilitySystemComponent::ForEachAbility,
+		// que ya protege la lista interna con FScopedAbilityListLock. El notify no toca
+		// directamente el array mutable de specs.
+		UPantheliaAbilitySystemComponent* PantheliaASC =
+			Cast<UPantheliaAbilitySystemComponent>(ASC);
+		if (!PantheliaASC) return nullptr;
+
+		UPantheliaPlayerAttackAbility* FoundAbility = nullptr;
+		FForEachAbility FindActiveAbilityDelegate;
+		FindActiveAbilityDelegate.BindLambda(
+			[&FoundAbility](const FGameplayAbilitySpec& Spec)
 			{
-				// Solo nos interesa si esta activa ahora mismo (reproduciendo el combo).
-				if (AttackAbility->IsActive())
+				if (FoundAbility) return;
+
+				if (UPantheliaPlayerAttackAbility* AttackAbility =
+					Cast<UPantheliaPlayerAttackAbility>(Spec.GetPrimaryInstance()))
 				{
-					return AttackAbility;
+					// Solo nos interesa si esta activa ahora mismo (reproduciendo el combo).
+					if (AttackAbility->IsActive())
+					{
+						FoundAbility = AttackAbility;
+					}
 				}
-			}
-		}
-		return nullptr;
+			});
+
+		PantheliaASC->ForEachAbility(FindActiveAbilityDelegate);
+		return FoundAbility;
 	}
 }
 

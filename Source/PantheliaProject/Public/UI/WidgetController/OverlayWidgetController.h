@@ -147,6 +147,22 @@ protected:
 	// Recibe el nuevo nivel y lo broadcastea a la UI vía OnLevelChanged.
 	void OnLevelChangedCallback(int32 NewLevel);
 
+	// Callbacks UObject explícitos para los delegates de atributos. AddUObject conoce el
+	// lifetime de este controller y deja de invocarlo cuando se destruye; a diferencia de
+	// AddLambda([this]), no conserva un puntero crudo potencialmente colgante.
+	void OnHealthAttributeChanged(const FOnAttributeChangeData& Data);
+	void OnMaxHealthAttributeChanged(const FOnAttributeChangeData& Data);
+	void OnStaminaAttributeChanged(const FOnAttributeChangeData& Data);
+	void OnMaxStaminaAttributeChanged(const FOnAttributeChangeData& Data);
+	void OnManaAttributeChanged(const FOnAttributeChangeData& Data);
+	void OnMaxManaAttributeChanged(const FOnAttributeChangeData& Data);
+	void OnPoiseAttributeChanged(const FOnAttributeChangeData& Data);
+	void OnMaxPoiseAttributeChanged(const FOnAttributeChangeData& Data);
+
+	// Reenvía los Asset Tags de efectos hacia la tabla de mensajes del HUD sin usar una
+	// lambda que capture this. El filtrado y el lookup permanecen idénticos.
+	void OnEffectAssetTagsReceived(const FGameplayTagContainer& AssetTags);
+
 	template<typename T>
 	T* GetDataTableRowByTag(UDataTable* DataTable, const FGameplayTag& Tag)
 	{

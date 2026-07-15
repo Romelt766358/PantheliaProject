@@ -6,6 +6,8 @@
 #include "Characters/PantheliaEnemy.h"
 #include "BossCharacter.generated.h"
 
+struct FOnAttributeChangeData;
+
 DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(FBossAttributeChangedSignature, float, NewValue);
 
 UCLASS()
@@ -33,6 +35,11 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+
+	// Callbacks UObject para los delegates de atributos. AddUObject evita callbacks hacia
+	// un boss destruido sin necesitar lambdas que capturen this como puntero crudo.
+	void OnHealthAttributeChanged(const FOnAttributeChangeData& Data);
+	void OnMaxHealthAttributeChanged(const FOnAttributeChangeData& Data);
 
 	virtual void HighlightActor_Implementation() override;
 	virtual void UnHighlightActor_Implementation() override;

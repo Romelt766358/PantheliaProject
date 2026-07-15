@@ -63,4 +63,12 @@ protected:
 
 	UPROPERTY(BlueprintReadOnly, Category = "WidgetController")
 	TObjectPtr<UAttributeSet> AttributeSet;
+
+	// BindCallbacksToDependencies puede ser llamado accidentalmente más de una vez desde
+	// Blueprint/HUD. Los binds nativos son aditivos, así que sin esta guarda cada cambio
+	// de atributo se rebroadcastearía varias veces. Cada instancia de controller se enlaza
+	// una sola vez con dependencias inmutables; SetWidgetControllerParams rechaza cambiar
+	// PlayerState/ASC después del bind. No debe existir un simple "reset" de esta bandera:
+	// un rebinding futuro exige retirar primero todos los delegates de las dependencias viejas.
+	bool bCallbacksBound = false;
 };
