@@ -104,19 +104,25 @@ void AMainCharacter::OnRep_PlayerState()
 
 void AMainCharacter::ResetPlayerCombo()
 {
-    if (!AbilitySystemComponent) return;
+    UPantheliaAbilitySystemComponent* PantheliaASC =
+        Cast<UPantheliaAbilitySystemComponent>(AbilitySystemComponent);
+    if (!PantheliaASC) return;
 
-    // Buscar la ability de ataque del jugador entre las concedidas al ASC.
-    // Es Instanced Per Actor, por lo que el CDO/spec existe aunque no esté activa.
-    for (const FGameplayAbilitySpec& Spec : AbilitySystemComponent->GetActivatableAbilities())
-    {
-        if (UPantheliaPlayerAttackAbility* AttackAbility =
-            Cast<UPantheliaPlayerAttackAbility>(Spec.GetPrimaryInstance()))
+    // Light y Heavy son instancias Instanced Per Actor distintas, cada una con su propio
+    // ComboIndex. Reseteamos TODAS las abilities de ataque concedidas, no solo la primera.
+    FForEachAbility ResetAttackComboDelegate;
+    ResetAttackComboDelegate.BindLambda(
+        [](const FGameplayAbilitySpec& Spec)
         {
-            AttackAbility->ResetCombo();
-            break; // Solo necesitamos la primera (light o heavy comparten el índice)
-        }
-    }
+            if (UPantheliaPlayerAttackAbility* AttackAbility =
+                Cast<UPantheliaPlayerAttackAbility>(Spec.GetPrimaryInstance()))
+            {
+                AttackAbility->ResetCombo();
+            }
+        });
+
+    // ForEachAbility mantiene un FScopedAbilityListLock durante la iteración.
+    PantheliaASC->ForEachAbility(ResetAttackComboDelegate);
 }
 
 void AMainCharacter::AddToXP_Implementation(int32 InXP)

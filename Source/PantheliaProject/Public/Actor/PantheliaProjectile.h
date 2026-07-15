@@ -19,7 +19,9 @@ class UAudioComponent;
  *
  * El proyectil lleva consigo un FGameplayEffectSpecHandle (DamageEffectSpecHandle)
  * que se crea en UPantheliaProjectileSpell::SpawnProjectile() antes de FinishSpawning.
- * Al impactar, aplica ese GE al ASC del actor golpeado.
+ * Al impactar, aplica ese GE al ASC del actor golpeado. Los aliados del lanzador
+ * se ignoran por completo: no reciben efectos, no generan feedback y no consumen
+ * el proyectil. La geometría del mundo sí puede consumirlo normalmente.
  *
  * Efectos visuales/sonoros configurables desde el Blueprint de cada proyectil:
  * - ImpactEffect: Niagara al impactar
@@ -64,9 +66,13 @@ private:
 
 	// Protección contra doble disparo de efectos. OnSphereOverlap puede llamarse más de una
 	// vez en el mismo frame si el proyectil toca varios componentes del mismo actor o del
-	// suelo simultáneamente. Una vez que los efectos se reproducen y el proyectil se destruye,
-	// este flag evita que se reproduzcan de nuevo antes de que Unreal procese la destrucción.
+	// suelo simultáneamente. Solo se activa tras un overlap que realmente consume el
+	// proyectil; atravesar un aliado o un objetivo en i-frames mantiene este flag en false.
 	bool bHit = false;
+
+	// Actores que este proyectil ya atravesó sin consumirse. Evita que varios componentes
+	// del mismo personaje disparen repetidamente el ExecCalc o el evento de perfect dodge.
+	TSet<TWeakObjectPtr<AActor>> IgnoredActors;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Effects")
 	TObjectPtr<USoundBase> LoopingSound;

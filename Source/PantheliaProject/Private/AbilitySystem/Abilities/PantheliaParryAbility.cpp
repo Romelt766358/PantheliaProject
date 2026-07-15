@@ -18,6 +18,10 @@ UPantheliaParryAbility::UPantheliaParryAbility()
 {
 	// Instanced Per Actor: cada jugador tiene su instancia con su estado (bInputHeld, etc.).
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
+
+	// GA_Parry_Physical / GA_Parry_Magic pueden migrar su coste de intento desde
+	// Class Defaults sin tener que seleccionar de nuevo el tipo de recurso.
+	ResourceCostType = EPantheliaResourceCostType::Stamina;
 }
 
 void UPantheliaParryAbility::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
@@ -267,28 +271,18 @@ FGameplayTag UPantheliaParryAbility::GetBlockStateTag() const
 	return ParryType == EParryType::Physical ? Tags.State_Block_Physical : Tags.State_Block_Magic;
 }
 
-bool UPantheliaParryAbility::TryPayBlockTransitionCost()
+bool UPantheliaParryAbility::TryPayLegacyBlockTransitionCost(
+	UPantheliaAbilitySystemComponent* AbilitySystemComponent)
 {
 	if (!BlockTransitionCostEffectClass)
 	{
 		return true;
 	}
 
-	UPantheliaAbilitySystemComponent* ASC =
-		Cast<UPantheliaAbilitySystemComponent>(GetAbilitySystemComponentFromActorInfo());
-	if (!ASC)
-	{
-		UE_LOG(LogTemp, Warning,
-			TEXT("[Parry] No hay PantheliaASC para validar el coste de transición."));
-		RuntimeState = EPantheliaParryRuntimeState::Ending;
-		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
-		return false;
-	}
-
-	FGameplayEffectContextHandle CostContext = ASC->MakeEffectContext();
+	FGameplayEffectContextHandle CostContext = AbilitySystemComponent->MakeEffectContext();
 	CostContext.AddSourceObject(this);
 
-	FGameplayEffectSpecHandle CostSpec = ASC->MakeOutgoingSpec(
+	FGameplayEffectSpecHandle CostSpec = AbilitySystemComponent->MakeOutgoingSpec(
 		BlockTransitionCostEffectClass,
 		GetAbilityLevel(),
 		CostContext);
@@ -299,14 +293,15 @@ bool UPantheliaParryAbility::TryPayBlockTransitionCost()
 			TEXT("[Parry] No se pudo construir el GE de coste de transición; guardia rota."));
 		RuntimeState = EPantheliaParryRuntimeState::Ending;
 		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
-		ASC->TriggerGuardBreak();
+		AbilitySystemComponent->TriggerGuardBreak();
 		return false;
 	}
 
 	CostSpec.Data->CalculateModifierMagnitudes();
 
 	float RequiredStamina = 0.f;
-	const FGameplayAttribute StaminaAttribute = UPantheliaAttributeSet::GetStaminaAttribute();
+	const FGameplayAttribute StaminaAttribute =
+		UPantheliaAttributeSet::GetStaminaAttribute();
 	const UGameplayEffect* CostDefinition = CostSpec.Data->Def;
 
 	if (CostDefinition)
@@ -316,7 +311,8 @@ bool UPantheliaParryAbility::TryPayBlockTransitionCost()
 			ModifierIndex < CostSpec.Data->Modifiers.Num();
 			++ModifierIndex)
 		{
-			const FGameplayModifierInfo& ModifierInfo = CostDefinition->Modifiers[ModifierIndex];
+			const FGameplayModifierInfo& ModifierInfo =
+				CostDefinition->Modifiers[ModifierIndex];
 			if (ModifierInfo.Attribute != StaminaAttribute ||
 				ModifierInfo.ModifierOp != EGameplayModOp::Additive)
 			{
@@ -336,11 +332,122 @@ bool UPantheliaParryAbility::TryPayBlockTransitionCost()
 	// Esto conserva compatibilidad con efectos de transición que solo otorguen tags.
 	if (RequiredStamina <= 0.f)
 	{
-		ASC->ApplyGameplayEffectSpecToSelf(*CostSpec.Data.Get());
+		AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*CostSpec.Data.Get());
 		return true;
 	}
 
-	const float CurrentStamina = ASC->GetNumericAttribute(StaminaAttribute);
+	const float CurrentStamina =
+		AbilitySystemComponent->GetNumericAttribute(StaminaAttribute);
+	if (CurrentStamina + KINDA_SMALL_NUMBER < RequiredStamina)
+	{
+		if (CurrentStamina > 0.f)
+		{
+			AbilitySystemComponent->ApplyModToAttribute(
+				StaminaAttribute,
+				EGameplayModOp::Additive,
+				-CurrentStamina);
+		}
+
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Parry] Transición no pagable: actual=%.1f requerida=%.1f -> GUARD BREAK."),
+			CurrentStamina,
+			RequiredStamina);
+
+		RuntimeState = EPantheliaParryRuntimeState::Ending;
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+		AbilitySystemComponent->TriggerGuardBreak();
+		return false;
+	}
+
+	// Aplicamos el spec construido en vez de llamar ApplyGameplayEffectToOwner para que
+	// la misma magnitud evaluada sea la que se cobre. Igualdad exacta está permitida:
+	// puede dejar Stamina en 0 sin romper la guardia hasta el siguiente impacto.
+	AbilitySystemComponent->ApplyGameplayEffectSpecToSelf(*CostSpec.Data.Get());
+	return true;
+}
+
+bool UPantheliaParryAbility::TryPayBlockTransitionCost()
+{
+	UPantheliaAbilitySystemComponent* ASC =
+		Cast<UPantheliaAbilitySystemComponent>(GetAbilitySystemComponentFromActorInfo());
+	if (!ASC)
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Parry] No hay PantheliaASC para validar el coste de transición."));
+		RuntimeState = EPantheliaParryRuntimeState::Ending;
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+		return false;
+	}
+
+	// Hasta que cada Blueprint copie su coste anterior a la propiedad base, la ruta
+	// legacy permanece intacta. Esto evita una regresión silenciosa durante la migración.
+	if (!bUsePantheliaBlockTransitionCost)
+	{
+		return TryPayLegacyBlockTransitionCost(ASC);
+	}
+
+	const float EvaluatedBaseRequiredStamina =
+		BlockTransitionBaseStaminaCost.GetValueAtLevel(GetAbilityLevel());
+
+	if (!FMath::IsFinite(EvaluatedBaseRequiredStamina))
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[Parry] BlockTransitionBaseStaminaCost no es finito -> GUARD BREAK."));
+		RuntimeState = EPantheliaParryRuntimeState::Ending;
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+		ASC->TriggerGuardBreak();
+		return false;
+	}
+
+	const float BaseRequiredStamina =
+		FMath::Max(0.f, EvaluatedBaseRequiredStamina);
+
+	// Un cero explícito es una transición gratuita válida. No aplicamos un GE de
+	// coste vacío para que el asset no tenga efectos auxiliares ocultos.
+	if (BaseRequiredStamina <= 0.f)
+	{
+		return true;
+	}
+
+	const float RequiredStamina = UPantheliaGameplayAbility::ResolveResourceCost(
+		ASC,
+		EPantheliaResourceCostType::Stamina,
+		BaseRequiredStamina);
+
+	if (RequiredStamina <= 0.f)
+	{
+		return true;
+	}
+
+	if (!BlockTransitionCostEffectClass)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[Parry] Coste de transición %.1f sin BlockTransitionCostEffectClass -> GUARD BREAK."),
+			RequiredStamina);
+		RuntimeState = EPantheliaParryRuntimeState::Ending;
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+		ASC->TriggerGuardBreak();
+		return false;
+	}
+
+	const UGameplayEffect* CostDefinition =
+		BlockTransitionCostEffectClass.GetDefaultObject();
+	if (!CostDefinition ||
+		CostDefinition->DurationPolicy != EGameplayEffectDurationType::Instant)
+	{
+		UE_LOG(LogTemp, Error,
+			TEXT("[Parry] BlockTransitionCostEffectClass debe ser un GE Instant -> GUARD BREAK."));
+		RuntimeState = EPantheliaParryRuntimeState::Ending;
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+		ASC->TriggerGuardBreak();
+		return false;
+	}
+
+	const FGameplayAttribute StaminaAttribute =
+		UPantheliaAttributeSet::GetStaminaAttribute();
+	const float CurrentStamina =
+		ASC->GetNumericAttribute(StaminaAttribute);
+
 	if (CurrentStamina + KINDA_SMALL_NUMBER < RequiredStamina)
 	{
 		if (CurrentStamina > 0.f)
@@ -362,10 +469,30 @@ bool UPantheliaParryAbility::TryPayBlockTransitionCost()
 		return false;
 	}
 
-	// Aplicamos el spec construido en vez de llamar ApplyGameplayEffectToOwner para que
-	// la misma magnitud evaluada sea la que se cobre. Igualdad exacta está permitida:
-	// puede dejar Stamina en 0 sin romper la guardia hasta el siguiente impacto.
-	ASC->ApplyGameplayEffectSpecToSelf(*CostSpec.Data.Get());
+	FGameplayEffectContextHandle CostContext = ASC->MakeEffectContext();
+	CostContext.AddSourceObject(this);
+
+	FGameplayEffectSpecHandle CostSpec = ASC->MakeOutgoingSpec(
+		BlockTransitionCostEffectClass,
+		GetAbilityLevel(),
+		CostContext);
+
+	if (!UPantheliaGameplayAbility::ApplyResolvedResourceCostSpec(
+		ASC,
+		EPantheliaResourceCostType::Stamina,
+		RequiredStamina,
+		CostSpec))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("[Parry] No se pudo aplicar el GE de coste de transición; guardia rota."));
+		RuntimeState = EPantheliaParryRuntimeState::Ending;
+		EndAbility(CurrentSpecHandle, CurrentActorInfo, CurrentActivationInfo, true, true);
+		ASC->TriggerGuardBreak();
+		return false;
+	}
+
+	// Igualdad exacta está permitida: puede dejar Stamina en 0 sin romper la guardia
+	// hasta el siguiente impacto no pagable.
 	return true;
 }
 

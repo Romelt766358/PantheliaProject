@@ -14,6 +14,45 @@
 #include "PantheliaGameplayTags.h"
 #include "AbilitySystem/PantheliaAbilitySystemLibrary.h"
 
+namespace
+{
+	const FName PlayerTeamTag(TEXT("Player"));
+	const FName EnemyTeamTag(TEXT("Enemy"));
+
+	bool HasCombatTeamTag(const AActor* Actor)
+	{
+		return IsValid(Actor)
+			&& (Actor->ActorHasTag(PlayerTeamTag) || Actor->ActorHasTag(EnemyTeamTag));
+	}
+
+	AActor* ResolveCombatTeamActor(AActor* Actor)
+	{
+		if (!IsValid(Actor))
+		{
+			return nullptr;
+		}
+
+		if (HasCombatTeamTag(Actor))
+		{
+			return Actor;
+		}
+
+		AActor* InstigatorActor = Actor->GetInstigator();
+		if (HasCombatTeamTag(InstigatorActor))
+		{
+			return InstigatorActor;
+		}
+
+		AActor* OwnerActor = Actor->GetOwner();
+		if (HasCombatTeamTag(OwnerActor))
+		{
+			return OwnerActor;
+		}
+
+		return nullptr;
+	}
+}
+
 APantheliaProjectile::APantheliaProjectile()
 {
 	PrimaryActorTick.bCanEverTick = false;
@@ -52,23 +91,50 @@ void APantheliaProjectile::OnSphereOverlap(UPrimitiveComponent* OverlappedCompon
 	UPrimitiveComponent* OtherComp, int32 OtherBodyIndex,
 	bool bFromSweep, const FHitResult& SweepResult)
 {
-	// FIX 1: Ignorar si el spec no está inicializado.
+	// FIX 1: Ignorar si el spec no está inicializado o el overlap no aporta actor.
 	// En cliente (sin autoridad) el spec nunca se setea — evita crash al hacer .Get().
-	if (!DamageEffectSpecHandle.Data.IsValid()) return;
+	if (!DamageEffectSpecHandle.Data.IsValid() || !IsValid(OtherActor)) return;
+	if (bHit) return;
+
+	const TWeakObjectPtr<AActor> OtherActorKey(OtherActor);
+	if (IgnoredActors.Contains(OtherActorKey)) return;
+
+	const FGameplayEffectContextHandle EffectContext =
+		DamageEffectSpecHandle.Data.Get()->GetContext();
 
 	// FIX 2: Ignorar si el actor golpeado es el propio lanzador del proyectil.
-	// El EffectCauser en el context es el AvatarActor (el personaje), no el proyectil.
-	// Esto evita que el jugador se dañe a sí mismo si el proyectil lo toca al spawnearse.
-	if (DamageEffectSpecHandle.Data.Get()->GetContext().GetEffectCauser() == OtherActor) return;
+	// El EffectCauser en el context es normalmente el AvatarActor (el personaje), no
+	// el proyectil. Instigator queda como fallback por si una fuente construye el spec
+	// con un context distinto. También protegemos el caso teórico de overlap propio.
+	AActor* SourceActor = EffectContext.GetEffectCauser();
+	if (!IsValid(SourceActor))
+	{
+		SourceActor = GetInstigator();
+	}
 
-	// También chequeamos por Instigator (pawn que spawneó el proyectil) como fallback.
-	if (OtherActor == GetInstigator()) return;
+	if (OtherActor == this || OtherActor == SourceActor || OtherActor == GetInstigator()) return;
 
-	// FIX 3: Evitar doble disparo de efectos. OnSphereOverlap puede llamarse más de una
-	// vez en el mismo frame (múltiples componentes, suelo + pared, etc.). Solo procesamos
-	// el primer overlap válido.
-	if (bHit) return;
-	bHit = true;
+	// FIX COMBAT-07: los aliados no reciben GE, no generan feedback ofensivo y no
+	// consumen el proyectil. Solo aplicamos la comparación de equipos cuando ambos
+	// actores declaran un equipo de combate; la geometría y props sin tags siguen
+	// consumiendo el proyectil normalmente.
+	AActor* SourceTeamActor = ResolveCombatTeamActor(SourceActor);
+	AActor* TargetTeamActor = ResolveCombatTeamActor(OtherActor);
+	if (SourceTeamActor && TargetTeamActor
+		&& !UPantheliaAbilitySystemLibrary::IsNotFriend(SourceTeamActor, TargetTeamActor))
+	{
+		IgnoredActors.Add(OtherActorKey);
+		return;
+	}
+
+	// FIX 3: La geometría y los objetivos hostiles consumen el proyectil. Los aliados
+	// y los objetivos que niegan el golpe mediante i-frames se registran en IgnoredActors
+	// y el proyectil continúa. bHit solo se activa al final, cuando el consumo es real.
+	bool bShouldConsumeProjectile = true;
+
+	// La geometría sin ASC conserva feedback de impacto. Contra un objetivo con ASC,
+	// el ExecCalc decide si el golpe fue realmente aceptado o si lo negó una defensa.
+	bool bShouldPlayImpactFeedback = true;
 
 	// Aplicamos el daño solo en el servidor/singleplayer.
 	// El atributo Health está replicado — el cliente verá el cambio automáticamente.
@@ -190,23 +256,61 @@ void APantheliaProjectile::OnSphereOverlap(UPrimitiveComponent* OverlappedCompon
 
 		if (UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(OtherActor))
 		{
+			// El spec puede reutilizar su context durante toda la vida del proyectil.
+			// Reiniciamos explícitamente el resultado antes de aplicar para no depender
+			// de ningún valor previo escrito por otra ruta.
+			FGameplayEffectContextHandle ContextHandle =
+				DamageEffectSpecHandle.Data->GetContext();
+			UPantheliaAbilitySystemLibrary::SetHitOutcome(
+				ContextHandle, EPantheliaHitOutcome::Unresolved);
+
 			TargetASC->ApplyGameplayEffectSpecToSelf(*DamageEffectSpecHandle.Data.Get());
+
+			// ApplyGameplayEffectSpecToSelf ejecuta el ExecCalc de forma síncrona.
+			// Solo Accepted reproduce el impacto ofensivo normal. I-frames, parry
+			// perfecto y bloqueo conservan exclusivamente su feedback defensivo.
+			const EPantheliaHitOutcome HitOutcome =
+				UPantheliaAbilitySystemLibrary::GetHitOutcome(ContextHandle);
+			bShouldPlayImpactFeedback =
+				HitOutcome == EPantheliaHitOutcome::Accepted;
+
+			// Los i-frames representan que el proyectil no conectó físicamente con el
+			// personaje. No se destruye: atraviesa al objetivo y continúa su trayectoria.
+			// Parry perfecto y bloqueo sí consumen el proyectil porque hubo contacto
+			// defensivo, aunque su feedback normal quede suprimido.
+			if (HitOutcome == EPantheliaHitOutcome::NegatedInvulnerability)
+			{
+				IgnoredActors.Add(OtherActorKey);
+				bShouldConsumeProjectile = false;
+			}
 		}
 	}
+
+	if (!bShouldConsumeProjectile)
+	{
+		return;
+	}
+
+	// A partir de aquí el overlap consume el proyectil. Cualquier overlap adicional
+	// que llegue antes de que Destroy() se procese queda bloqueado por bHit.
+	bHit = true;
 
 	if (IsValid(LoopingSoundComponent))
 	{
 		LoopingSoundComponent->Stop();
 	}
 
-	if (IsValid(ImpactSound))
+	if (bShouldPlayImpactFeedback)
 	{
-		UGameplayStatics::PlaySoundAtLocation(this, ImpactSound, GetActorLocation(), FRotator::ZeroRotator);
-	}
+		if (IsValid(ImpactSound))
+		{
+			UGameplayStatics::PlaySoundAtLocation(this, ImpactSound, GetActorLocation(), FRotator::ZeroRotator);
+		}
 
-	if (IsValid(ImpactEffect))
-	{
-		UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, ImpactEffect, GetActorLocation());
+		if (IsValid(ImpactEffect))
+		{
+			UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, ImpactEffect, GetActorLocation());
+		}
 	}
 
 	Destroy();

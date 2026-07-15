@@ -2,6 +2,7 @@
 
 #include "Player/PantheliaPlayerState.h"
 #include "AbilitySystem/PantheliaAttributeSet.h"
+#include "AbilitySystem/PantheliaCostAttributeSet.h"
 #include "AbilitySystem/PantheliaAbilitySystemComponent.h"
 #include "AbilitySystem/Data/PantheliaLevelUpInfo.h"
 #include "AbilitySystem/PantheliaSkillTreeComponent.h"
@@ -12,6 +13,10 @@ APantheliaPlayerState::APantheliaPlayerState()
 	AbilitySystemComponent->SetIsReplicated(true);
 
 	AttributeSet = CreateDefaultSubobject<UPantheliaAttributeSet>("AttributeSet");
+
+	// Dominio separado de costes: permite que árbol/equipo/buffs modifiquen Stamina
+	// y Mana sin seguir ampliando el AttributeSet monolítico de combate.
+	CostAttributeSet = CreateDefaultSubobject<UPantheliaCostAttributeSet>("CostAttributeSet");
 
 	// Componente del árbol de habilidades (Etapa 5). Vive junto al ASC por la misma
 	// razón de persistencia (sobrevive al respawn del Pawn). Ver PantheliaSkillTreeComponent.h.

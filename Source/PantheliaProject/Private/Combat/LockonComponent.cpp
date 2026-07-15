@@ -2,6 +2,7 @@
 
 #include "Combat/LockonComponent.h"
 
+#include "PantheliaLogChannels.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/SpringArmComponent.h"

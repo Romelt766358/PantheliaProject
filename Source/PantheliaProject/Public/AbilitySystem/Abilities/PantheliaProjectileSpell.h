@@ -19,9 +19,16 @@ class UAnimMontage;
  * para cada entrada de DamageTypes (y Damage.Poise si > 0), y lo lanza.
  *
  * Flujo de uso en el Event Graph del Blueprint hijo:
- *   1. ActivateAbility → UpdateFacingTarget → PlayMontageAndWait (CastMontage)
- *   2. WaitGameplayEvent (SocketTag) → SpawnProjectile()
- *   3. OnCompleted / OnInterrupted / OnCancelled → EndAbility
+ *   1. ActivateAbility → CommitAbility (una sola vez)
+ *   2. Si CommitAbility devuelve true: UpdateFacingTarget → PlayMontageAndWait
+ *   3. WaitGameplayEvent (SocketTag) → SpawnProjectile()
+ *   4. OnCompleted / OnInterrupted / OnCancelled → EndAbility
+ *
+ * COSTES DEL JUGADOR:
+ *   - Coste principal: Mana.
+ *   - AdditionalResourceCosts[0]: Stamina.
+ * Ambos se validan antes de cobrar y se aplican dentro del mismo CommitAbility. Los
+ * hechizos de enemigos mantienen bUsePantheliaResourceCost=false.
  *
  * El socket de spawn se configura por Blueprint via SocketTag:
  *   Montage.Attack.Weapon    → punta del arma (jugador)
@@ -38,6 +45,8 @@ class PANTHELIAPROJECT_API UPantheliaProjectileSpell : public UPantheliaDamageGa
 	GENERATED_BODY()
 
 public:
+	UPantheliaProjectileSpell();
+
 	virtual void ActivateAbility(
 		const FGameplayAbilitySpecHandle Handle,
 		const FGameplayAbilityActorInfo* ActorInfo,

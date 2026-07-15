@@ -11,6 +11,7 @@ class UAbilitySystemComponent;
 class UAttributeSet;
 class UPantheliaLevelUpInfo;
 class UPantheliaSkillTreeComponent;
+class UPantheliaCostAttributeSet;
 
 // Delegate genérico para avisar a la UI de que un contador de progreso ha
 // cambiado (XP, nivel, puntos). NO es dinámico porque el binding se hace en
@@ -28,6 +29,7 @@ public:
 
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 	UAttributeSet* GetAttributeSet() const { return AttributeSet; }
+	UPantheliaCostAttributeSet* GetCostAttributeSet() const { return CostAttributeSet.Get(); }
 
 	// El nivel del jugador. No es un atributo de GAS porque no tiene las
 	// interrelaciones complejas de los atributos, sino que es un contador
@@ -113,6 +115,11 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<UAttributeSet> AttributeSet;
+
+	// AttributeSet separado para multiplicadores/planos de costes. Vive junto al ASC
+	// en el PlayerState para persistir entre respawns igual que los atributos base.
+	UPROPERTY()
+	TObjectPtr<UPantheliaCostAttributeSet> CostAttributeSet;
 
 	// Tabla de progresión de niveles (umbrales de XP + premios por nivel).
 	// DEBE asignarse en el Blueprint BP_PantheliaPlayerState (Class Defaults).

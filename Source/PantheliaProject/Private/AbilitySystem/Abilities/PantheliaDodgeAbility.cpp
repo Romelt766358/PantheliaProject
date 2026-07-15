@@ -23,6 +23,11 @@ UPantheliaDodgeAbility::UPantheliaDodgeAbility()
 	InstancingPolicy = EGameplayAbilityInstancingPolicy::InstancedPerActor;
 	InputActivationPolicy = EPantheliaAbilityInputActivationPolicy::OnInputTriggered;
 
+	// La migración se habilita desde GA_PlayerDodge copiando su coste legacy a
+	// BaseResourceCost. Dejamos el recurso preseleccionado sin activar el pipeline
+	// para no cambiar silenciosamente el asset antes de configurarlo.
+	ResourceCostType = EPantheliaResourceCostType::Stamina;
+
 	BaseIFrameDuration = FScalableFloat(0.30f);
 	MaxIFrameDuration = FScalableFloat(1.00f);
 	BasePerfectDodgeWindowDuration = FScalableFloat(0.12f);

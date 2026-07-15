@@ -232,12 +232,9 @@ void APantheliaEnemy::HitReactTagChanged(const FGameplayTag CallbackTag, int32 N
 {
 	bHitReacting = NewCount > 0;
 
-	// Durante hit react: inmovilizar. Al terminar: restaurar velocidad base
-	// (pero solo si no estamos staggered también).
-	if (!bStaggered)
-	{
-		GetCharacterMovement()->MaxWalkSpeed = bHitReacting ? 0.f : BaseWalkSpeed;
-	}
+	// HitReact y Stagger pueden solaparse. La velocidad se resuelve siempre desde un
+	// helper común para que terminar uno no desbloquee movimiento mientras el otro vive.
+	RefreshMovementLockState();
 
 	// Actualizamos el Blackboard para que el Behavior Tree sepa que estamos
 	// en hit react y pueda abortar la rama de movimiento/ataque (decorator abort self).
@@ -254,9 +251,21 @@ void APantheliaEnemy::StaggerTagChanged(const FGameplayTag CallbackTag, int32 Ne
 {
 	bStaggered = NewCount > 0;
 
-	// Durante stagger: inmovilizar completamente.
-	// Al terminar: restaurar velocidad (el regen de postura ya se gestiona via timer).
-	GetCharacterMovement()->MaxWalkSpeed = bStaggered ? 0.f : BaseWalkSpeed;
+	// La restauración también depende de HitReact. Compartir el helper elimina la
+	// asimetría donde finalizar Stagger podía liberar a un enemigo aún reaccionando.
+	RefreshMovementLockState();
+}
+
+void APantheliaEnemy::RefreshMovementLockState()
+{
+	UCharacterMovementComponent* MovementComponent = GetCharacterMovement();
+	if (!MovementComponent)
+	{
+		return;
+	}
+
+	const bool bMovementLocked = bDead || bHitReacting || bStaggered;
+	MovementComponent->MaxWalkSpeed = bMovementLocked ? 0.f : BaseWalkSpeed;
 }
 
 void APantheliaEnemy::SetCombatTarget_Implementation(AActor* InCombatTarget)

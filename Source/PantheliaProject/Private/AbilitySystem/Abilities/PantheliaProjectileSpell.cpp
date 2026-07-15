@@ -9,6 +9,19 @@
 #include "PantheliaGameplayTags.h"
 #include "AbilitySystem/PantheliaAttributeSet.h"
 
+UPantheliaProjectileSpell::UPantheliaProjectileSpell()
+{
+	// Los hechizos del jugador pueden activar el pipeline común desde sus Class Defaults.
+	// Los hechizos de enemigos conservan bUsePantheliaResourceCost=false y no pagan recursos.
+	// El coste principal es Mana y la entrada adicional de Stamina se cobra dentro del
+	// mismo CommitAbility. Sus valores concretos siguen siendo datos de cada hechizo.
+	ResourceCostType = EPantheliaResourceCostType::Mana;
+
+	FPantheliaAdditionalResourceCost StaminaCost;
+	StaminaCost.ResourceType = EPantheliaResourceCostType::Stamina;
+	AdditionalResourceCosts.Add(StaminaCost);
+}
+
 void UPantheliaProjectileSpell::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,
 	const FGameplayAbilityActivationInfo ActivationInfo,

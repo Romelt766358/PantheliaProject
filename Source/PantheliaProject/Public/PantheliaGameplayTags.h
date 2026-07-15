@@ -55,6 +55,15 @@ public:
 	FGameplayTag Attributes_Secondary_CritChance;
 	FGameplayTag Attributes_Secondary_CritDamage;
 
+	// --- MODIFICADORES GLOBALES DE COSTE ---
+	// El multiplicador parte de 1.0 y el plano de 0.0. Árbol, equipo, Corazones y
+	// buffs los modifican con GameplayEffects. La ability resuelve:
+	// Base × Multiplier + Flat.
+	FGameplayTag Attributes_Cost_Stamina_Multiplier;
+	FGameplayTag Attributes_Cost_Stamina_Flat;
+	FGameplayTag Attributes_Cost_Mana_Multiplier;
+	FGameplayTag Attributes_Cost_Mana_Flat;
+
 	// --- RESISTENCIAS ELEMENTALES ---
 	// Atributos secundarios que reducen el daño elemental correspondiente.
 	// Una resistencia cubre los dos tipos de su elemento (físico y mágico).
@@ -131,9 +140,10 @@ public:
 	FGameplayTag InputTag_Spell_Ultimate;
 
 	// --- TAGS DE COSTE ---
-	// SetByCaller usados por Gameplay Effects de coste dinámico. El coste base vive
-	// en los datos del arma; la ability lo inyecta con magnitud negativa en el spec.
+	// SetByCaller usados por Gameplay Effects de coste dinámico. La ability resuelve
+	// el coste final y lo inyecta con magnitud negativa en el spec.
 	FGameplayTag Cost_Stamina;
+	FGameplayTag Cost_Mana;
 
 	// --- TAGS DE DAÑO ---
 	FGameplayTag DamageParent_Physical;    // "Damage.Physical" — tag raíz físicos

@@ -858,6 +858,13 @@ void UPantheliaAbilitySystemLibrary::GetLivePlayersWithinRadius(
 
 bool UPantheliaAbilitySystemLibrary::IsNotFriend(AActor* FirstActor, AActor* SecondActor)
 {
+	// Un actor nulo no puede clasificarse de forma segura como enemigo. Devolver false
+	// evita que un caller defectuoso aplique daño o efectos por una suposición agresiva.
+	if (!IsValid(FirstActor) || !IsValid(SecondActor) || FirstActor == SecondActor)
+	{
+		return false;
+	}
+
 	// Determinamos el equipo de cada actor usando Actor Tags.
 	// Los tags "Player" y "Enemy" deben estar configurados en los Blueprints
 	// de cada personaje (BP_PantheliaCharacter, BP_PantheliaEnemy, etc.).

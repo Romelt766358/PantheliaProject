@@ -188,4 +188,9 @@ protected:
 	// No se expone a Blueprint por ahora — se gestiona enteramente desde C++.
 	UPROPERTY()
 	TObjectPtr<APantheliaAIController> PantheliaAIController;
+
+private:
+	// Fuente única para bloquear/restaurar locomoción tras HitReact o Stagger.
+	// Evita que el final de un estado restaure BaseWalkSpeed mientras el otro sigue activo.
+	void RefreshMovementLockState();
 };

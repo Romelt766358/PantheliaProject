@@ -7,6 +7,7 @@
 #include "PantheliaParryAbility.generated.h"
 
 class UAnimMontage;
+class UPantheliaAbilitySystemComponent;
 
 /**
  * EParryType
@@ -144,18 +145,32 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Parry")
 	float BlockKnockbackSpeed = 350.f;
 
-	// GE que se aplica UNA SOLA VEZ al transicionar de ventana-de-parry a bloqueo sostenido.
-	// Se activa en OnParryWindowExpired cuando bInputHeld es true (el jugador sigue
-	// presionando el boton tras expirar la ventana). Representa el coste de mantener la
-	// guardia firme cuando no se consiguio un parry perfecto.
+	// Migración opt-in del segundo coste. False conserva exactamente el GE legacy
+	// de transición; True usa BlockTransitionBaseStaminaCost + el resolvedor común.
+	// Se deja false por defecto para no convertir silenciosamente una guardia existente
+	// en gratuita antes de copiar su valor actual desde el asset.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Parry|Cost")
+	bool bUsePantheliaBlockTransitionCost = false;
+
+	// Coste BASE de Stamina que se paga UNA SOLA VEZ al pasar de la ventana de
+	// parry a bloqueo sostenido. Es independiente del coste de intentar el parry y
+	// del coste de cada impacto defendido.
 	//
-	// El primer coste (al entrar en la ventana) usa el Cost Gameplay Effect Class estandar
-	// de GAS (clase base UGameplayAbility). Este es el SEGUNDO coste, separado porque ocurre
-	// en un momento distinto del flujo: no al activar la ability, sino ~0.2s despues.
+	// Configurar por separado en GA_Parry_Physical y GA_Parry_Magic. El resolvedor
+	// común aplica después los modificadores globales del árbol/equipo/buffs.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Parry|Cost",
+		meta = (EditCondition = "bUsePantheliaBlockTransitionCost", ClampMin = "0.0"))
+	FScalableFloat BlockTransitionBaseStaminaCost;
+
+	// GE Instant utilizado para cobrar BlockTransitionBaseStaminaCost mediante
+	// SetByCaller Cost.Stamina. Este es el SEGUNDO momento de cobro: ocurre al
+	// expirar la ventana perfecta, solo si el botón sigue presionado.
 	//
-	// ASIGNAR en: GA_Parry_Physical y GA_Parry_Magic → Class Defaults → "Combat|Parry".
-	// Si no se asigna, no se aplica ningun segundo coste (comportamiento seguro por defecto).
-	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Parry")
+	// ASIGNAR en: GA_Parry_Physical y GA_Parry_Magic → Class Defaults.
+	// Si el coste base es mayor que cero y falta este GE, la transición falla de
+	// forma segura y provoca guard break, en lugar de conceder guardia gratuita.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Combat|Parry|Cost",
+		meta = (EditCondition = "bUsePantheliaBlockTransitionCost"))
 	TSubclassOf<UGameplayEffect> BlockTransitionCostEffectClass;
 
 private:
@@ -175,10 +190,15 @@ private:
 	// porque no necesitamos esperar su fin: la guardia la termina el input/la ventana.
 	void PlayGuardLoopMontage();
 
-	// Intenta pagar el GE de transición a guardia sostenida. Evalúa el modificador
-	// de Stamina del spec para permitir que el coste deje exactamente 0. Si no puede
-	// pagarse, vacía la stamina restante y dispara guardia rota/Stagger.
+	// Intenta pagar la transición a guardia sostenida. Durante la migración puede
+	// usar el GE legacy o el resolvedor común. En ambos casos la igualdad exacta es
+	// válida; si no puede pagarse, vacía la stamina restante y dispara Guard Break.
 	bool TryPayBlockTransitionCost();
+
+	// Ruta original de Source(11). Se mantiene durante la migración para que un
+	// Blueprint no configurado todavía conserve exactamente su coste anterior.
+	bool TryPayLegacyBlockTransitionCost(
+		UPantheliaAbilitySystemComponent* AbilitySystemComponent);
 
 	// Aplica un pequeno retroceso fisico al personaje al recibir un golpe en bloqueo
 	// imperfecto. El parry perfecto no llama este helper.

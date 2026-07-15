@@ -10,16 +10,22 @@
 #include "Combat/WeaponTraceComponent.h"
 #include "Combat/LockonComponent.h"
 #include "AbilitySystemComponent.h"
-#include "AbilitySystemGlobals.h"
-#include "AbilitySystem/PantheliaAttributeSet.h"
 #include "GameplayEffect.h"
 #include "Abilities/Tasks/AbilityTask_PlayMontageAndWait.h"
 #include "Components/MeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "TimerManager.h"
 #include "Engine/World.h"
-#include "PantheliaGameplayTags.h"
 #include "PantheliaLogChannels.h"
+
+UPantheliaPlayerAttackAbility::UPantheliaPlayerAttackAbility()
+{
+	// Los ataques son el primer dominio migrado completamente al resolvedor común.
+	// El coste base continúa viviendo en el WeaponDefinition; solo la resolución y
+	// aplicación se centralizan en UPantheliaGameplayAbility.
+	bUsePantheliaResourceCost = true;
+	ResourceCostType = EPantheliaResourceCostType::Stamina;
+}
 
 bool UPantheliaPlayerAttackAbility::CanActivateAbility(
 	const FGameplayAbilitySpecHandle Handle,
@@ -39,106 +45,14 @@ bool UPantheliaPlayerAttackAbility::CanActivateAbility(
 	return Super::CanActivateAbility(Handle, ActorInfo, SourceTags, TargetTags, OptionalRelevantTags);
 }
 
-bool UPantheliaPlayerAttackAbility::CheckCost(
+bool UPantheliaPlayerAttackAbility::TryGetBaseResourceCost(
 	const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,
-	FGameplayTagContainer* OptionalRelevantTags) const
+	float& OutBaseCost) const
 {
-	// El GE sigue siendo obligatorio: contiene el modificador Instant/Add sobre
-	// Stamina. Esta ability solo reemplaza su magnitud estática por Cost.Stamina.
-	if (!GetCostGameplayEffect())
-	{
-		UE_LOG(LogPanthelia, Error,
-			TEXT("[ATTACK] Ability '%s' sin Cost Gameplay Effect asignado. Asigna GE_Cost_AttackStamina en el Blueprint."),
-			*GetName());
-
-		if (OptionalRelevantTags)
-		{
-			OptionalRelevantTags->AddTag(UAbilitySystemGlobals::Get().ActivateFailCostTag);
-		}
-
-		return false;
-	}
-
-	const UAbilitySystemComponent* ASC =
-		ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
-
-	if (!ASC)
-	{
-		return false;
-	}
-
-	float StaminaCost = 0.f;
-	if (!TryGetCurrentAttackStaminaCost(StaminaCost))
-	{
-		UE_LOG(LogPanthelia, Warning,
-			TEXT("[ATTACK] Ability '%s' sin arma o WeaponDefinition válido."),
-			*GetName());
-
-		if (OptionalRelevantTags)
-		{
-			OptionalRelevantTags->AddTag(UAbilitySystemGlobals::Get().ActivateFailCostTag);
-		}
-
-		return false;
-	}
-
-	const float CurrentStamina = ASC->GetNumericAttribute(
-		UPantheliaAttributeSet::GetStaminaAttribute());
-
-	if (CurrentStamina < StaminaCost)
-	{
-		if (OptionalRelevantTags)
-		{
-			OptionalRelevantTags->AddTag(UAbilitySystemGlobals::Get().ActivateFailCostTag);
-		}
-
-		return false;
-	}
-
-	return true;
-}
-
-void UPantheliaPlayerAttackAbility::ApplyCost(
-	const FGameplayAbilitySpecHandle Handle,
-	const FGameplayAbilityActorInfo* ActorInfo,
-	const FGameplayAbilityActivationInfo ActivationInfo) const
-{
-	UGameplayEffect* CostGE = GetCostGameplayEffect();
-	UAbilitySystemComponent* ASC =
-		ActorInfo ? ActorInfo->AbilitySystemComponent.Get() : nullptr;
-
-	if (!CostGE || !ASC)
-	{
-		return;
-	}
-
-	float StaminaCost = 0.f;
-	if (!TryGetCurrentAttackStaminaCost(StaminaCost))
-	{
-		return;
-	}
-
-	FGameplayEffectSpecHandle CostSpec = MakeOutgoingGameplayEffectSpec(
-		Handle,
-		ActorInfo,
-		ActivationInfo,
-		CostGE->GetClass(),
-		GetAbilityLevel());
-
-	if (!CostSpec.IsValid())
-	{
-		UE_LOG(LogPanthelia, Error,
-			TEXT("[ATTACK] No se pudo construir el spec de coste para la ability '%s'."),
-			*GetName());
-		return;
-	}
-
-	CostSpec.Data->SetSetByCallerMagnitude(
-		FPantheliaGameplayTags::Get().Cost_Stamina,
-		-StaminaCost);
-
-	ASC->ApplyGameplayEffectSpecToSelf(*CostSpec.Data.Get());
+	// Handle/ActorInfo no alteran la fuente de datos del arma, pero permanecen en la
+	// firma para respetar el contrato extensible de la clase base.
+	return TryGetCurrentAttackStaminaCost(OutBaseCost);
 }
 
 bool UPantheliaPlayerAttackAbility::TryGetCurrentAttackStaminaCost(
@@ -156,6 +70,11 @@ bool UPantheliaPlayerAttackAbility::TryGetCurrentAttackStaminaCost(
 		(AttackType == EPlayerAttackType::Heavy)
 			? WeaponDef->HeavyAttackStaminaCost
 			: WeaponDef->LightAttackStaminaCost;
+
+	if (!FMath::IsFinite(ConfiguredCost))
+	{
+		return false;
+	}
 
 	OutCost = FMath::Max(0.f, ConfiguredCost);
 	return true;

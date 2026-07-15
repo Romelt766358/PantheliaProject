@@ -4,6 +4,7 @@
 #include "AbilitySystemComponent.h"
 #include "AbilitySystem/PantheliaAttributeSet.h"
 #include "AbilitySystem/PantheliaAbilitySystemLibrary.h"
+#include "AbilitySystem/Abilities/PantheliaGameplayAbility.h"
 #include "AbilitySystem/Data/PantheliaCharacterClassInfo.h"
 #include "Interfaces/CombatInterface.h"
 #include "PantheliaGameplayTags.h"
@@ -118,20 +119,17 @@ static void ApplyParryBlockMitigation(
     const FGameplayTagContainer& TargetTags,
     const FPantheliaGameplayTags& Tags,
     EPantheliaDefenseAttackType DefenseAttackType,
-    float CurrentStamina,
     bool bIncomingIsPhysical,
     bool bIncomingIsMagic,
     float& PhysicalSubtotal,
     float& MagicSubtotal,
     bool& bOutWasPerfectParry,
     bool& bOutWasBlocked,
-    bool& bOutWasGuardBroken,
     float& OutPoiseToAttacker,
     float& OutDefenseStaminaCost)
 {
     bOutWasPerfectParry = false;
     bOutWasBlocked = false;
-    bOutWasGuardBroken = false;
     OutPoiseToAttacker = 0.f;
     OutDefenseStaminaCost = 0.f;
 
@@ -287,10 +285,8 @@ static void ApplyParryBlockMitigation(
     OutDefenseStaminaCost =
         FMath::Max(0.f, BaseBlockStaminaCost * AttackCostMultiplier);
 
-    // Igualdad exacta es válida: puede dejar stamina en 0 y la guardia continúa.
-    // Solo una cantidad estrictamente insuficiente rompe la guardia en ESTE impacto.
-    bOutWasGuardBroken =
-        CurrentStamina + KINDA_SMALL_NUMBER < OutDefenseStaminaCost;
+    // La comparación contra la stamina actual se hace fuera de este helper, después
+    // de aplicar los modificadores globales de coste del AttributeSet.
 }
 
 // ================================================================
@@ -642,11 +638,24 @@ void UExecCalc_Damage::Execute_Implementation(
 
         ApplyParryBlockMitigation(
             TargetAvatar, *TargetTags, Tags,
-            DefenseAttackType, CurrentStamina,
+            DefenseAttackType,
             bIncomingIsPhysical, bIncomingIsMagic,
             PhysicalSubtotal, MagicSubtotal,
-            bWasPerfectParry, bWasBlocked, bWasGuardBroken,
+            bWasPerfectParry, bWasBlocked,
             PoiseToAttacker, DefenseStaminaCost);
+
+        if (bWasPerfectParry || bWasBlocked)
+        {
+            DefenseStaminaCost = UPantheliaGameplayAbility::ResolveResourceCost(
+                TargetASC,
+                EPantheliaResourceCostType::Stamina,
+                DefenseStaminaCost);
+
+            // Igualdad exacta es válida: puede dejar stamina en 0 y la guardia
+            // continúa. Solo una cantidad estrictamente insuficiente rompe ESTE impacto.
+            bWasGuardBroken =
+                CurrentStamina + KINDA_SMALL_NUMBER < DefenseStaminaCost;
+        }
 
         // Recalcular el total tras la mitigacion defensiva.
         TotalDamage = PhysicalSubtotal + MagicSubtotal;

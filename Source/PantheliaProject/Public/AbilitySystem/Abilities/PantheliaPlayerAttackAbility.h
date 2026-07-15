@@ -64,6 +64,8 @@ class PANTHELIAPROJECT_API UPantheliaPlayerAttackAbility : public UPantheliaDama
 	GENERATED_BODY()
 
 public:
+	UPantheliaPlayerAttackAbility();
+
 	// Bloquea la reactivacion mientras la ability ya esta activa. El input es Held
 	// (cada frame), asi que sin esto el AbilityInputTagHeld reactivaba la ability en
 	// cuanto habia un instante libre, reseteando el combo a 0 (bug del "solo ataque 1").
@@ -74,20 +76,6 @@ public:
 		const FGameplayTagContainer* SourceTags = nullptr,
 		const FGameplayTagContainer* TargetTags = nullptr,
 		FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
-
-	// Coste dinámico de ataque obtenido del arma equipada.
-	//
-	// CheckCost valida el coste antes del commit y permite que GAS comunique
-	// correctamente un fallo por stamina insuficiente.
-	virtual bool CheckCost(const FGameplayAbilitySpecHandle Handle,
-		const FGameplayAbilityActorInfo* ActorInfo,
-		FGameplayTagContainer* OptionalRelevantTags = nullptr) const override;
-
-	// Construye el spec del Cost Gameplay Effect e inyecta Cost.Stamina mediante
-	// SetByCaller. El valor se aplica negativo porque el modificador del GE usa Add.
-	virtual void ApplyCost(const FGameplayAbilitySpecHandle Handle,
-		const FGameplayAbilityActorInfo* ActorInfo,
-		const FGameplayAbilityActivationInfo ActivationInfo) const override;
 
 	// Punto de entrada de la ability: arranca el combo en el golpe actual.
 	virtual void ActivateAbility(const FGameplayAbilitySpecHandle Handle,
@@ -194,6 +182,13 @@ protected:
 	// de muerte, Heridas Graves y otros parámetros de la clase base no pertenecen
 	// automáticamente al arma y no deben copiarse aquí.
 	void ApplyWeaponDamageDataToAbility(const UPantheliaWeaponDefinition* WeaponDef);
+
+	// Fuente de coste del resolvedor común: el coste base sale del WeaponDefinition
+	// y después recibe los modificadores globales de Stamina del CostAttributeSet.
+	virtual bool TryGetBaseResourceCost(
+		const FGameplayAbilitySpecHandle Handle,
+		const FGameplayAbilityActorInfo* ActorInfo,
+		float& OutBaseCost) const override;
 
 	// Intenta obtener el coste del golpe desde el WeaponDefinition actual.
 	// Devuelve false cuando no existe un arma válida o su Definition no está

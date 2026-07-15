@@ -29,6 +29,20 @@ void FPantheliaGameplayTags::InitializeNativeGameplayTags()
 	GameplayTags.Attributes_Secondary_CritChance = Manager.AddNativeGameplayTag(FName("Attributes.Secondary.CritChance"), FString("Probabilidad de crítico."));
 	GameplayTags.Attributes_Secondary_CritDamage = Manager.AddNativeGameplayTag(FName("Attributes.Secondary.CritDamage"), FString("Bonus flat de daño en crítico."));
 
+	// --- MODIFICADORES GLOBALES DE COSTE ---
+	GameplayTags.Attributes_Cost_Stamina_Multiplier = Manager.AddNativeGameplayTag(
+		FName("Attributes.Cost.Stamina.Multiplier"),
+		FString("Multiplicador acumulado de costes de Stamina. Base 1.0."));
+	GameplayTags.Attributes_Cost_Stamina_Flat = Manager.AddNativeGameplayTag(
+		FName("Attributes.Cost.Stamina.Flat"),
+		FString("Modificador plano acumulado de costes de Stamina. Puede ser negativo."));
+	GameplayTags.Attributes_Cost_Mana_Multiplier = Manager.AddNativeGameplayTag(
+		FName("Attributes.Cost.Mana.Multiplier"),
+		FString("Multiplicador acumulado de costes de Mana. Base 1.0."));
+	GameplayTags.Attributes_Cost_Mana_Flat = Manager.AddNativeGameplayTag(
+		FName("Attributes.Cost.Mana.Flat"),
+		FString("Modificador plano acumulado de costes de Mana. Puede ser negativo."));
+
 	// --- RESISTENCIAS ELEMENTALES ---
 	// Una resistencia cubre los dos tipos de su elemento (físico y mágico).
 	GameplayTags.Attributes_Resistance_Fire = Manager.AddNativeGameplayTag(FName("Attributes.Resistance.Fire"), FString("Resistencia al daño de Fuego (Damage.Magical.Fire)."));
@@ -124,7 +138,10 @@ void FPantheliaGameplayTags::InitializeNativeGameplayTags()
 	// --- TAGS DE COSTE ---
 	GameplayTags.Cost_Stamina = Manager.AddNativeGameplayTag(
 		FName("Cost.Stamina"),
-		FString("SetByCaller: coste de stamina del golpe actual. La magnitud viaja negativa en el spec."));
+		FString("SetByCaller: coste final de Stamina. La magnitud viaja negativa en el spec."));
+	GameplayTags.Cost_Mana = Manager.AddNativeGameplayTag(
+		FName("Cost.Mana"),
+		FString("SetByCaller: coste final de Mana. La magnitud viaja negativa en el spec."));
 
 	// --- TIPOS DE DAÑO ---
 	GameplayTags.DamageParent_Physical = Manager.AddNativeGameplayTag(FName("Damage.Physical"), FString("Tag raíz para todos los daños físicos. Mitigado por Armor."));
