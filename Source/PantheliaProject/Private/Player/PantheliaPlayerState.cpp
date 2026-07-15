@@ -6,6 +6,7 @@
 #include "AbilitySystem/PantheliaAbilitySystemComponent.h"
 #include "AbilitySystem/Data/PantheliaLevelUpInfo.h"
 #include "AbilitySystem/PantheliaSkillTreeComponent.h"
+#include "PantheliaLogChannels.h"
 
 APantheliaPlayerState::APantheliaPlayerState()
 {
@@ -27,6 +28,19 @@ APantheliaPlayerState::APantheliaPlayerState()
 	AbilitySystemComponent->SetReplicationMode(EGameplayEffectReplicationMode::Mixed);
 }
 
+void APantheliaPlayerState::PostInitializeComponents()
+{
+	Super::PostInitializeComponents();
+
+	// El saldo inicial se resuelve desde una propiedad de configuración. Un futuro
+	// SaveGame puede restaurar otro valor después de esta inicialización sin que el
+	// PlayerState vuelva a sobrescribirlo durante el respawn del Pawn.
+	Level = FMath::Max(1, Level);
+	XP = FMath::Max(0, XP);
+	AttributePoints = FMath::Max(0, AttributePoints);
+	SkillPoints = FMath::Max(0, InitialSkillPoints);
+}
+
 UAbilitySystemComponent* APantheliaPlayerState::GetAbilitySystemComponent() const
 {
 	return AbilitySystemComponent;
@@ -34,54 +48,176 @@ UAbilitySystemComponent* APantheliaPlayerState::GetAbilitySystemComponent() cons
 
 void APantheliaPlayerState::AddToXP(int32 InXP)
 {
-	XP += InXP;
+	GrantXP(InXP);
+}
+
+bool APantheliaPlayerState::GrantXP(int32 InXP)
+{
+	if (InXP <= 0)
+	{
+		UE_LOG(LogPanthelia, Warning,
+			TEXT("[Level] GrantXP rechazó una cantidad no positiva: %d."),
+			InXP);
+		return false;
+	}
+
+	const int64 NewXP64 = static_cast<int64>(XP) + static_cast<int64>(InXP);
+	XP = static_cast<int32>(FMath::Clamp<int64>(NewXP64, 0LL, static_cast<int64>(MAX_int32)));
 	OnXPChangedDelegate.Broadcast(XP);
 
-	UE_LOG(LogTemp, Log, TEXT("[Level] +%d XP. XP total acumulada: %d"), InXP, XP);
+	UE_LOG(LogPanthelia, Log, TEXT("[Level] +%d XP. XP total acumulada: %d"), InXP, XP);
 
 	// Tras sumar XP, comprobamos si se ha cruzado uno o más umbrales de nivel.
 	UpdateLevelFromXP();
+	return true;
+}
+
+void APantheliaPlayerState::GrantAttributePoints(int32 InPoints)
+{
+	if (InPoints <= 0)
+	{
+		return;
+	}
+
+	const int64 NewValue = static_cast<int64>(AttributePoints) + static_cast<int64>(InPoints);
+	AttributePoints = static_cast<int32>(FMath::Clamp<int64>(NewValue, 0LL, static_cast<int64>(MAX_int32)));
+	OnAttributePointsChangedDelegate.Broadcast(AttributePoints);
+}
+
+void APantheliaPlayerState::GrantSkillPoints(int32 InPoints)
+{
+	if (InPoints <= 0)
+	{
+		return;
+	}
+
+	const int64 NewValue = static_cast<int64>(SkillPoints) + static_cast<int64>(InPoints);
+	SkillPoints = static_cast<int32>(FMath::Clamp<int64>(NewValue, 0LL, static_cast<int64>(MAX_int32)));
+	OnSkillPointsChangedDelegate.Broadcast(SkillPoints);
+}
+
+bool APantheliaPlayerState::TrySpendAttributePoints(int32 InPoints)
+{
+	if (InPoints < 0 || AttributePoints < InPoints)
+	{
+		return false;
+	}
+
+	if (InPoints == 0)
+	{
+		return true;
+	}
+
+	AttributePoints -= InPoints;
+	OnAttributePointsChangedDelegate.Broadcast(AttributePoints);
+	return true;
+}
+
+bool APantheliaPlayerState::TrySpendSkillPoints(int32 InPoints)
+{
+	if (InPoints < 0 || SkillPoints < InPoints)
+	{
+		return false;
+	}
+
+	if (InPoints == 0)
+	{
+		return true;
+	}
+
+	SkillPoints -= InPoints;
+	OnSkillPointsChangedDelegate.Broadcast(SkillPoints);
+	return true;
 }
 
 void APantheliaPlayerState::AddToLevel(int32 InLevel)
 {
-	Level += InLevel;
-	OnLevelChangedDelegate.Broadcast(Level);
+	const int64 RequestedLevel = static_cast<int64>(Level) + static_cast<int64>(InLevel);
+	SetLevel(static_cast<int32>(FMath::Clamp<int64>(RequestedLevel, 1LL, static_cast<int64>(MAX_int32))));
 }
 
 void APantheliaPlayerState::AddToAttributePoints(int32 InPoints)
 {
-	AttributePoints += InPoints;
-	OnAttributePointsChangedDelegate.Broadcast(AttributePoints);
+	if (InPoints >= 0)
+	{
+		GrantAttributePoints(InPoints);
+		return;
+	}
+
+	const int64 Spend64 = -static_cast<int64>(InPoints);
+	TrySpendAttributePoints(static_cast<int32>(FMath::Min<int64>(Spend64, static_cast<int64>(MAX_int32))));
 }
 
 void APantheliaPlayerState::AddToSkillPoints(int32 InPoints)
 {
-	SkillPoints += InPoints;
-	OnSkillPointsChangedDelegate.Broadcast(SkillPoints);
+	if (InPoints >= 0)
+	{
+		GrantSkillPoints(InPoints);
+		return;
+	}
+
+	const int64 Spend64 = -static_cast<int64>(InPoints);
+	TrySpendSkillPoints(static_cast<int32>(FMath::Min<int64>(Spend64, static_cast<int64>(MAX_int32))));
 }
 
 void APantheliaPlayerState::SetXP(int32 InXP)
 {
-	XP = InXP;
+	XP = FMath::Max(0, InXP);
 	OnXPChangedDelegate.Broadcast(XP);
+
+	// SetXP es una ruta de restauración, no una concesión de gameplay: reconcilia el
+	// nivel con la XP, pero no vuelve a acreditar premios. Los saldos se restauran
+	// mediante sus propios setters dentro de la misma transacción de carga.
+	if (LevelUpInfo)
+	{
+		const int32 ReconciledLevel = FMath::Max(1, LevelUpInfo->FindLevelForXP(XP));
+		if (Level != ReconciledLevel)
+		{
+			Level = ReconciledLevel;
+			OnLevelChangedDelegate.Broadcast(Level);
+		}
+	}
 }
 
 void APantheliaPlayerState::SetLevel(int32 InLevel)
 {
-	Level = InLevel;
+	int32 MaxLevel = MAX_int32;
+	if (LevelUpInfo && LevelUpInfo->LevelUpInformation.Num() > 1)
+	{
+		MaxLevel = LevelUpInfo->LevelUpInformation.Num() - 1;
+	}
+
+	const int32 NewLevel = FMath::Clamp(InLevel, 1, MaxLevel);
+	if (Level == NewLevel)
+	{
+		return;
+	}
+
+	Level = NewLevel;
 	OnLevelChangedDelegate.Broadcast(Level);
 }
 
 void APantheliaPlayerState::SetAttributePoints(int32 InPoints)
 {
-	AttributePoints = InPoints;
+	const int32 NewValue = FMath::Max(0, InPoints);
+	if (AttributePoints == NewValue)
+	{
+		return;
+	}
+
+	AttributePoints = NewValue;
 	OnAttributePointsChangedDelegate.Broadcast(AttributePoints);
 }
 
 void APantheliaPlayerState::SetSkillPoints(int32 InPoints)
 {
-	SkillPoints = InPoints;
+	const int32 NewValue = FMath::Max(0, InPoints);
+	if (SkillPoints == NewValue)
+	{
+		return;
+	}
+
+	SkillPoints = NewValue;
 	OnSkillPointsChangedDelegate.Broadcast(SkillPoints);
 }
 
@@ -90,7 +226,7 @@ void APantheliaPlayerState::UpdateLevelFromXP()
 	// Sin tabla de niveles no podemos calcular nada. Avisamos y salimos limpio.
 	if (LevelUpInfo == nullptr)
 	{
-		UE_LOG(LogTemp, Error, TEXT("[Level] LevelUpInfo no asignado en BP_PantheliaPlayerState. No se puede subir de nivel."));
+		UE_LOG(LogPanthelia, Error, TEXT("[Level] LevelUpInfo no asignado en BP_PantheliaPlayerState. No se puede subir de nivel."));
 		return;
 	}
 
@@ -111,20 +247,27 @@ void APantheliaPlayerState::UpdateLevelFromXP()
 		}
 
 		const FPantheliaLevelUpEntry& Info = LevelUpInfo->LevelUpInformation[NextLevel];
+		const int32 SafeAttributeAward = FMath::Max(0, Info.AttributePointAward);
+		const int32 SafeSkillAward = FMath::Max(0, Info.SkillPointAward);
 
-		// Aplicamos la subida: nivel +1 y se acreditan los puntos del nivel.
+		if (Info.AttributePointAward < 0 || Info.SkillPointAward < 0)
+		{
+			UE_LOG(LogPanthelia, Error,
+				TEXT("[Level] Premio negativo rechazado en %s, nivel %d. Attribute=%d Skill=%d."),
+				*GetNameSafe(LevelUpInfo), NextLevel,
+				Info.AttributePointAward, Info.SkillPointAward);
+		}
+
+		// Aplicamos la subida: nivel +1 y se acreditan únicamente premios válidos.
 		Level = NextLevel;
-		AttributePoints += Info.AttributePointAward;
-		SkillPoints += Info.SkillPointAward;
+		GrantAttributePoints(SafeAttributeAward);
+		GrantSkillPoints(SafeSkillAward);
 
-		UE_LOG(LogTemp, Log,
+		UE_LOG(LogPanthelia, Log,
 			TEXT("[Level] ¡Subiste a nivel %d! +%d puntos de atributo (total %d), +%d puntos de arbol (total %d)."),
-			Level, Info.AttributePointAward, AttributePoints, Info.SkillPointAward, SkillPoints);
+			Level, SafeAttributeAward, AttributePoints, SafeSkillAward, SkillPoints);
 
-		// Avisamos a la UI de cada cambio (Fase 2 escuchará estos delegates).
 		OnLevelChangedDelegate.Broadcast(Level);
-		OnAttributePointsChangedDelegate.Broadcast(AttributePoints);
-		OnSkillPointsChangedDelegate.Broadcast(SkillPoints);
 	}
 }
 

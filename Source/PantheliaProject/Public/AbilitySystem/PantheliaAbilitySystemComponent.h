@@ -234,14 +234,13 @@ public:
 	// así que toda la lógica ocurre aquí directamente, sin RPC.
 	//
 	// Flujo:
-	//   1. Comprueba que el avatar tenga puntos de atributo disponibles (IPantheliaPlayerInterface).
-	//      Si no hay puntos, no hace nada (evita gastar de más o desincronizar la UI).
-	//   2. Envía un Gameplay Event a sí mismo con EventTag = AttributeTag y EventMagnitude = 1.
-	//      GA_ListenForXPEvents (ability pasiva que ya escucha eventos con tag "Attributes")
-	//      recibe este evento y aplica GE_EventBasedEffect, que tiene un modificador
-	//      SetByCaller por cada atributo primario (ver Guia_Atributos_Primarios si existe,
-	//      o el propio asset GE_EventBasedEffect en el editor).
-	//   3. Resta 1 al saldo de puntos de atributo del jugador.
+	//   1. Valida que el tag corresponda a uno de los cinco atributos primarios.
+	//   2. Reserva un punto mediante TrySpendAttributePoints.
+	//   3. Envía el Gameplay Event que procesa GA_ListenForXPEvents + GE_EventBasedEffect.
+	//   4. Confirma que el valor del atributo aumentó sincrónicamente. Si no ocurrió,
+	//      reembolsa el punto y registra el error de configuración.
+	// CONTRATO: el listener debe aplicar un GE Instant en esta misma llamada; no puede
+	// introducir Delay, Ability Tasks asíncronas ni aplicación diferida.
 	UFUNCTION(BlueprintCallable, Category = "GAS|Attributes")
 	void UpgradeAttribute(const FGameplayTag& AttributeTag);
 

@@ -61,6 +61,14 @@ bool UPantheliaSkillTreeComponent::CanUnlockNode(const FGameplayTag& NodeTag) co
 	const FPantheliaSkillNodeInfo* NodeInfo = SkillTreeInfo->FindNodeInfoForTag(NodeTag, false);
 	if (!NodeInfo) return false;
 
+	// Un coste negativo o un rango máximo inválido son errores de datos, no nodos
+	// gratuitos. Fallamos cerrado para que la UI no ofrezca una compra corrupta.
+	if (!NodeInfo->NodeTag.IsValid() || NodeInfo->MaxRank <= 0 ||
+		NodeInfo->CostPerRank < 0 || NodeInfo->LevelRequirement < 1)
+	{
+		return false;
+	}
+
 	const APantheliaPlayerState* PS = GetPantheliaPlayerState();
 	if (!PS) return false;
 
@@ -88,9 +96,9 @@ bool UPantheliaSkillTreeComponent::CanUnlockNode(const FGameplayTag& NodeTag) co
 
 bool UPantheliaSkillTreeComponent::TryUnlockNode(const FGameplayTag& NodeTag)
 {
-	// Toda la validación vive en CanUnlockNode — así la UI y este método usan
-	// EXACTAMENTE las mismas reglas y nunca pueden discrepar (si el botón se pintó
-	// como comprable, la compra no puede fallar por una regla distinta).
+	// Toda la validación de reglas vive en CanUnlockNode para que UI y runtime
+	// compartan exactamente el mismo contrato. La aplicación GAS hace además su
+	// propio preflight de datos antes de confirmar la compra.
 	if (!CanUnlockNode(NodeTag))
 	{
 		UE_LOG(LogPanthelia, Warning,
@@ -100,24 +108,34 @@ bool UPantheliaSkillTreeComponent::TryUnlockNode(const FGameplayTag& NodeTag)
 		return false;
 	}
 
-	// CanUnlockNode ya garantizó que todo esto existe y es válido.
 	const FPantheliaSkillNodeInfo* NodeInfo = SkillTreeInfo->FindNodeInfoForTag(NodeTag, true);
 	APantheliaPlayerState* PS = GetPantheliaPlayerState();
+	if (!NodeInfo || !PS)
+	{
+		return false;
+	}
 
-	// 1. Gastar los puntos. Usamos el setter del PlayerState (no tocamos el campo
-	// directamente): así el broadcast de OnSkillPointsChangedDelegate sale gratis
-	// y la UI de puntos se actualiza sola, igual que hace el gasto de puntos de
-	// atributo en el ASC (UpgradeAttribute).
-	PS->SetSkillPoints(PS->GetSkillPoints() - NodeInfo->CostPerRank);
-
-	// 2. Subir el rango en el estado (la única verdad que guardará el SaveGame).
+	const int32 SafeCost = FMath::Max(0, NodeInfo->CostPerRank);
 	const int32 NewRank = GetNodeRank(NodeTag) + 1;
+
+	// Reservamos el saldo de forma atómica. Si la aplicación de GAS falla, el mismo
+	// flujo lo reembolsa y ningún rango se publica.
+	if (!PS->TrySpendSkillPoints(SafeCost))
+	{
+		return false;
+	}
+
+	if (!ApplyNodeToGAS(*NodeInfo, NewRank))
+	{
+		PS->GrantSkillPoints(SafeCost);
+		UE_LOG(LogPanthelia, Error,
+			TEXT("[SkillTree] Compra revertida para '%s': GAS no pudo aplicar el rango %d."),
+			*NodeTag.ToString(), NewRank);
+		return false;
+	}
+
+	// GAS ya confirmó el nuevo estado. Solo ahora publicamos la verdad persistente.
 	NodeRanks.Add(NodeTag, NewRank);
-
-	// 3. Traducir el nuevo rango a estado de GAS (abilities + GEs).
-	ApplyNodeToGAS(*NodeInfo, NewRank);
-
-	// 4. Avisar a la UI del cambio de ESTE nodo.
 	OnSkillNodeChangedDelegate.Broadcast(NodeTag, NewRank);
 
 	UE_LOG(LogPanthelia, Log, TEXT("[SkillTree] Nodo '%s' comprado: rango %d/%d."),
@@ -150,11 +168,20 @@ void UPantheliaSkillTreeComponent::ReapplyAllNodes()
 				*Pair.Key.ToString());
 			continue;
 		}
-		ApplyNodeToGAS(*NodeInfo, Pair.Value);
+		const int32 SafeRank = FMath::Clamp(Pair.Value, 1, FMath::Max(1, NodeInfo->MaxRank));
+		if (!ApplyNodeToGAS(*NodeInfo, SafeRank))
+		{
+			UE_LOG(LogPanthelia, Error,
+				TEXT("[SkillTree] ReapplyAllNodes no pudo reconstruir '%s' al rango %d."),
+				*Pair.Key.ToString(), SafeRank);
+		}
+
 	}
 }
 
-void UPantheliaSkillTreeComponent::ApplyNodeToGAS(const FPantheliaSkillNodeInfo& NodeInfo, int32 Rank)
+bool UPantheliaSkillTreeComponent::ApplyNodeToGAS(
+	const FPantheliaSkillNodeInfo& NodeInfo,
+	int32 Rank)
 {
 	UPantheliaAbilitySystemComponent* ASC = GetPantheliaASC();
 	if (!ASC)
@@ -162,96 +189,181 @@ void UPantheliaSkillTreeComponent::ApplyNodeToGAS(const FPantheliaSkillNodeInfo&
 		UE_LOG(LogPanthelia, Error,
 			TEXT("[SkillTree] ApplyNodeToGAS sin ASC disponible — ¿el componente vive "
 			     "fuera de APantheliaPlayerState?"));
-		return;
+		return false;
 	}
 
-	// --- (1) ABILITY DEL NODO (si tiene) ---
-	if (NodeInfo.GrantedAbility)
+	if (!NodeInfo.NodeTag.IsValid() || Rank < 1 || Rank > FMath::Max(1, NodeInfo.MaxRank))
 	{
-		// Derivamos el tag desde el CDO de la clase (ver GetAbilityTagFromClass):
-		// cero duplicación de datos en el editor, cero typos posibles.
-		const FGameplayTag AbilityTag = GetAbilityTagFromClass(NodeInfo.GrantedAbility);
-
-		// ¿El ASC ya tiene esta ability? (rango 2+ o re-aplicación tras cargar save)
-		// → solo hay que ajustar su nivel. SetAbilityLevel (Etapa 2) ya ignora
-		// niveles repetidos, así que ReapplyAllNodes es idempotente aquí.
-		if (AbilityTag.IsValid() && ASC->GetSpecFromAbilityTag(AbilityTag))
-		{
-			ASC->SetAbilityLevel(AbilityTag, Rank);
-		}
-		else
-		{
-			// Primera vez: otorgamos la ability con nivel = rango del nodo.
-			// NOTA: aquí NO se asigna InputTag — el nodo desbloquea la ability, pero
-			// EQUIPARLA a un slot de input es responsabilidad del futuro sistema de
-			// equipado de hechizos (sección 24 del curso, clases ~290+). Desbloquear
-			// y equipar son acciones distintas por diseño.
-			FGameplayAbilitySpec AbilitySpec(NodeInfo.GrantedAbility, Rank);
-			ASC->GiveAbility(AbilitySpec);
-
-			if (!AbilityTag.IsValid())
-			{
-				// La ability no tiene ningún tag bajo la raíz "Abilities": funcionará,
-				// pero los rangos siguientes no podrán localizarla para subirle el
-				// nivel. Es un error de datos que conviene gritar pronto.
-				UE_LOG(LogPanthelia, Error,
-					TEXT("[SkillTree] La ability '%s' del nodo '%s' no tiene ningún "
-					     "Ability Tag bajo la raíz 'Abilities'. Añádeselo en su Blueprint "
-					     "o los rangos 2+ de este nodo no podrán subirle el nivel."),
-					*GetNameSafe(NodeInfo.GrantedAbility), *NodeInfo.NodeTag.ToString());
-			}
-		}
+		UE_LOG(LogPanthelia, Error,
+			TEXT("[SkillTree] Datos inválidos para aplicar nodo '%s'. Rank=%d MaxRank=%d."),
+			*NodeInfo.NodeTag.ToString(), Rank, NodeInfo.MaxRank);
+		return false;
 	}
 
-	// --- (2) GAMEPLAY EFFECTS DEL NODO (si tiene) ---
-	//
-	// Patrón QUITAR + REAPLICAR (el mismo de RefreshSecondaryAttributes, y por la
-	// misma razón): la forma determinista de que un GE Infinite refleje las
-	// magnitudes del rango nuevo es destruir la instancia del rango viejo y crear
-	// una nueva desde cero. Esto también hace idempotente a ReapplyAllNodes.
-	RemoveNodeEffects(NodeInfo.NodeTag);
+	const bool bHasAbility = NodeInfo.GrantedAbility != nullptr;
+	const bool bHasEffects = NodeInfo.GrantedEffects.Num() > 0;
+	if (!bHasAbility && !bHasEffects)
+	{
+		UE_LOG(LogPanthelia, Error,
+			TEXT("[SkillTree] El nodo '%s' no concede ability ni Gameplay Effects."),
+			*NodeInfo.NodeTag.ToString());
+		return false;
+	}
+
+	// --- PREFLIGHT DE ABILITY ---
+	FGameplayTag AbilityTag;
+	bool bAbilityAlreadyGranted = false;
+	if (bHasAbility)
+	{
+		AbilityTag = GetAbilityTagFromClass(NodeInfo.GrantedAbility);
+		if (!AbilityTag.IsValid())
+		{
+			UE_LOG(LogPanthelia, Error,
+				TEXT("[SkillTree] La ability '%s' del nodo '%s' no tiene un Ability Tag "
+				     "válido bajo la raíz 'Abilities'. Compra cancelada."),
+				*GetNameSafe(NodeInfo.GrantedAbility), *NodeInfo.NodeTag.ToString());
+			return false;
+		}
+
+		FGameplayAbilitySpec* ExistingAbilitySpec = ASC->GetSpecFromAbilityTag(AbilityTag);
+		if (ExistingAbilitySpec &&
+			(!ExistingAbilitySpec->Ability ||
+			 ExistingAbilitySpec->Ability->GetClass() != NodeInfo.GrantedAbility.Get()))
+		{
+			UE_LOG(LogPanthelia, Error,
+				TEXT("[SkillTree] Colisión de AbilityTag '%s' en nodo '%s'. La spec existente "
+				     "pertenece a otra clase. Compra cancelada."),
+				*AbilityTag.ToString(), *NodeInfo.NodeTag.ToString());
+			return false;
+		}
+
+		bAbilityAlreadyGranted = ExistingAbilitySpec != nullptr;
+	}
+
+	// --- PREFLIGHT DE GAMEPLAY EFFECTS ---
+	TArray<FGameplayEffectSpecHandle> PreparedEffectSpecs;
+	PreparedEffectSpecs.Reserve(NodeInfo.GrantedEffects.Num());
 
 	for (const TSubclassOf<UGameplayEffect>& EffectClass : NodeInfo.GrantedEffects)
 	{
-		if (!EffectClass) continue;
-
-		// Validación de datos en desarrollo: los GEs de nodo DEBEN ser Infinite
-		// (removibles). Un Instant aquí sería irrevocable — imposible de quitar en
-		// un respec o al recargar partida. Aplicamos igualmente (quizá es deliberado
-		// en algún caso raro), pero avisando fuerte.
-		if (EffectClass.GetDefaultObject()->DurationPolicy != EGameplayEffectDurationType::Infinite)
+		if (!EffectClass)
 		{
-			UE_LOG(LogPanthelia, Warning,
-				TEXT("[SkillTree] El GE '%s' del nodo '%s' NO es Infinite. Los efectos "
-				     "de nodo deben ser Infinite para poder removerse (respec/carga)."),
-				*GetNameSafe(EffectClass), *NodeInfo.NodeTag.ToString());
+			UE_LOG(LogPanthelia, Error,
+				TEXT("[SkillTree] El nodo '%s' contiene un GrantedEffect nulo."),
+				*NodeInfo.NodeTag.ToString());
+			return false;
 		}
 
-		// Contexto del efecto: registramos al PlayerState como SourceObject para que
-		// cualquier sistema futuro pueda preguntar "¿de dónde salió este efecto?".
+		const UGameplayEffect* EffectCDO = EffectClass.GetDefaultObject();
+		if (!EffectCDO || EffectCDO->DurationPolicy != EGameplayEffectDurationType::Infinite)
+		{
+			UE_LOG(LogPanthelia, Error,
+				TEXT("[SkillTree] El GE '%s' del nodo '%s' debe ser Infinite para permitir "
+				     "rollback, respec y carga. Compra cancelada."),
+				*GetNameSafe(EffectClass), *NodeInfo.NodeTag.ToString());
+			return false;
+		}
+
+		// La transacción aplica primero el rango nuevo y conserva temporalmente el
+		// anterior para poder hacer rollback. Un GE con stacking podría reutilizar el
+		// mismo FActiveGameplayEffectHandle; al retirar después el rango anterior se
+		// eliminaría también el nuevo. Por eso los GEs del árbol deben crear instancias
+		// independientes: Infinite y EGameplayEffectStackingType::None.
+		if (EffectCDO->GetStackingType() != EGameplayEffectStackingType::None)
+		{
+			UE_LOG(LogPanthelia, Error,
+				TEXT("[SkillTree] El GE '%s' del nodo '%s' tiene stacking configurado. "
+				     "Los GEs del árbol deben usar Stacking Type=None para que la "
+				     "transacción y el rollback sean seguros. Compra cancelada."),
+				*GetNameSafe(EffectClass), *NodeInfo.NodeTag.ToString());
+			return false;
+		}
+
 		FGameplayEffectContextHandle ContextHandle = ASC->MakeEffectContext();
 		ContextHandle.AddSourceObject(GetOwner());
 
-		// El nivel del SPEC es el rango del nodo: si el GE usa curvas por nivel en
-		// sus magnitudes (alternativa a SetByCaller), también escalarán con el rango.
 		FGameplayEffectSpecHandle SpecHandle = ASC->MakeOutgoingSpec(EffectClass, Rank, ContextHandle);
-		if (!SpecHandle.IsValid()) continue;
-
-		// Inyectamos las magnitudes SetByCaller evaluadas AL RANGO ACTUAL.
-		// FScalableFloat::GetValueAtLevel(Rank) lee la curva del Data Asset:
-		// rango 1 → fila 1 de la curva, rango 2 → fila 2, etc.
-		for (const TPair<FGameplayTag, FScalableFloat>& Magnitude : NodeInfo.SetByCallerMagnitudes)
+		if (!SpecHandle.IsValid())
 		{
-			SpecHandle.Data->SetSetByCallerMagnitude(Magnitude.Key, Magnitude.Value.GetValueAtLevel(Rank));
+			UE_LOG(LogPanthelia, Error,
+				TEXT("[SkillTree] No se pudo construir el spec '%s' del nodo '%s'."),
+				*GetNameSafe(EffectClass), *NodeInfo.NodeTag.ToString());
+			return false;
 		}
 
-		// Aplicamos y GUARDAMOS EL HANDLE — la "llave" para poder remover esta
-		// instancia exacta en el siguiente rango o en un respec (misma disciplina
-		// de contabilidad que SecondaryAttributesEffectHandle en el ASC).
-		const FActiveGameplayEffectHandle ActiveHandle =
-			ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data);
-		ActiveNodeEffectHandles.FindOrAdd(NodeInfo.NodeTag).Add(ActiveHandle);
+		for (const TPair<FGameplayTag, FScalableFloat>& Magnitude : NodeInfo.SetByCallerMagnitudes)
+		{
+			const float Value = Magnitude.Value.GetValueAtLevel(Rank);
+			if (!Magnitude.Key.IsValid() || !FMath::IsFinite(Value))
+			{
+				UE_LOG(LogPanthelia, Error,
+					TEXT("[SkillTree] SetByCaller inválido en nodo '%s'. Tag=%s Value=%f."),
+					*NodeInfo.NodeTag.ToString(), *Magnitude.Key.ToString(), Value);
+				return false;
+			}
+
+			SpecHandle.Data->SetSetByCallerMagnitude(Magnitude.Key, Value);
+		}
+
+		PreparedEffectSpecs.Add(SpecHandle);
 	}
+
+	// Aplicamos las nuevas instancias sin retirar todavía las anteriores. El preflight
+	// ya garantizó Stacking Type=None, así que cada aplicación obtiene una instancia
+	// independiente. Si una falla, las nuevas se remueven y el rango confirmado continúa intacto.
+	TArray<FActiveGameplayEffectHandle> NewEffectHandles;
+	NewEffectHandles.Reserve(PreparedEffectSpecs.Num());
+
+	for (const FGameplayEffectSpecHandle& SpecHandle : PreparedEffectSpecs)
+	{
+		const FActiveGameplayEffectHandle ActiveHandle =
+			ASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+		if (!ActiveHandle.IsValid())
+		{
+			for (const FActiveGameplayEffectHandle& NewHandle : NewEffectHandles)
+			{
+				ASC->RemoveActiveGameplayEffect(NewHandle, -1);
+			}
+			return false;
+		}
+		NewEffectHandles.Add(ActiveHandle);
+	}
+
+	// La ability se confirma al final, cuando todos los GEs nuevos ya son válidos.
+	// Si falla, retiramos las instancias nuevas y dejamos activas las anteriores.
+	if (bHasAbility)
+	{
+		bool bAbilityApplied = false;
+		if (bAbilityAlreadyGranted)
+		{
+			bAbilityApplied = ASC->SetAbilityLevel(AbilityTag, Rank);
+		}
+		else
+		{
+			const FGameplayAbilitySpecHandle GrantedHandle =
+				ASC->GiveAbility(FGameplayAbilitySpec(NodeInfo.GrantedAbility, Rank));
+			bAbilityApplied = GrantedHandle.IsValid();
+		}
+
+		if (!bAbilityApplied)
+		{
+			for (const FActiveGameplayEffectHandle& NewHandle : NewEffectHandles)
+			{
+				ASC->RemoveActiveGameplayEffect(NewHandle, -1);
+			}
+			return false;
+		}
+	}
+
+	// Todo el estado nuevo está aplicado. Retiramos las instancias del rango anterior
+	// y publicamos los handles nuevos como única contabilidad activa.
+	RemoveNodeEffects(NodeInfo.NodeTag);
+	if (NewEffectHandles.Num() > 0)
+	{
+		ActiveNodeEffectHandles.Add(NodeInfo.NodeTag, MoveTemp(NewEffectHandles));
+	}
+
+	return true;
 }
 
 void UPantheliaSkillTreeComponent::RemoveNodeEffects(const FGameplayTag& NodeTag)
@@ -267,9 +379,9 @@ void UPantheliaSkillTreeComponent::RemoveNodeEffects(const FGameplayTag& NodeTag
 		{
 			if (Handle.IsValid())
 			{
-				// -1 = remover todos los stacks de la instancia (los GEs de nodo
-				// tienen Stack Limit 1, pero -1 es la forma robusta — mismo criterio
-				// que RefreshSecondaryAttributes).
+				// -1 elimina por completo la instancia. Los GEs de nodo no pueden usar
+				// stacking (el preflight lo rechaza), pero conservamos -1 como limpieza
+				// defensiva ante datos legacy o cambios externos.
 				ASC->RemoveActiveGameplayEffect(Handle, -1);
 			}
 		}

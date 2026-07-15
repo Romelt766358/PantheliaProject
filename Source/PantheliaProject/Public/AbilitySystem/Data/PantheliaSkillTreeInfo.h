@@ -87,9 +87,10 @@ struct FPantheliaSkillNodeInfo
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Grants")
 	TSubclassOf<UGameplayAbility> GrantedAbility = nullptr;
 
-	// (2) GameplayEffects que aplica este nodo. Deben ser de duración INFINITE:
-	// el componente guarda sus handles para poder removerlos (respec, recarga de
-	// partida). Un GE Instant aquí sería irrevocable — error de datos.
+	// (2) GameplayEffects que aplica este nodo. Deben ser de duración INFINITE y
+	// usar Stacking Type=None. El componente guarda sus handles para poder removerlos
+	// (cambio de rango, respec, recarga de partida). Un GE Instant sería irrevocable;
+	// un GE apilable podría reutilizar el handle del rango anterior y romper el rollback.
 	// Ejemplos: GE_Node_MaxHealth (+MaxHealth), GE_Node_FireResist (+FireResistance),
 	// o un GE sin modifiers cuyo único trabajo sea CONCEDER UN TAG (Granted Tags)
 	// que una ability consulte ("Talent.Firebolt.TripleShot") — el patrón de dos

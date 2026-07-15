@@ -529,7 +529,7 @@ void UPantheliaAttributeSet::HandleIncomingDamage(const FEffectProperties& Props
 			// El enemigo ha muerto: enviamos la recompensa de XP al atacante.
 			// SendXPEvent calcula la XP final (base × multiplicador de rendimientos
 			// decrecientes) y la concede directamente en C++ puro: detecta las subidas
-			// de nivel, rellena vida/maná y llama a AddToXP (ver SendXPEvent abajo).
+			// de nivel, dispara su feedback y llama a AddToXP (ver SendXPEvent abajo).
 			SendXPEvent(Props);
 		}
 		else
@@ -699,15 +699,23 @@ void UPantheliaAttributeSet::HandleIncomingXP(const FEffectProperties& Props)
 
 	if (LocalIncomingXP <= 0.f) return;
 
-	// Solo el jugador implementa IPantheliaPlayerInterface.
-	if (!Props.SourceCharacter->Implements<UPantheliaPlayerInterface>()) return;
+	// El meta atributo puede ser producido en el futuro por fuentes sin avatar
+	// Character. Validamos antes de consultar interfaces para no desreferenciar null.
+	if (!IsValid(Props.SourceCharacter) ||
+		!Props.SourceCharacter->Implements<UPantheliaPlayerInterface>() ||
+		!Props.SourceCharacter->Implements<UCombatInterface>())
+	{
+		UE_LOG(LogPanthelia, Warning,
+			TEXT("[XP] IncomingXP rechazado: SourceCharacter inválido o no es jugador."));
+		return;
+	}
 
 	// === DETECCIÓN DE NIVEL ASCENDENTE ===
 	//
 	// Calculamos cuántos niveles subirá el jugador con esta XP ANTES de añadirla.
 	// Esto nos permite:
 	//   a) Llamar Execute_LevelUp para los efectos visuales/sonidos de cada subida.
-	//   b) Rellenar salud y maná al subir de nivel (comportamiento soulslike estándar).
+	//   b) Mantener la notificación visual separada de la transacción de datos.
 	//
 	// La lógica de datos (incrementar Level, AttributePoints, SkillPoints y broadcastear
 	// delegates) la maneja Execute_AddToXP → UpdateLevelFromXP internamente.
@@ -728,24 +736,9 @@ void UPantheliaAttributeSet::HandleIncomingXP(const FEffectProperties& Props)
 
 	if (NumLevelUps > 0)
 	{
-		// Efectos visuales/sonidos de subida de nivel (implementados en Blueprint).
-		// Vacío en C++ — se sobreescribe en BP_ThirdPersonCharacter.
+		// Efectos visuales/sonidos de subida de nivel. La progresión no rellena
+		// Health, Mana ni Stamina: ganar XP no funciona como una curación gratuita.
 		IPantheliaPlayerInterface::Execute_LevelUp(Props.SourceCharacter);
-
-		// Al subir de nivel, rellenamos salud y maná completamente.
-		// Comportamiento soulslike estándar (Elden Ring, Dark Souls, Black Myth Wukong).
-		// Nota: los cambios de SetHealth/SetMana aquí son locales al AttributeSet del
-		// atacante (Props.SourceCharacter tiene su propio ASC y AttributeSet).
-		// Como no hay multiplicador, accedemos directamente.
-		if (UAbilitySystemComponent* SourceASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Props.SourceCharacter))
-		{
-			if (const UPantheliaAttributeSet* SourceAS = SourceASC->GetSet<UPantheliaAttributeSet>())
-			{
-				// Usamos SetAttributeBaseValue para modificar el atributo del Source, no del Self.
-				SourceASC->SetNumericAttributeBase(GetHealthAttribute(), SourceAS->GetMaxHealth());
-				SourceASC->SetNumericAttributeBase(GetManaAttribute(), SourceAS->GetMaxMana());
-			}
-		}
 	}
 
 	// AddToXP → UpdateLevelFromXP gestiona: XP, Level, AttributePoints, SkillPoints, delegates.
@@ -1559,8 +1552,8 @@ void UPantheliaAttributeSet::SendXPEvent(const FEffectProperties& Props)
 	//   2. Calculamos la XP final aplicando el multiplicador de rendimientos decrecientes.
 	//   3. Registramos la muerte para futuras visitas del mismo enemigo.
 	//   4. Concedemos la XP directamente al jugador en C++ (sin GA/GE intermedios).
-	//      Detectamos subidas de nivel, llamamos LevelUp(), rellenamos vida/maná y
-	//      llamamos AddToXP() para actualizar todo el estado de progresión.
+	//      Detectamos subidas de nivel, llamamos LevelUp() y después AddToXP()
+	//      para actualizar todo el estado de progresión.
 
 	// Solo los enemigos dan XP. Si el target no es APantheliaEnemy (por ejemplo si
 	// hubiera daño entre jugadores en el futuro), salimos silenciosamente.
@@ -1614,6 +1607,17 @@ void UPantheliaAttributeSet::SendXPEvent(const FEffectProperties& Props)
 		}
 	}
 
+	// Un multiplicador bajo puede redondear una recompensa pequeña a 0. No es un
+	// error de datos: la muerte ya quedó registrada arriba para los rendimientos
+	// decrecientes, pero no hay XP que conceder ni motivo para generar un Warning.
+	if (FinalXP <= 0)
+	{
+		UE_LOG(LogPanthelia, Verbose,
+			TEXT("[XP] Recompensa final redondeada a 0 para '%s'. No se concede XP."),
+			*Enemy->GetName());
+		return;
+	}
+
 	// --- Conceder XP directamente al jugador (C++ puro, sin GA/GE intermedios) ---
 	//
 	// Arquitectura original usaba: SendGameplayEvent → GA_ListenForXPEvents → GE_EventBasedEffect → IncomingXP.
@@ -1623,8 +1627,8 @@ void UPantheliaAttributeSet::SendXPEvent(const FEffectProperties& Props)
 	// La nueva arquitectura hace todo en C++:
 	//   1. Detecta cuántos niveles subirá el jugador con esta XP.
 	//   2. Llama a LevelUp() para los efectos visuales/sonidos de cada subida.
-	//   3. Rellena salud y maná si el jugador subió de nivel (comportamiento soulslike estándar).
-	//   4. Llama a AddToXP() para actualizar XP, Level, AttributePoints, SkillPoints y broadcasts.
+	//   3. Llama a AddToXP() para actualizar XP, Level, AttributePoints, SkillPoints y broadcasts.
+	// La subida de nivel no rellena recursos; curación y recuperación son sistemas separados.
 	//
 	// GA_ListenForXPEvents y GE_EventBasedEffect quedan en el proyecto como gancho para
 	// modificadores de XP externos (áreas de bonificación, consumibles, árbol de habilidades)
@@ -1650,18 +1654,9 @@ void UPantheliaAttributeSet::SendXPEvent(const FEffectProperties& Props)
 
 	if (NumLevelUps > 0)
 	{
-		// Efectos visuales/sonidos de subida de nivel (implementados en BP_ThirdPersonCharacter).
+		// Efectos visuales/sonidos de subida de nivel. No se rellenan recursos:
+		// la curación y recuperación pertenecen a sistemas explícitos de gameplay.
 		IPantheliaPlayerInterface::Execute_LevelUp(Props.SourceCharacter);
-
-		// Rellenar salud y maná al subir de nivel (soulslike estándar).
-		if (UAbilitySystemComponent* SourceASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(Props.SourceCharacter))
-		{
-			if (const UPantheliaAttributeSet* SourceAS = SourceASC->GetSet<UPantheliaAttributeSet>())
-			{
-				SourceASC->SetNumericAttributeBase(GetHealthAttribute(), SourceAS->GetMaxHealth());
-				SourceASC->SetNumericAttributeBase(GetManaAttribute(), SourceAS->GetMaxMana());
-			}
-		}
 	}
 
 	// AddToXP → UpdateLevelFromXP gestiona: XP, Level, AttributePoints, SkillPoints, delegates UI.

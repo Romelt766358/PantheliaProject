@@ -7,6 +7,8 @@
 #include "AbilitySystem/Abilities/PantheliaPlayerHeavyAttackAbility.h"
 #include "AbilitySystem/Abilities/PantheliaPlayerDodgeAbility.h"
 #include "AbilitySystem/Abilities/PantheliaParryAbility.h"
+#include "AbilitySystem/PantheliaAttributeSet.h"
+#include "Player/PantheliaPlayerState.h"
 #include "Interfaces/PantheliaPlayerInterface.h"
 #include "AbilitySystemBlueprintLibrary.h"
 // Singleton de tags nativos: usado por GetAbilityTagFromSpec / GetInputTagFromSpec
@@ -567,25 +569,73 @@ void UPantheliaAbilitySystemComponent::ClearGuardBreakState()
 void UPantheliaAbilitySystemComponent::UpgradeAttribute(const FGameplayTag& AttributeTag)
 {
 	AActor* Avatar = GetAvatarActor();
-	if (!Avatar || !Avatar->Implements<UPantheliaPlayerInterface>()) return;
+	APantheliaPlayerState* PantheliaPlayerState = Cast<APantheliaPlayerState>(GetOwner());
+	const UPantheliaAttributeSet* PantheliaAS = GetSet<UPantheliaAttributeSet>();
+	if (!Avatar || !PantheliaPlayerState || !PantheliaAS ||
+		!Avatar->Implements<UPantheliaPlayerInterface>())
+	{
+		return;
+	}
 
-	// Comprobamos el saldo ANTES de gastar nada. Si el jugador no tiene puntos
-	// (por ejemplo, doble clic muy rápido en el botón, o la UI llegó a mostrar
-	// un botón habilitado por un frame de más), no hacemos nada.
-	const int32 CurrentAttributePoints = IPantheliaPlayerInterface::Execute_GetAttributePoints(Avatar);
-	if (CurrentAttributePoints <= 0) return;
+	// Solo se permite mejorar uno de los cinco atributos primarios. Tags secundarios
+	// o desconocidos no deben poder consumir puntos mediante esta API pública.
+	const FPantheliaGameplayTags& Tags = FPantheliaGameplayTags::Get();
+	const bool bSupportedPrimaryAttribute =
+		AttributeTag.MatchesTagExact(Tags.Attributes_Primary_Hardness) ||
+		AttributeTag.MatchesTagExact(Tags.Attributes_Primary_Resonance) ||
+		AttributeTag.MatchesTagExact(Tags.Attributes_Primary_Resilience) ||
+		AttributeTag.MatchesTagExact(Tags.Attributes_Primary_Endurance) ||
+		AttributeTag.MatchesTagExact(Tags.Attributes_Primary_Spirit);
+	if (!bSupportedPrimaryAttribute)
+	{
+		UE_LOG(LogPanthelia, Warning,
+			TEXT("[Attributes] UpgradeAttribute rechazó el tag no primario '%s'."),
+			*AttributeTag.ToString());
+		return;
+	}
 
-	// Enviamos un Gameplay Event a nosotros mismos (al avatar) con el tag del atributo
-	// a mejorar. GA_ListenForXPEvents ya escucha eventos con tag "Attributes" (el padre
-	// de "Attributes.Primary.X") y, al recibirlo, aplica GE_EventBasedEffect usando
-	// EventMagnitude como el SetByCaller de ese atributo concreto.
+	const TStaticFuncPtr<FGameplayAttribute()>* AttributeGetter =
+		PantheliaAS->TagsToAttributes.Find(AttributeTag);
+	if (!AttributeGetter)
+	{
+		UE_LOG(LogPanthelia, Error,
+			TEXT("[Attributes] No existe mapping TagsToAttributes para '%s'."),
+			*AttributeTag.ToString());
+		return;
+	}
+
+	const FGameplayAttribute Attribute = (*AttributeGetter)();
+	const float PreviousValue = GetNumericAttribute(Attribute);
+
+	// Reservamos el punto antes de disparar el evento. Si el listener/GE no confirma
+	// un aumento síncrono, lo reembolsamos: nunca se pierde saldo por una configuración
+	// rota, y tampoco se concede una mejora gratis.
+	// CONTRATO: GA_ListenForXPEvents debe aplicar su GE Instant dentro de esta misma
+	// llamada. No introducir Delay, tareas asíncronas ni aplicación diferida: eso
+	// permitiría que el reembolso ocurra antes de una mejora tardía.
+	if (!PantheliaPlayerState->TrySpendAttributePoints(1))
+	{
+		return;
+	}
+
 	FGameplayEventData Payload;
 	Payload.EventTag = AttributeTag;
 	Payload.EventMagnitude = 1.f;
 	UAbilitySystemBlueprintLibrary::SendGameplayEventToActor(Avatar, AttributeTag, Payload);
 
-	// Gastamos el punto. Usamos -1 sobre el mismo Adder que suma puntos al subir de nivel,
-	// en vez de crear un "Setter" o un "SpendAttributePoints" nuevo — mismo patrón que el
-	// PlayerState ya expone.
-	IPantheliaPlayerInterface::Execute_AddToAttributePoints(Avatar, -1);
+	const float NewValue = GetNumericAttribute(Attribute);
+	if (NewValue <= PreviousValue + KINDA_SMALL_NUMBER)
+	{
+		PantheliaPlayerState->GrantAttributePoints(1);
+		UE_LOG(LogPanthelia, Error,
+			TEXT("[Attributes] Mejora revertida para '%s': el Gameplay Event no aumentó "
+			     "el atributo (%.2f -> %.2f). Revisa GA_ListenForXPEvents y GE_EventBasedEffect."),
+			*AttributeTag.ToString(), PreviousValue, NewValue);
+		return;
+	}
+
+	UE_LOG(LogPanthelia, Log,
+		TEXT("[Attributes] Mejora confirmada '%s': %.2f -> %.2f. Puntos restantes=%d."),
+		*AttributeTag.ToString(), PreviousValue, NewValue,
+		PantheliaPlayerState->GetAttributePoints());
 }

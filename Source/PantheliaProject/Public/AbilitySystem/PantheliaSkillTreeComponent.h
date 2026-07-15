@@ -75,9 +75,9 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Panthelia|SkillTree")
 	bool CanUnlockNode(const FGameplayTag& NodeTag) const;
 
-	// Intenta comprar el siguiente rango del nodo: valida con CanUnlockNode, gasta
-	// los puntos, sube el rango, aplica el nodo a GAS y broadcastea el delegate.
-	// Devuelve true si la compra se realizó. Este es EL punto de entrada de la UI.
+	// Intenta comprar el siguiente rango mediante una transacción: valida, reserva
+	// los puntos, prepara/aplica GAS y solo entonces confirma rango + delegate. Si
+	// GAS falla, reembolsa el coste y conserva el rango anterior.
 	UFUNCTION(BlueprintCallable, Category = "Panthelia|SkillTree")
 	bool TryUnlockNode(const FGameplayTag& NodeTag);
 
@@ -106,9 +106,9 @@ private:
 
 	// === CONTABILIDAD RUNTIME (NUNCA se guarda — se reconstruye) ===
 	// Handles de los GEs Infinite activos de cada nodo, para poder removerlos al
-	// subir de rango (quitar la instancia del rango viejo antes de aplicar la del
-	// nuevo — mismo patrón QUITAR + REAPLICAR de RefreshSecondaryAttributes) y en
-	// el futuro respec.
+	// subir de rango y en el futuro respec. La transacción aplica primero las
+	// instancias del rango nuevo, verifica el resultado y solo después retira las
+	// anteriores; por ello los GEs del árbol deben usar Stacking Type=None.
 	// NO es UPROPERTY: UHT no soporta TMap con TArray como valor, y no lo necesita —
 	// los handles son structs planos sin UObjects que proteger del garbage collector,
 	// y su ciclo de vida es puramente runtime.
@@ -122,11 +122,11 @@ private:
 	// ASC del jugador, obtenido a través del PlayerState dueño.
 	UPantheliaAbilitySystemComponent* GetPantheliaASC() const;
 
-	// Traduce un nodo a estado de GAS para el rango dado:
-	//   - Ability: la otorga (rango 1) o le sube el nivel (rangos siguientes).
-	//   - GEs: remueve las instancias del rango anterior y aplica las nuevas con
-	//     las magnitudes SetByCaller evaluadas al rango actual.
-	void ApplyNodeToGAS(const FPantheliaSkillNodeInfo& NodeInfo, int32 Rank);
+	// Traduce un nodo a estado de GAS para el rango dado. Hace preflight completo
+	// (incluye Infinite + Stacking Type=None), aplica las nuevas instancias antes de
+	// retirar las anteriores y revierte cualquier aplicación parcial. Devuelve false
+	// sin alterar el estado confirmado del nodo.
+	bool ApplyNodeToGAS(const FPantheliaSkillNodeInfo& NodeInfo, int32 Rank);
 
 	// Remueve todos los GEs activos de un nodo (por sus handles) y limpia su entrada.
 	void RemoveNodeEffects(const FGameplayTag& NodeTag);

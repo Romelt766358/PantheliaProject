@@ -236,6 +236,16 @@ void UOverlayWidgetController::OnXPChanged(int32 NewXP)
 	checkf(LevelUpInfo,
 		TEXT("[XP] LevelUpInfo es null. Asigna DA_LevelUpInfo en BP_PantheliaPlayerState → Class Defaults."));
 
+	// El delta y el caché se resuelven ANTES de cualquier salida temprana. Así el
+	// nivel máximo y los datos inválidos no dejan CachedXP obsoleto ni producen un
+	// texto "+N" acumulado en el siguiente evento válido.
+	const int32 XPDelta = NewXP - CachedXP;
+	CachedXP = NewXP;
+	if (XPDelta > 0)
+	{
+		OnXPGained.Broadcast(XPDelta);
+	}
+
 	const int32 Level = LevelUpInfo->FindLevelForXP(NewXP);
 	const int32 MaxLevel = LevelUpInfo->LevelUpInformation.Num() - 1;
 
@@ -279,15 +289,6 @@ void UOverlayWidgetController::OnXPChanged(int32 NewXP)
 
 	const int32 XPForThisLevel = NewXP - XPAtLevelStart;
 	const float XPBarPercent = static_cast<float>(XPForThisLevel) / static_cast<float>(DeltaToNextLevel);
-	// Calcular y broadcastear la XP ganada en este evento (delta para el texto "+N").
-	// Solo se broadcastea si hay un incremento real (no en la inicialización, donde
-	// CachedXP == NewXP porque lo inicializamos antes de llamar OnXPChanged).
-	const int32 XPDelta = NewXP - CachedXP;
-	if (XPDelta > 0)
-	{
-		OnXPGained.Broadcast(XPDelta);
-	}
-	CachedXP = NewXP;
 
 	OnXPPercentChanged.Broadcast(FMath::Clamp(XPBarPercent, 0.f, 1.f));
 }

@@ -183,7 +183,7 @@ int32 AMainCharacter::GetAttributePointsReward_Implementation(int32 Level) const
     const UPantheliaLevelUpInfo* Info = PS->GetLevelUpInfo();
     checkf(Info, TEXT("[PlayerInterface] LevelUpInfo no asignado en BP_PantheliaPlayerState."));
     if (!Info->LevelUpInformation.IsValidIndex(Level)) return 0;
-    return Info->LevelUpInformation[Level].AttributePointAward;
+    return FMath::Max(0, Info->LevelUpInformation[Level].AttributePointAward);
 }
 
 int32 AMainCharacter::GetSkillPointsReward_Implementation(int32 Level) const
@@ -193,7 +193,7 @@ int32 AMainCharacter::GetSkillPointsReward_Implementation(int32 Level) const
     const UPantheliaLevelUpInfo* Info = PS->GetLevelUpInfo();
     checkf(Info, TEXT("[PlayerInterface] LevelUpInfo no asignado en BP_PantheliaPlayerState."));
     if (!Info->LevelUpInformation.IsValidIndex(Level)) return 0;
-    return Info->LevelUpInformation[Level].SkillPointAward;
+    return FMath::Max(0, Info->LevelUpInformation[Level].SkillPointAward);
 }
 
 // Getters de SALDO actual (distintos de los "Reward" de arriba, que devuelven el

@@ -27,6 +27,7 @@ class PANTHELIAPROJECT_API APantheliaPlayerState : public APlayerState, public I
 public:
 	APantheliaPlayerState();
 
+	virtual void PostInitializeComponents() override;
 	virtual UAbilitySystemComponent* GetAbilitySystemComponent() const override;
 	UAttributeSet* GetAttributeSet() const { return AttributeSet; }
 	UPantheliaCostAttributeSet* GetCostAttributeSet() const { return CostAttributeSet.Get(); }
@@ -61,21 +62,37 @@ public:
 	FOnPlayerStatChanged OnAttributePointsChangedDelegate;
 	FOnPlayerStatChanged OnSkillPointsChangedDelegate;
 
-	// --- Modificadores aditivos ---
+	// --- API transaccional de progresión ---
 
-	// Entrada principal del sistema de niveles: suma XP y, si se cruza algún
-	// umbral, sube de nivel automáticamente (puede subir varios de golpe).
-	// Todo lo que otorgue XP (matar enemigos, etc.) terminará llamando aquí.
-	// BlueprintCallable para poder probarlo con una tecla de debug en la Fase 1.
+	// Entrada principal del sistema de niveles. Solo acepta XP positiva: una pérdida,
+	// respec o carga de partida debe usar SetXP(), que reconcilia Level sin conceder
+	// premios otra vez. Se conserva el nombre AddToXP por compatibilidad con la
+	// interfaz y los Blueprints existentes.
 	UFUNCTION(BlueprintCallable, Category = "Panthelia|Level")
 	void AddToXP(int32 InXP);
 
-	// Suman puntos a las reservas (p. ej. reembolsos o premios directos).
+	// Version C++ que informa si la XP fue aceptada.
+	bool GrantXP(int32 InXP);
+
+	// Créditos explícitos. Rechazan valores negativos y nunca permiten overflow
+	// intencional hacia saldos inválidos.
+	void GrantAttributePoints(int32 InPoints);
+	void GrantSkillPoints(int32 InPoints);
+
+	// Gastos atómicos: comprueban el saldo, descuentan y emiten el delegate una sola
+	// vez. Devuelven false sin modificar nada si el pago no es posible.
+	bool TrySpendAttributePoints(int32 InPoints);
+	bool TrySpendSkillPoints(int32 InPoints);
+
+	// Wrappers legacy conservados para no romper la interfaz actual. Valores positivos
+	// conceden; valores negativos intentan gastar mediante las APIs transaccionales.
 	void AddToLevel(int32 InLevel);
 	void AddToAttributePoints(int32 InPoints);
 	void AddToSkillPoints(int32 InPoints);
 
-	// --- Setters directos (asignan y broadcastean el nuevo valor) ---
+	// --- Setters de restauración/carga ---
+	// Clampean invariantes. SetXP también reconcilia el nivel correspondiente sin
+	// volver a otorgar premios, que deben restaurarse desde el mismo snapshot.
 	void SetXP(int32 InXP);
 	void SetLevel(int32 InLevel);
 	void SetAttributePoints(int32 InPoints);
@@ -127,6 +144,11 @@ protected:
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Panthelia|Level")
 	TObjectPtr<UPantheliaLevelUpInfo> LevelUpInfo;
 
+	// Saldo inicial de puntos del árbol. Vive como configuración del PlayerState en
+	// vez de un hardcode disperso; el diseño vigente empieza con 3 puntos.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Panthelia|Level", meta = (ClampMin = "0"))
+	int32 InitialSkillPoints = 3;
+
 	// Componente del árbol de habilidades (Etapa 5). Vive aquí, junto al ASC, por la
 	// misma razón de persistencia: el PlayerState sobrevive a la muerte/respawn del
 	// Pawn, así que los nodos comprados sobreviven también. Se crea en el constructor
@@ -149,16 +171,14 @@ private:
 	UPROPERTY(VisibleAnywhere, Category = "Panthelia|Level")
 	int32 AttributePoints = 0;
 
-	// Puntos disponibles para gastar en el árbol de habilidades (1 por nivel por defecto).
+	// Puntos disponibles para gastar en el árbol de habilidades. Se inicializan desde
+	// InitialSkillPoints y después solo cambian mediante grant/spend o restauración.
 	UPROPERTY(VisibleAnywhere, Category = "Panthelia|Level")
 	int32 SkillPoints = 0;
 
-	// Bucle reutilizable de subida de nivel. Mientras la XP acumulada supere el
-	// umbral del siguiente nivel, sube uno a uno otorgando los premios de cada
-	// nivel cruzado. Es la ÚNICA fuente de verdad de la subida de nivel:
-	//   - AddToXP lo llama tras sumar XP (subida normal).
-	//   - El objeto de reseteo (Fase 4) lo reutilizará: pondrá Level=1, vaciará
-	//     las reservas y volverá a llamar aquí para re-otorgar todos los puntos.
+	// Bucle reutilizable de subida de nivel para XP ganada en gameplay. Solo asciende
+	// porque GrantXP nunca acepta cantidades negativas. Los premios de datos se
+	// clampean a cero para que un Data Asset roto nunca reste saldo.
 	void UpdateLevelFromXP();
 
 	// Mapa de EnemyID → número de veces que el jugador ha matado ese enemigo.

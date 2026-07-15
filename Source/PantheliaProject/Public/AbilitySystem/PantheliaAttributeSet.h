@@ -309,7 +309,7 @@ private:
 	void HandleIncomingDamage(const FEffectProperties& Props, const FGameplayEffectSpec& EffectSpec);
 
 	// Extraído de PostGameplayEffectExecute (clase 309): toda la reacción al meta atributo
-	// IncomingXP (detección de subida de nivel, relleno de vida/maná, AddToXP).
+	// IncomingXP (detección de subida de nivel, feedback y AddToXP).
 	void HandleIncomingXP(const FEffectProperties& Props);
 
 	// Pipeline central de curación. Consume IncomingHealing, reduce la magnitud
