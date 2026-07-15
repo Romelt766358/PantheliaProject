@@ -130,6 +130,12 @@ private:
     // Se usan referencias débiles porque el objetivo puede destruirse antes que el volumen.
     TMap<FActiveGameplayEffectHandle, TWeakObjectPtr<UAbilitySystemComponent>> ActiveEffectHandles;
 
+    // Cuenta cuántos pares de overlap siguen activos por actor. Un mismo objetivo puede
+    // solapar varios volúmenes del EffectActor (por ejemplo Sphere + Box) o recibir
+    // callbacks duplicados desde C++ y Blueprint. Solo el cambio 0 -> 1 aplica efectos;
+    // solo el cambio 1 -> 0 ejecuta políticas de salida y retira Infinite.
+    TMap<TWeakObjectPtr<AActor>, int32> ActiveOverlapCounts;
+
     bool ShouldAffectTarget(const AActor* TargetActor) const;
     bool ApplyEffectToTargetInternal(AActor* TargetActor,
         TSubclassOf<UGameplayEffect> GameplayEffectClass, bool& bOutWasInfinite);

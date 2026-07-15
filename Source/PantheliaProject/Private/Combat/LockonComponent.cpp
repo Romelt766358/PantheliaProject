@@ -73,11 +73,24 @@ void ULockonComponent::RefreshCachedReferences()
 // API pública / flujo principal
 // =========================
 
-void ULockonComponent::StartLockon(float Radius)
+void ULockonComponent::StartLockon(float RadiusOverride)
 {
 	RefreshCachedReferences();
 
-	AActor* BestTarget = FindBestInitialTarget(Radius);
+	const float SearchRadius = RadiusOverride > 0.0f
+		? RadiusOverride
+		: InitialLockonRadius;
+
+	if (!FMath::IsFinite(SearchRadius) || SearchRadius <= 0.0f)
+	{
+		UE_LOG(LogPanthelia, Error,
+			TEXT("[LOCKON] Radio inicial inválido: %.3f en %s."),
+			SearchRadius,
+			*GetNameSafe(this));
+		return;
+	}
+
+	AActor* BestTarget = FindBestInitialTarget(SearchRadius);
 	if (!BestTarget)
 	{
 		return;
@@ -86,7 +99,7 @@ void ULockonComponent::StartLockon(float Radius)
 	SetCurrentTarget(BestTarget);
 }
 
-void ULockonComponent::ToggleLockon(float Radius)
+void ULockonComponent::ToggleLockon(float RadiusOverride)
 {
 	const float CurrentTimeSeconds = GetWorld() ? GetWorld()->GetTimeSeconds() : 0.0f;
 	if ((CurrentTimeSeconds - LastToggleTimeSeconds) < ToggleDebounceSeconds)
@@ -103,7 +116,7 @@ void ULockonComponent::ToggleLockon(float Radius)
 	}
 	else
 	{
-		StartLockon(Radius);
+		StartLockon(RadiusOverride);
 	}
 }
 

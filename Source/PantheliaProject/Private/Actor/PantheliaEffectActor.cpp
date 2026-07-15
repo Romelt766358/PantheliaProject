@@ -34,6 +34,7 @@ void APantheliaEffectActor::EndPlay(const EEndPlayReason::Type EndPlayReason)
     // EndOverlap no está garantizado cuando el volumen o el objetivo se destruyen.
     // Retirar aquí todos los handles evita dejar Gameplay Effects Infinite huérfanos.
     RemoveAllTrackedInfiniteEffects();
+    ActiveOverlapCounts.Empty();
 
     Super::EndPlay(EndPlayReason);
 }
@@ -177,6 +178,27 @@ void APantheliaEffectActor::HandleOverlap(AActor* TargetActor)
         return;
     }
 
+    // Limpiamos entradas débiles obsoletas para que un volumen persistente no acumule
+    // actores destruidos que nunca pudieron emitir EndOverlap.
+    for (auto It = ActiveOverlapCounts.CreateIterator(); It; ++It)
+    {
+        if (!It.Key().IsValid())
+        {
+            It.RemoveCurrent();
+        }
+    }
+
+    const TWeakObjectPtr<AActor> TargetKey(TargetActor);
+    int32& ActiveOverlapCount = ActiveOverlapCounts.FindOrAdd(TargetKey);
+    ++ActiveOverlapCount;
+
+    // Varias shapes/componentes pueden solapar al mismo actor. La aplicación debe
+    // ocurrir una sola vez mientras exista al menos un overlap activo.
+    if (ActiveOverlapCount > 1)
+    {
+        return;
+    }
+
     bool bAppliedAnyEffect = false;
     bool bAppliedAnyInfiniteEffect = false;
 
@@ -219,6 +241,25 @@ void APantheliaEffectActor::HandleEndOverlap(AActor* TargetActor)
     {
         return;
     }
+
+    const TWeakObjectPtr<AActor> TargetKey(TargetActor);
+    int32* ActiveOverlapCount = ActiveOverlapCounts.Find(TargetKey);
+    if (!ActiveOverlapCount)
+    {
+        UE_LOG(LogPanthelia, Verbose,
+            TEXT("EffectActor '%s' ignoró EndOverlap no emparejado para '%s'."),
+            *GetNameSafe(this),
+            *GetNameSafe(TargetActor));
+        return;
+    }
+
+    --(*ActiveOverlapCount);
+    if (*ActiveOverlapCount > 0)
+    {
+        return;
+    }
+
+    ActiveOverlapCounts.Remove(TargetKey);
 
     bool bAppliedAnyEffect = false;
     bool bAppliedAnyInfiniteEffect = false;

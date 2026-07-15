@@ -54,7 +54,7 @@ public:
 	// Activa o desactiva el lock-on. Debe ser público para que el PlayerController
 	// pueda llamarlo desde IA_ToggleLockon.
 	UFUNCTION(BlueprintCallable, Category = "Lockon")
-	void ToggleLockon(float Radius = 850.0f);
+	void ToggleLockon(float RadiusOverride = -1.0f);
 
 	// Cambia de target usando una dirección horizontal.
 	// Direction > 0 = derecha, Direction < 0 = izquierda.
@@ -117,7 +117,13 @@ protected:
 	// =========================
 
 	UFUNCTION(BlueprintCallable, Category = "Lockon")
-	void StartLockon(float Radius = 850.0f);
+	void StartLockon(float RadiusOverride = -1.0f);
+
+	// Radio canónico para la adquisición inicial. Los inputs deben llamar ToggleLockon
+	// una sola vez y dejar el pin sin override salvo que una mecánica concreta necesite
+	// un radio excepcional. 1200 conserva el valor que estaba configurado en el BP.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lockon Settings", meta = (ClampMin = "1.0"))
+	float InitialLockonRadius{ 1200.0f };
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Lockon Settings")
 	double BreakDistance{ 1200.0f };
