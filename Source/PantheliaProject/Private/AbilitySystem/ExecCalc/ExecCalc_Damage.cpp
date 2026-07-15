@@ -340,7 +340,7 @@ void UExecCalc_Damage::Execute_Implementation(
     // Un mismo context puede reutilizarse al aplicar el spec a varios objetivos. Antes
     // de cualquier salida temprana limpiamos SIEMPRE los resultados del objetivo previo.
     if (FPantheliaGameplayEffectContext* PantheliaContext =
-        static_cast<FPantheliaGameplayEffectContext*>(EffectContextHandle.Get()))
+        UPantheliaAbilitySystemLibrary::GetMutablePantheliaEffectContext(EffectContextHandle))
     {
         PantheliaContext->SetIsCriticalHit(false);
         PantheliaContext->SetParryResult(false, 0.f);
@@ -673,7 +673,7 @@ void UExecCalc_Damage::Execute_Implementation(
     // segunda vez. La regla del fix — la misma que ya seguía SetIsCriticalHit — es
     // escribir el resultado calculado SIEMPRE, sea true o false, en cada aplicación.
     if (FPantheliaGameplayEffectContext* PantheliaContext =
-        static_cast<FPantheliaGameplayEffectContext*>(EffectContextHandle.Get()))
+        UPantheliaAbilitySystemLibrary::GetMutablePantheliaEffectContext(EffectContextHandle))
     {
         // SetParryResult escribe ambos campos a la vez (flag + postura al atacante):
         // en el caso "no hubo parry" esto resetea correctamente a (false, 0).

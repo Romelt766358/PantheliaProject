@@ -9,6 +9,7 @@
 #include "Components/PrimitiveComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/World.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Kismet/GameplayStatics.h"
 #include "PantheliaGameplayTags.h"
@@ -20,6 +21,7 @@ UWeaponTraceComponent::UWeaponTraceComponent()
 	// Necesitamos tick para hacer el sweep continuo durante la ventana de daño.
 	// Arranca desactivado; solo trabaja de verdad cuando bIsTracing es true.
 	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.bStartWithTickEnabled = false;
 }
 
 void UWeaponTraceComponent::BeginPlay()
@@ -32,6 +34,8 @@ void UWeaponTraceComponent::BeginPlay()
 	{
 		ResolveWeaponMesh();
 	}
+
+	SetComponentTickEnabled(false);
 }
 
 void UWeaponTraceComponent::ResolveWeaponMesh()
@@ -94,6 +98,56 @@ bool UWeaponTraceComponent::IsWeaponMeshValidForOwner() const
 	}
 
 	return MeshOwner->GetOwner() == Owner;
+}
+
+bool UWeaponTraceComponent::ResolveAndValidateTraceSource(bool bLogFailure)
+{
+	if (!bUseExternalWeaponSource && !IsWeaponMeshValidForOwner())
+	{
+		ResolveWeaponMesh();
+	}
+
+	auto LogFailure = [this, bLogFailure](const TCHAR* Reason)
+	{
+		if (bLogFailure || bLogTraceDebug || bDebugMode)
+		{
+			UE_LOG(LogPanthelia, Error,
+				TEXT("WeaponTrace inválido: Owner=%s Reason=%s Weapon=%s BaseSocket=%s TipSocket=%s External=%s"),
+				*GetNameSafe(GetOwner()),
+				Reason,
+				*GetNameSafe(WeaponMeshComponent),
+				*WeaponBaseSocketName.ToString(),
+				*WeaponTipSocketName.ToString(),
+				bUseExternalWeaponSource ? TEXT("true") : TEXT("false"));
+		}
+	};
+
+	if (!IsWeaponMeshValidForOwner())
+	{
+		LogFailure(TEXT("mesh inexistente o no pertenece al atacante"));
+		return false;
+	}
+
+	if (WeaponBaseSocketName.IsNone() || WeaponTipSocketName.IsNone())
+	{
+		LogFailure(TEXT("nombre de socket vacío"));
+		return false;
+	}
+
+	if (WeaponBaseSocketName == WeaponTipSocketName)
+	{
+		LogFailure(TEXT("socket base y punta son iguales"));
+		return false;
+	}
+
+	if (!WeaponMeshComponent->DoesSocketExist(WeaponBaseSocketName) ||
+		!WeaponMeshComponent->DoesSocketExist(WeaponTipSocketName))
+	{
+		LogFailure(TEXT("falta uno o ambos sockets en el mesh"));
+		return false;
+	}
+
+	return true;
 }
 
 void UWeaponTraceComponent::SetDamageSpec(const FGameplayEffectSpecHandle& InDamageSpecHandle)
@@ -203,40 +257,44 @@ void UWeaponTraceComponent::ActivateTraceWithRadius(float OverrideTraceRadius)
 
 void UWeaponTraceComponent::StartTrace(float InTraceRadius)
 {
-	// Una fuente externa incompleta debe fallar cerrada. Esto cubre el caso donde el
-	// arma se desequipa y después llega el NotifyBegin de un montage aún reproduciéndose.
-	if (bUseExternalWeaponSource && !IsWeaponMeshValidForOwner())
+	// Cerrar cualquier ventana previa sin revocar todavía el permiso de auto lock-on
+	// que la ability acaba de configurar para este swing.
+	bIsTracing = false;
+	SetComponentTickEnabled(false);
+	IgnoredActors.Empty();
+
+	if (!FMath::IsFinite(InTraceRadius) || InTraceRadius <= 0.0f)
 	{
-		bIsTracing = false;
-
-		if (bLogTraceDebug || bDebugMode)
-		{
-			UE_LOG(LogPanthelia, Warning,
-				TEXT("WeaponTrace no iniciado: Owner=%s usa fuente externa sin arma válida."),
-				*GetNameSafe(GetOwner()));
-		}
-
+		UE_LOG(LogPanthelia, Error,
+			TEXT("WeaponTrace no iniciado: Owner=%s Radius inválido=%.3f."),
+			*GetNameSafe(GetOwner()),
+			InTraceRadius);
 		return;
 	}
 
 	// Sin un spec válido no existe un golpe aplicable. No abrimos una ventana que
 	// pueda quedar activa esperando datos que ya fueron limpiados al desequipar.
-	if (!DamageSpecHandle.IsValid())
+	if (!DamageSpecHandle.IsValid() || !DamageSpecHandle.Data.IsValid())
 	{
-		bIsTracing = false;
-
 		if (bLogTraceDebug || bDebugMode)
 		{
 			UE_LOG(LogPanthelia, Warning,
 				TEXT("WeaponTrace no iniciado: Owner=%s no tiene DamageSpec válido."),
 				*GetNameSafe(GetOwner()));
 		}
+		return;
+	}
 
+	// Los sockets son una precondición runtime, no una ayuda de debug. Un trace sin
+	// base/punta puede degenerar a la ubicación del componente y golpear actores falsos.
+	if (!ResolveAndValidateTraceSource(true))
+	{
 		return;
 	}
 
 	bIsTracing = true;
-	ActiveTraceRadius = FMath::Max(0.f, InTraceRadius);
+	ActiveTraceRadius = InTraceRadius;
+	SetComponentTickEnabled(true);
 
 	// Limpiamos por seguridad: cada swing empieza sin actores ignorados.
 	// (DeactivateTrace también limpia, pero esto protege ante notifies solapados.)
@@ -244,20 +302,15 @@ void UWeaponTraceComponent::StartTrace(float InTraceRadius)
 
 	if (bLogTraceDebug || bDebugMode)
 	{
-		if (!bUseExternalWeaponSource && !IsWeaponMeshValidForOwner())
-		{
-			ResolveWeaponMesh();
-		}
-
-		const bool bHasBaseSocket = WeaponMeshComponent && WeaponMeshComponent->DoesSocketExist(WeaponBaseSocketName);
-		const bool bHasTipSocket = WeaponMeshComponent && WeaponMeshComponent->DoesSocketExist(WeaponTipSocketName);
-		const UGameplayEffect* DamageEffect = DamageSpecHandle.IsValid() ? DamageSpecHandle.Data->Def : nullptr;
-		const AActor* WeaponOwner = WeaponMeshComponent ? WeaponMeshComponent->GetOwner() : nullptr;
-		const USceneComponent* AttachParent = WeaponMeshComponent ? WeaponMeshComponent->GetAttachParent() : nullptr;
+		const bool bHasBaseSocket = WeaponMeshComponent->DoesSocketExist(WeaponBaseSocketName);
+		const bool bHasTipSocket = WeaponMeshComponent->DoesSocketExist(WeaponTipSocketName);
+		const UGameplayEffect* DamageEffect = DamageSpecHandle.Data->Def;
+		const AActor* WeaponOwner = WeaponMeshComponent->GetOwner();
+		const USceneComponent* AttachParent = WeaponMeshComponent->GetAttachParent();
 		const FVector OwnerLocation = GetOwner() ? GetOwner()->GetActorLocation() : FVector::ZeroVector;
-		const FVector WeaponLocation = WeaponMeshComponent ? WeaponMeshComponent->GetComponentLocation() : FVector::ZeroVector;
-		const FVector StartLocation = WeaponMeshComponent ? WeaponMeshComponent->GetSocketLocation(WeaponBaseSocketName) : FVector::ZeroVector;
-		const FVector EndLocation = WeaponMeshComponent ? WeaponMeshComponent->GetSocketLocation(WeaponTipSocketName) : FVector::ZeroVector;
+		const FVector WeaponLocation = WeaponMeshComponent->GetComponentLocation();
+		const FVector StartLocation = WeaponMeshComponent->GetSocketLocation(WeaponBaseSocketName);
+		const FVector EndLocation = WeaponMeshComponent->GetSocketLocation(WeaponTipSocketName);
 
 		UE_LOG(LogPanthelia, Log,
 			TEXT("WeaponTrace started: Owner=%s MontageTag=%s Radius=%.1f Weapon=%s WeaponOwner=%s AttachParent=%s BaseSocket=%s(%s) TipSocket=%s(%s) OwnerLoc=%s WeaponLoc=%s Start=%s End=%s DamageSpec=%s Effect=%s"),
@@ -275,7 +328,7 @@ void UWeaponTraceComponent::StartTrace(float InTraceRadius)
 			*WeaponLocation.ToCompactString(),
 			*StartLocation.ToCompactString(),
 			*EndLocation.ToCompactString(),
-			DamageSpecHandle.IsValid() ? TEXT("valid") : TEXT("invalid"),
+			TEXT("valid"),
 			*GetNameSafe(DamageEffect));
 	}
 }
@@ -283,6 +336,7 @@ void UWeaponTraceComponent::StartTrace(float InTraceRadius)
 void UWeaponTraceComponent::DeactivateTrace()
 {
 	bIsTracing = false;
+	SetComponentTickEnabled(false);
 
 	// Limpiamos la lista para que el próximo swing pueda volver a golpear
 	// a los mismos actores.
@@ -306,29 +360,23 @@ void UWeaponTraceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 
 void UWeaponTraceComponent::PerformTrace()
 {
-	if (!bUseExternalWeaponSource && !IsWeaponMeshValidForOwner())
+	// La fuente puede quedar inválida durante la ventana (arma destruida, cambio de
+	// owner, socket retirado). Fallamos cerrados y apagamos Tick inmediatamente.
+	if (!ResolveAndValidateTraceSource(true))
 	{
-		ResolveWeaponMesh();
-	}
-
-	// Sin un mesh válido y perteneciente al owner no podemos leer sockets. Para el
-	// jugador no se intenta fallback; para enemigos ya se intentó resolver arriba.
-	if (!IsWeaponMeshValidForOwner())
-	{
-		if (bLogTraceDebug || bDebugMode)
-		{
-			UE_LOG(LogPanthelia, Warning, TEXT("WeaponTrace rejected: Owner=%s Reason=no valid weapon mesh"), *GetNameSafe(GetOwner()));
-		}
+		DeactivateTrace();
 		return;
 	}
 
 	AActor* Owner = GetOwner();
-	if (!Owner)
+	UWorld* World = GetWorld();
+	if (!Owner || !World)
 	{
 		if (bLogTraceDebug || bDebugMode)
 		{
-			UE_LOG(LogPanthelia, Warning, TEXT("WeaponTrace rejected: Reason=no owner"));
+			UE_LOG(LogPanthelia, Warning, TEXT("WeaponTrace rejected: Reason=no owner or world"));
 		}
+		DeactivateTrace();
 		return;
 	}
 
@@ -345,7 +393,7 @@ void UWeaponTraceComponent::PerformTrace()
 	const FCollisionShape SweepShape = FCollisionShape::MakeSphere(ActiveTraceRadius);
 
 	TArray<FHitResult> HitResults;
-	GetWorld()->SweepMultiByChannel(
+	World->SweepMultiByChannel(
 		HitResults,
 		StartLocation,
 		EndLocation,
@@ -365,7 +413,7 @@ void UWeaponTraceComponent::PerformTrace()
 		const FLinearColor DebugColor = HitResults.Num() > 0 ? FLinearColor::Green : FLinearColor::Red;
 
 		UKismetSystemLibrary::DrawDebugCapsule(
-			GetWorld(),
+			World,
 			Center,
 			HalfHeight,
 			ActiveTraceRadius,

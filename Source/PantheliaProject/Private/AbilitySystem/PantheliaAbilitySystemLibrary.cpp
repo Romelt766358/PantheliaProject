@@ -11,7 +11,7 @@
 #include "Game/PantheliaGameModeBase.h"
 #include "AbilitySystemComponent.h"
 #include "Abilities/GameplayAbility.h"
-// Necesario para el static cast a FPantheliaGameplayEffectContext
+// Necesario para validar y acceder a FPantheliaGameplayEffectContext
 #include "AbilitySystem/PantheliaAbilityTypes.h"
 #include "AbilitySystem/PantheliaAttributeSet.h"
 // Necesario para GetPlayerLevel() en GiveStartupAbilities
@@ -152,13 +152,57 @@ void UPantheliaAbilitySystemLibrary::GiveStartupAbilities(const UObject* WorldCo
 // Context custom — getters y setters
 // ============================================================
 
+const FPantheliaGameplayEffectContext* UPantheliaAbilitySystemLibrary::GetPantheliaEffectContext(
+	const FGameplayEffectContextHandle& EffectContextHandle)
+{
+	const FGameplayEffectContext* BaseContext = EffectContextHandle.Get();
+	if (!BaseContext)
+	{
+		return nullptr;
+	}
+
+	const UScriptStruct* ActualStruct = BaseContext->GetScriptStruct();
+	const UScriptStruct* ExpectedStruct = FPantheliaGameplayEffectContext::StaticStruct();
+	if (ActualStruct != ExpectedStruct)
+	{
+		ensureMsgf(false,
+			TEXT("GameplayEffectContext inválido. Esperado=%s Actual=%s. Revisa AbilitySystemGlobalsClassName."),
+			*GetNameSafe(ExpectedStruct),
+			*GetNameSafe(ActualStruct));
+		return nullptr;
+	}
+
+	return static_cast<const FPantheliaGameplayEffectContext*>(BaseContext);
+}
+
+FPantheliaGameplayEffectContext* UPantheliaAbilitySystemLibrary::GetMutablePantheliaEffectContext(
+	FGameplayEffectContextHandle& EffectContextHandle)
+{
+	FGameplayEffectContext* BaseContext = EffectContextHandle.Get();
+	if (!BaseContext)
+	{
+		return nullptr;
+	}
+
+	const UScriptStruct* ActualStruct = BaseContext->GetScriptStruct();
+	const UScriptStruct* ExpectedStruct = FPantheliaGameplayEffectContext::StaticStruct();
+	if (ActualStruct != ExpectedStruct)
+	{
+		ensureMsgf(false,
+			TEXT("GameplayEffectContext mutable inválido. Esperado=%s Actual=%s. Revisa AbilitySystemGlobalsClassName."),
+			*GetNameSafe(ExpectedStruct),
+			*GetNameSafe(ActualStruct));
+		return nullptr;
+	}
+
+	return static_cast<FPantheliaGameplayEffectContext*>(BaseContext);
+}
+
 bool UPantheliaAbilitySystemLibrary::IsCriticalHit(const FGameplayEffectContextHandle& EffectContextHandle)
 {
-	// Static cast: sabemos que todos los contexts del proyecto son FPantheliaGameplayEffectContext
-	// gracias a que UPantheliaAbilitySystemGlobals::AllocGameplayEffectContext() los crea así.
-	// El const en el puntero es necesario porque EffectContextHandle es const ref.
+	// El helper valida el ScriptStruct antes de acceder al context custom.
 	const FPantheliaGameplayEffectContext* PantheliaContext =
-		static_cast<const FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+		GetPantheliaEffectContext(EffectContextHandle);
 
 	if (PantheliaContext)
 	{
@@ -174,7 +218,7 @@ void UPantheliaAbilitySystemLibrary::SetIsCriticalHit(
 {
 	// El handle es no-const así que podemos obtener un puntero mutable al context.
 	FPantheliaGameplayEffectContext* PantheliaContext =
-		static_cast<FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+		GetMutablePantheliaEffectContext(EffectContextHandle);
 
 	if (PantheliaContext)
 	{
@@ -186,7 +230,7 @@ EPantheliaDodgeResponse UPantheliaAbilitySystemLibrary::GetDodgeResponse(
 	const FGameplayEffectContextHandle& EffectContextHandle)
 {
 	const FPantheliaGameplayEffectContext* PantheliaContext =
-		static_cast<const FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+		GetPantheliaEffectContext(EffectContextHandle);
 
 	if (PantheliaContext)
 	{
@@ -201,7 +245,7 @@ void UPantheliaAbilitySystemLibrary::SetDodgeResponse(
 	EPantheliaDodgeResponse InDodgeResponse)
 {
 	FPantheliaGameplayEffectContext* PantheliaContext =
-		static_cast<FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+		GetMutablePantheliaEffectContext(EffectContextHandle);
 
 	if (PantheliaContext)
 	{
@@ -213,7 +257,7 @@ EPantheliaDefenseAttackType UPantheliaAbilitySystemLibrary::GetDefenseAttackType
 	const FGameplayEffectContextHandle& EffectContextHandle)
 {
 	const FPantheliaGameplayEffectContext* PantheliaContext =
-		static_cast<const FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+		GetPantheliaEffectContext(EffectContextHandle);
 
 	if (PantheliaContext)
 	{
@@ -228,7 +272,7 @@ void UPantheliaAbilitySystemLibrary::SetDefenseAttackType(
 	EPantheliaDefenseAttackType InDefenseAttackType)
 {
 	FPantheliaGameplayEffectContext* PantheliaContext =
-		static_cast<FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+		GetMutablePantheliaEffectContext(EffectContextHandle);
 
 	if (PantheliaContext)
 	{
@@ -240,7 +284,7 @@ EPantheliaHitOutcome UPantheliaAbilitySystemLibrary::GetHitOutcome(
 	const FGameplayEffectContextHandle& EffectContextHandle)
 {
 	const FPantheliaGameplayEffectContext* PantheliaContext =
-		static_cast<const FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+		GetPantheliaEffectContext(EffectContextHandle);
 
 	if (PantheliaContext)
 	{
@@ -255,7 +299,7 @@ void UPantheliaAbilitySystemLibrary::SetHitOutcome(
 	EPantheliaHitOutcome InHitOutcome)
 {
 	FPantheliaGameplayEffectContext* PantheliaContext =
-		static_cast<FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+		GetMutablePantheliaEffectContext(EffectContextHandle);
 
 	if (PantheliaContext)
 	{
@@ -267,7 +311,7 @@ bool UPantheliaAbilitySystemLibrary::WasGuardBroken(
 	const FGameplayEffectContextHandle& EffectContextHandle)
 {
 	const FPantheliaGameplayEffectContext* PantheliaContext =
-		static_cast<const FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+		GetPantheliaEffectContext(EffectContextHandle);
 
 	return PantheliaContext && PantheliaContext->WasGuardBroken();
 }
@@ -277,7 +321,7 @@ void UPantheliaAbilitySystemLibrary::SetWasGuardBroken(
 	bool bInWasGuardBroken)
 {
 	FPantheliaGameplayEffectContext* PantheliaContext =
-		static_cast<FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+		GetMutablePantheliaEffectContext(EffectContextHandle);
 
 	if (PantheliaContext)
 	{
@@ -292,7 +336,7 @@ void UPantheliaAbilitySystemLibrary::SetWasGuardBroken(
 bool UPantheliaAbilitySystemLibrary::IsSuccessfulDebuff(const FGameplayEffectContextHandle& EffectContextHandle)
 {
 	const FPantheliaGameplayEffectContext* PantheliaContext =
-		static_cast<const FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+		GetPantheliaEffectContext(EffectContextHandle);
 
 	if (PantheliaContext)
 	{
@@ -305,7 +349,7 @@ bool UPantheliaAbilitySystemLibrary::IsSuccessfulDebuff(const FGameplayEffectCon
 float UPantheliaAbilitySystemLibrary::GetDebuffDamage(const FGameplayEffectContextHandle& EffectContextHandle)
 {
 	const FPantheliaGameplayEffectContext* PantheliaContext =
-		static_cast<const FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+		GetPantheliaEffectContext(EffectContextHandle);
 
 	if (PantheliaContext)
 	{
@@ -318,7 +362,7 @@ float UPantheliaAbilitySystemLibrary::GetDebuffDamage(const FGameplayEffectConte
 float UPantheliaAbilitySystemLibrary::GetDebuffDuration(const FGameplayEffectContextHandle& EffectContextHandle)
 {
 	const FPantheliaGameplayEffectContext* PantheliaContext =
-		static_cast<const FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+		GetPantheliaEffectContext(EffectContextHandle);
 
 	if (PantheliaContext)
 	{
@@ -331,7 +375,7 @@ float UPantheliaAbilitySystemLibrary::GetDebuffDuration(const FGameplayEffectCon
 float UPantheliaAbilitySystemLibrary::GetDebuffFrequency(const FGameplayEffectContextHandle& EffectContextHandle)
 {
 	const FPantheliaGameplayEffectContext* PantheliaContext =
-		static_cast<const FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+		GetPantheliaEffectContext(EffectContextHandle);
 
 	if (PantheliaContext)
 	{
@@ -344,7 +388,7 @@ float UPantheliaAbilitySystemLibrary::GetDebuffFrequency(const FGameplayEffectCo
 FGameplayTag UPantheliaAbilitySystemLibrary::GetDamageType(const FGameplayEffectContextHandle& EffectContextHandle)
 {
 	const FPantheliaGameplayEffectContext* PantheliaContext =
-		static_cast<const FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+		GetPantheliaEffectContext(EffectContextHandle);
 
 	if (PantheliaContext)
 	{
@@ -365,7 +409,7 @@ FGameplayTag UPantheliaAbilitySystemLibrary::GetDamageType(const FGameplayEffect
 FVector UPantheliaAbilitySystemLibrary::GetDeathImpulse(const FGameplayEffectContextHandle& EffectContextHandle)
 {
 	const FPantheliaGameplayEffectContext* PantheliaContext =
-		static_cast<const FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+		GetPantheliaEffectContext(EffectContextHandle);
 
 	if (PantheliaContext)
 	{
@@ -378,7 +422,7 @@ FVector UPantheliaAbilitySystemLibrary::GetDeathImpulse(const FGameplayEffectCon
 FVector UPantheliaAbilitySystemLibrary::GetKnockbackForce(const FGameplayEffectContextHandle& EffectContextHandle)
 {
 	const FPantheliaGameplayEffectContext* PantheliaContext =
-		static_cast<const FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+		GetPantheliaEffectContext(EffectContextHandle);
 
 	if (PantheliaContext)
 	{
@@ -391,7 +435,7 @@ FVector UPantheliaAbilitySystemLibrary::GetKnockbackForce(const FGameplayEffectC
 FVector UPantheliaAbilitySystemLibrary::GetLaunchForce(const FGameplayEffectContextHandle& EffectContextHandle)
 {
 	const FPantheliaGameplayEffectContext* PantheliaContext =
-		static_cast<const FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+		GetPantheliaEffectContext(EffectContextHandle);
 
 	if (PantheliaContext)
 	{
@@ -404,7 +448,7 @@ FVector UPantheliaAbilitySystemLibrary::GetLaunchForce(const FGameplayEffectCont
 bool UPantheliaAbilitySystemLibrary::IsKnockbackHeavy(const FGameplayEffectContextHandle& EffectContextHandle)
 {
 	const FPantheliaGameplayEffectContext* PantheliaContext =
-		static_cast<const FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+		GetPantheliaEffectContext(EffectContextHandle);
 
 	if (PantheliaContext)
 	{
@@ -423,7 +467,7 @@ void UPantheliaAbilitySystemLibrary::SetIsSuccessfulDebuff(
 	bool bInSuccessfulDebuff)
 {
 	FPantheliaGameplayEffectContext* PantheliaContext =
-		static_cast<FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+		GetMutablePantheliaEffectContext(EffectContextHandle);
 
 	if (PantheliaContext)
 	{
@@ -436,7 +480,7 @@ void UPantheliaAbilitySystemLibrary::SetDebuffDamage(
 	float InDebuffDamage)
 {
 	FPantheliaGameplayEffectContext* PantheliaContext =
-		static_cast<FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+		GetMutablePantheliaEffectContext(EffectContextHandle);
 
 	if (PantheliaContext)
 	{
@@ -449,7 +493,7 @@ void UPantheliaAbilitySystemLibrary::SetDebuffDuration(
 	float InDebuffDuration)
 {
 	FPantheliaGameplayEffectContext* PantheliaContext =
-		static_cast<FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+		GetMutablePantheliaEffectContext(EffectContextHandle);
 
 	if (PantheliaContext)
 	{
@@ -462,7 +506,7 @@ void UPantheliaAbilitySystemLibrary::SetDebuffFrequency(
 	float InDebuffFrequency)
 {
 	FPantheliaGameplayEffectContext* PantheliaContext =
-		static_cast<FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+		GetMutablePantheliaEffectContext(EffectContextHandle);
 
 	if (PantheliaContext)
 	{
@@ -475,7 +519,7 @@ void UPantheliaAbilitySystemLibrary::SetDamageType(
 	const FGameplayTag& InDamageType)
 {
 	FPantheliaGameplayEffectContext* PantheliaContext =
-		static_cast<FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+		GetMutablePantheliaEffectContext(EffectContextHandle);
 
 	if (PantheliaContext)
 	{
@@ -492,7 +536,7 @@ void UPantheliaAbilitySystemLibrary::SetDeathImpulse(
 	const FVector& InImpulse)
 {
 	FPantheliaGameplayEffectContext* PantheliaContext =
-		static_cast<FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+		GetMutablePantheliaEffectContext(EffectContextHandle);
 
 	if (PantheliaContext)
 	{
@@ -505,7 +549,7 @@ void UPantheliaAbilitySystemLibrary::SetKnockbackForce(
 	const FVector& InForce)
 {
 	FPantheliaGameplayEffectContext* PantheliaContext =
-		static_cast<FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+		GetMutablePantheliaEffectContext(EffectContextHandle);
 
 	if (PantheliaContext)
 	{
@@ -518,7 +562,7 @@ void UPantheliaAbilitySystemLibrary::SetLaunchForce(
 	const FVector& InForce)
 {
 	FPantheliaGameplayEffectContext* PantheliaContext =
-		static_cast<FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+		GetMutablePantheliaEffectContext(EffectContextHandle);
 
 	if (PantheliaContext)
 	{
@@ -531,7 +575,7 @@ void UPantheliaAbilitySystemLibrary::SetKnockbackIsHeavy(
 	bool bInHeavy)
 {
 	FPantheliaGameplayEffectContext* PantheliaContext =
-		static_cast<FPantheliaGameplayEffectContext*>(EffectContextHandle.Get());
+		GetMutablePantheliaEffectContext(EffectContextHandle);
 
 	if (PantheliaContext)
 	{

@@ -28,6 +28,46 @@
 // (lo que usa el curso original) está DEPRECADO desde UE 5.3 — este componente es el reemplazo oficial.
 #include "GameplayEffectComponents/TargetTagsGameplayEffectComponent.h"
 
+namespace
+{
+	FString MakeSafeDynamicEffectNameFragment(const FString& RawValue)
+	{
+		FString SafeValue;
+		SafeValue.Reserve(RawValue.Len());
+
+		for (const TCHAR Character : RawValue)
+		{
+			SafeValue.AppendChar(FChar::IsAlnum(Character) || Character == TEXT('_')
+				? Character
+				: TEXT('_'));
+		}
+
+		return SafeValue.IsEmpty() ? TEXT("Invalid") : SafeValue;
+	}
+
+	FName MakeDynamicEffectCacheKey(const TCHAR* Prefix, const FGameplayTag& Tag)
+	{
+		return FName(*FString::Printf(
+			TEXT("%s_%s"),
+			Prefix,
+			*MakeSafeDynamicEffectNameFragment(Tag.ToString())));
+	}
+
+	FName MakePeriodicDynamicEffectCacheKey(
+		const TCHAR* Prefix,
+		const FGameplayTag& Tag,
+		float Frequency)
+	{
+		// GetTypeHash(float) conserva la identidad binaria del valor y evita que
+		// frecuencias distintas colisionen por una representación redondeada a %.2f.
+		return FName(*FString::Printf(
+			TEXT("%s_%s_P%08X"),
+			Prefix,
+			*MakeSafeDynamicEffectNameFragment(Tag.ToString()),
+			GetTypeHash(Frequency)));
+	}
+}
+
 UPantheliaAttributeSet::UPantheliaAttributeSet()
 {
 	// Primarios
@@ -667,7 +707,7 @@ void UPantheliaAttributeSet::HandleIncomingDamage(const FEffectProperties& Props
 	}
 
 	const FPantheliaGameplayEffectContext* PantheliaContext =
-		static_cast<const FPantheliaGameplayEffectContext*>(Props.EffectContextHandle.Get());
+		UPantheliaAbilitySystemLibrary::GetPantheliaEffectContext(Props.EffectContextHandle);
 	const bool bWasPerfectParry = PantheliaContext && PantheliaContext->WasParried();
 	const bool bTargetIsDead = IsValid(Props.TargetAvatarActor) &&
 		Props.TargetAvatarActor->Implements<UCombatInterface>() &&
@@ -1153,8 +1193,8 @@ void UPantheliaAttributeSet::ApplyElementalDebuff(const FEffectProperties& Props
 	// variante solo-tag no tiene Period y usa su propia clave. Daño y duración SÍ
 	// son SetByCaller del spec (abajo), por eso no fragmentan el caché.
 	const FName CacheKey = bIsDoT
-		? FName(*FString::Printf(TEXT("DynamicDebuff_%s_P%.2f"), *DebuffTag.ToString(), Frequency))
-		: FName(*FString::Printf(TEXT("DynamicStatus_%s"), *DebuffTag.ToString()));
+		? MakePeriodicDynamicEffectCacheKey(TEXT("DynamicDebuff"), DebuffTag, Frequency)
+		: MakeDynamicEffectCacheKey(TEXT("DynamicStatus"), DebuffTag);
 
 	TObjectPtr<UGameplayEffect>& CachedEffect = CachedDebuffEffects.FindOrAdd(CacheKey);
 	if (!CachedEffect)
@@ -1269,7 +1309,7 @@ void UPantheliaAttributeSet::ApplyInstantElementalDamage(
 	EffectContextHandle.AddSourceObject(Props.SourceAvatarActor);
 
 	const FPantheliaGameplayTags& GameplayTags = FPantheliaGameplayTags::Get();
-	const FName CacheKey(*FString::Printf(TEXT("DynamicStatusBurst_%s"), *DebuffTag.ToString()));
+	const FName CacheKey = MakeDynamicEffectCacheKey(TEXT("DynamicStatusBurst"), DebuffTag);
 
 	TObjectPtr<UGameplayEffect>& CachedEffect = CachedDebuffEffects.FindOrAdd(CacheKey);
 	if (!CachedEffect)
@@ -1306,7 +1346,7 @@ void UPantheliaAttributeSet::ApplyInstantElementalPoiseDamage(
 	EffectContextHandle.AddSourceObject(Props.SourceAvatarActor);
 
 	const FPantheliaGameplayTags& GameplayTags = FPantheliaGameplayTags::Get();
-	const FName CacheKey(*FString::Printf(TEXT("DynamicStatusPoise_%s"), *DebuffTag.ToString()));
+	const FName CacheKey = MakeDynamicEffectCacheKey(TEXT("DynamicStatusPoise"), DebuffTag);
 	TObjectPtr<UGameplayEffect>& CachedEffect = CachedDebuffEffects.FindOrAdd(CacheKey);
 	if (!CachedEffect)
 	{
@@ -1353,9 +1393,8 @@ void UPantheliaAttributeSet::ApplyElementalDefenseShred(
 	ExistingShredTag.AddTag(DefenseShredTag);
 	Props.TargetASC->RemoveActiveEffectsWithGrantedTags(ExistingShredTag);
 
-	FString SafeTagName = DefenseShredTag.ToString();
-	SafeTagName.ReplaceInline(TEXT("."), TEXT("_"));
-	const FName CacheKey(*FString::Printf(TEXT("DynamicDefenseShred_%s"), *SafeTagName));
+	const FName CacheKey = MakeDynamicEffectCacheKey(
+		TEXT("DynamicDefenseShred"), DefenseShredTag);
 	TObjectPtr<UGameplayEffect>& CachedEffect = CachedDebuffEffects.FindOrAdd(CacheKey);
 	if (!CachedEffect)
 	{
@@ -1487,7 +1526,7 @@ void UPantheliaAttributeSet::HandleParryReaction(const FEffectProperties& Props)
 {
 	// Leer el resultado del parry/bloqueo que el ExecCalc escribio en el context.
 	const FPantheliaGameplayEffectContext* PantheliaContext =
-		static_cast<const FPantheliaGameplayEffectContext*>(Props.EffectContextHandle.Get());
+		UPantheliaAbilitySystemLibrary::GetPantheliaEffectContext(Props.EffectContextHandle);
 	if (!PantheliaContext) return;
 
 	const bool bParried = PantheliaContext->WasParried();

@@ -35,6 +35,18 @@ void APantheliaPlayerController::BeginPlay()
 	SetInputMode(InputModeData);
 }
 
+void APantheliaPlayerController::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	ClearInteractionTarget();
+
+	if (bAttributeMenuOpen)
+	{
+		CloseAttributeMenu();
+	}
+
+	Super::EndPlay(EndPlayReason);
+}
+
 void APantheliaPlayerController::SetupInputComponent()
 {
 	APlayerController::SetupInputComponent();
@@ -284,28 +296,65 @@ void APantheliaPlayerController::PlayerTick(float DeltaTime)
 
 void APantheliaPlayerController::InteractionTrace()
 {
+	if (!IsValid(PlayerCameraManager) || !IsValid(GetWorld()))
+	{
+		ClearInteractionTarget();
+		return;
+	}
+
 	FHitResult InteractionHit;
 
-	FVector Start = PlayerCameraManager->GetCameraLocation();
-	FVector End = Start + (PlayerCameraManager->GetCameraRotation().Vector() * 500.f);
+	const FVector Start = PlayerCameraManager->GetCameraLocation();
+	const FVector End = Start + (PlayerCameraManager->GetCameraRotation().Vector() * 500.f);
 
 	GetWorld()->LineTraceSingleByChannel(InteractionHit, Start, End, ECC_Visibility);
 
-	if (!InteractionHit.bBlockingHit) return;
-
-	LastActor = ThisActor;
-	ThisActor = InteractionHit.GetActor();
-
-	if (LastActor != ThisActor)
+	AActor* HitActor = InteractionHit.bBlockingHit ? InteractionHit.GetActor() : nullptr;
+	if (!IsValid(HitActor) || !HitActor->Implements<UEnemy>())
 	{
-		if (LastActor)
-		{
-			IEnemy::Execute_UnHighlightActor(LastActor.GetObject());
-		}
+		ClearInteractionTarget();
+		return;
+	}
 
-		if (ThisActor)
+	SetInteractionTarget(HitActor);
+}
+
+void APantheliaPlayerController::SetInteractionTarget(AActor* NewTarget)
+{
+	if (!IsValid(NewTarget) || !NewTarget->Implements<UEnemy>())
+	{
+		ClearInteractionTarget();
+		return;
+	}
+
+	if (ThisActor.GetObject() == NewTarget)
+	{
+		return;
+	}
+
+	if (UObject* PreviousObject = ThisActor.GetObject())
+	{
+		if (IsValid(PreviousObject) && PreviousObject->Implements<UEnemy>())
 		{
-			IEnemy::Execute_HighlightActor(ThisActor.GetObject());
+			IEnemy::Execute_UnHighlightActor(PreviousObject);
 		}
 	}
+
+	LastActor = ThisActor;
+	ThisActor = NewTarget;
+	IEnemy::Execute_HighlightActor(NewTarget);
+}
+
+void APantheliaPlayerController::ClearInteractionTarget()
+{
+	if (UObject* CurrentObject = ThisActor.GetObject())
+	{
+		if (IsValid(CurrentObject) && CurrentObject->Implements<UEnemy>())
+		{
+			IEnemy::Execute_UnHighlightActor(CurrentObject);
+		}
+	}
+
+	LastActor = nullptr;
+	ThisActor = nullptr;
 }

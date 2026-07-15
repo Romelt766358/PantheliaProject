@@ -25,6 +25,23 @@ enum class EEffectRemovalPolicy : uint8
     DoNotRemove
 };
 
+/**
+ * Define qué Ability System Component construye el Gameplay Effect Spec.
+ *
+ * TargetSelf conserva el comportamiento de pickups/consumibles existentes: el
+ * objetivo fabrica y recibe su propio spec. Owner e Instigator son las opciones
+ * correctas para zonas ofensivas creadas por un jugador o enemigo, porque el
+ * source conserva sus atributos, nivel, penetración, crítico y atribución.
+ */
+UENUM(BlueprintType)
+enum class EPantheliaEffectSourcePolicy : uint8
+{
+    TargetSelf UMETA(DisplayName = "Target Self (Pickup / Self Effect)"),
+    EffectActorOwner UMETA(DisplayName = "Effect Actor Owner"),
+    EffectActorInstigator UMETA(DisplayName = "Effect Actor Instigator"),
+    EffectActorASC UMETA(DisplayName = "Effect Actor ASC")
+};
+
 UCLASS()
 class PANTHELIAPROJECT_API APantheliaEffectActor : public AActor
 {
@@ -35,6 +52,7 @@ public:
 
 protected:
     virtual void BeginPlay() override;
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
     UFUNCTION(BlueprintCallable)
     void ApplyEffectToTarget(AActor* TargetActor, TSubclassOf<UGameplayEffect> GameplayEffectClass);
@@ -84,6 +102,11 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Applied Effects")
     float ActorLevel = 1.0f;
 
+    // Define quién fabrica el spec. TargetSelf conserva los pickups actuales; las
+    // zonas ofensivas deben usar Owner o Instigator para atribuir correctamente el daño.
+    UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Applied Effects")
+    EPantheliaEffectSourcePolicy EffectSourcePolicy = EPantheliaEffectSourcePolicy::TargetSelf;
+
     // Destruye el actor al APLICAR el efecto (pociones/consumibles)
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Applied Effects")
     bool bDestroyOnEffectApplication = false;
@@ -92,7 +115,7 @@ protected:
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Applied Effects")
     bool bDestroyOnEffectRemoval = false;
 
-    // Si es true, solo afecta al jugador. Si es false, también afecta a enemigos.
+    // false: excluye enemigos. true: permite afectar tanto al jugador como a enemigos.
     UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Applied Effects")
     bool bApplyEffectsToEnemies = false;
 
@@ -104,6 +127,14 @@ private:
     TObjectPtr<UStaticMeshComponent> Mesh;
 
     // Mapa que asocia cada handle de efecto activo con el ASC del objetivo.
-    // Necesario para poder eliminar efectos infinitos correctamente.
-    TMap<FActiveGameplayEffectHandle, UAbilitySystemComponent*> ActiveEffectHandles;
+    // Se usan referencias débiles porque el objetivo puede destruirse antes que el volumen.
+    TMap<FActiveGameplayEffectHandle, TWeakObjectPtr<UAbilitySystemComponent>> ActiveEffectHandles;
+
+    bool ShouldAffectTarget(const AActor* TargetActor) const;
+    bool ApplyEffectToTargetInternal(AActor* TargetActor,
+        TSubclassOf<UGameplayEffect> GameplayEffectClass, bool& bOutWasInfinite);
+    UAbilitySystemComponent* ResolveSourceAbilitySystemComponent(
+        UAbilitySystemComponent* TargetASC) const;
+    bool RemoveTrackedEffectsFromTarget(UAbilitySystemComponent* TargetASC);
+    void RemoveAllTrackedInfiniteEffects();
 };

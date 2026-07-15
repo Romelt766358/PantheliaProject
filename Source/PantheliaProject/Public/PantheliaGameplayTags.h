@@ -33,6 +33,10 @@ public:
 	static const FPantheliaGameplayTags& Get() { return GameplayTags; }
 	static void InitializeNativeGameplayTags();
 
+	// --- CATEGORÍAS GENERALES DE ASSET TAGS ---
+	// Padre de mensajes de UI emitidos por Gameplay Effects de pickups/eventos.
+	FGameplayTag Message;
+
 	// --- ATRIBUTOS PRIMARIOS ---
 	FGameplayTag Attributes_Primary_Hardness;
 	FGameplayTag Attributes_Primary_Resonance;

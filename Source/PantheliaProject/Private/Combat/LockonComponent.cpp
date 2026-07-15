@@ -13,6 +13,7 @@
 ULockonComponent::ULockonComponent()
 {
 	PrimaryComponentTick.bCanEverTick = true;
+	PrimaryComponentTick.bStartWithTickEnabled = false;
 }
 
 void ULockonComponent::BeginPlay()
@@ -20,6 +21,18 @@ void ULockonComponent::BeginPlay()
 	Super::BeginPlay();
 
 	RefreshCachedReferences();
+	SetComponentTickEnabled(false);
+}
+
+void ULockonComponent::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	// EndPlay puede ocurrir sin que el target ejecute OnDeselect. Solo restauramos
+	// el estado que pertenece a este componente y evitamos tocar actores destruidos.
+	CurrentTargetActor = nullptr;
+	ClearLockonState();
+	SetComponentTickEnabled(false);
+
+	Super::EndPlay(EndPlayReason);
 }
 
 void ULockonComponent::RefreshCachedReferences()
@@ -291,6 +304,7 @@ void ULockonComponent::TickComponent(float DeltaTime, ELevelTick TickType, FActo
 		else
 		{
 			ClearLockonState();
+			SetComponentTickEnabled(false);
 			OnUpdatedTargetDelegate.Broadcast(nullptr);
 		}
 
@@ -745,6 +759,7 @@ void ULockonComponent::SetCurrentTarget(AActor* NewTarget, bool bCallDeselectOnO
 
 	if (IsValid(CurrentTargetActor))
 	{
+		SetComponentTickEnabled(true);
 		ApplyLockonState();
 		IEnemy::Execute_OnSelect(CurrentTargetActor.Get());
 		OnUpdatedTargetDelegate.Broadcast(CurrentTargetActor.Get());
@@ -752,6 +767,7 @@ void ULockonComponent::SetCurrentTarget(AActor* NewTarget, bool bCallDeselectOnO
 	else
 	{
 		ClearLockonState();
+		SetComponentTickEnabled(false);
 		OnUpdatedTargetDelegate.Broadcast(nullptr);
 	}
 }
@@ -763,20 +779,37 @@ void ULockonComponent::ApplyLockonState()
 		return;
 	}
 
-	if (Controller)
+	RefreshCachedReferences();
+
+	AppliedController = Controller;
+	AppliedMovementComp = MovementComp;
+	AppliedSpringArmComp = SpringArmComp;
+
+	if (APlayerController* AppliedControllerPtr = AppliedController.Get())
 	{
-		Controller->SetIgnoreLookInput(true);
+		// SetIgnoreLookInput usa solicitudes emparejadas. Guardamos que esta instancia
+		// añadió una para retirar exactamente una después, sin resetear las de menús,
+		// cinematics, stun u otros sistemas.
+		AppliedControllerPtr->SetIgnoreLookInput(true);
+		bOwnsIgnoreLookInputRequest = true;
 	}
 
-	if (MovementComp)
+	if (UCharacterMovementComponent* AppliedMovementPtr = AppliedMovementComp.Get())
 	{
-		MovementComp->bOrientRotationToMovement = false;
-		MovementComp->bUseControllerDesiredRotation = true;
+		bSavedOrientRotationToMovement = AppliedMovementPtr->bOrientRotationToMovement;
+		bSavedUseControllerDesiredRotation = AppliedMovementPtr->bUseControllerDesiredRotation;
+		bHasMovementSnapshot = true;
+
+		AppliedMovementPtr->bOrientRotationToMovement = false;
+		AppliedMovementPtr->bUseControllerDesiredRotation = true;
 	}
 
-	if (SpringArmComp)
+	if (USpringArmComponent* AppliedSpringArmPtr = AppliedSpringArmComp.Get())
 	{
-		SpringArmComp->TargetOffset = FVector{ 0.0f, 0.0f, 100.0f };
+		SavedSpringArmTargetOffset = AppliedSpringArmPtr->TargetOffset;
+		bHasSpringArmSnapshot = true;
+
+		AppliedSpringArmPtr->TargetOffset = FVector{ 0.0f, 0.0f, 100.0f };
 	}
 
 	bLockonStateApplied = true;
@@ -789,21 +822,36 @@ void ULockonComponent::ClearLockonState()
 		return;
 	}
 
-	if (MovementComp)
+	if (bHasMovementSnapshot)
 	{
-		MovementComp->bOrientRotationToMovement = true;
-		MovementComp->bUseControllerDesiredRotation = false;
+		if (UCharacterMovementComponent* AppliedMovementPtr = AppliedMovementComp.Get())
+		{
+			AppliedMovementPtr->bOrientRotationToMovement = bSavedOrientRotationToMovement;
+			AppliedMovementPtr->bUseControllerDesiredRotation = bSavedUseControllerDesiredRotation;
+		}
 	}
 
-	if (SpringArmComp)
+	if (bHasSpringArmSnapshot)
 	{
-		SpringArmComp->TargetOffset = FVector::ZeroVector;
+		if (USpringArmComponent* AppliedSpringArmPtr = AppliedSpringArmComp.Get())
+		{
+			AppliedSpringArmPtr->TargetOffset = SavedSpringArmTargetOffset;
+		}
 	}
 
-	if (Controller)
+	if (bOwnsIgnoreLookInputRequest)
 	{
-		Controller->ResetIgnoreLookInput();
+		if (APlayerController* AppliedControllerPtr = AppliedController.Get())
+		{
+			AppliedControllerPtr->SetIgnoreLookInput(false);
+		}
 	}
 
+	AppliedController.Reset();
+	AppliedMovementComp.Reset();
+	AppliedSpringArmComp.Reset();
+	bOwnsIgnoreLookInputRequest = false;
+	bHasMovementSnapshot = false;
+	bHasSpringArmSnapshot = false;
 	bLockonStateApplied = false;
 }

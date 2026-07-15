@@ -7,6 +7,11 @@ void FPantheliaGameplayTags::InitializeNativeGameplayTags()
 {
 	UGameplayTagsManager& Manager = UGameplayTagsManager::Get();
 
+	// --- CATEGORÍAS GENERALES DE ASSET TAGS ---
+	GameplayTags.Message = Manager.AddNativeGameplayTag(
+		FName("Message"),
+		FString("Padre de mensajes de UI emitidos como Asset Tags por Gameplay Effects."));
+
 	// --- ATRIBUTOS PRIMARIOS ---
 	GameplayTags.Attributes_Primary_Hardness = Manager.AddNativeGameplayTag(FName("Attributes.Primary.Hardness"), FString("Aumenta el daño físico y la eficacia de los ataques con arma."));
 	GameplayTags.Attributes_Primary_Resonance = Manager.AddNativeGameplayTag(FName("Attributes.Primary.Resonance"), FString("Aumenta el daño mágico y la eficacia de los hechizos."));

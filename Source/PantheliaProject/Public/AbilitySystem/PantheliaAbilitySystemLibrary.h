@@ -12,6 +12,7 @@
 class UOverlayWidgetController;
 class UAttributeMenuWidgetController;
 class UAbilitySystemComponent;
+struct FPantheliaGameplayEffectContext;
 
 /**
  * UPantheliaAbilitySystemLibrary
@@ -55,7 +56,14 @@ public:
 	// ============================================================
 	// GETTERS/SETTERS del Gameplay Effect Context custom
 	// ============================================================
-	// Estas funciones encapsulan el static cast a FPantheliaGameplayEffectContext
+	// Helpers C++ validados para acceder al context custom. Verifican el ScriptStruct
+	// antes del cast y emiten ensure claro si AbilitySystemGlobals está mal configurado.
+	static const FPantheliaGameplayEffectContext* GetPantheliaEffectContext(
+		const FGameplayEffectContextHandle& EffectContextHandle);
+	static FPantheliaGameplayEffectContext* GetMutablePantheliaEffectContext(
+		FGameplayEffectContextHandle& EffectContextHandle);
+
+	// Estas funciones encapsulan el acceso a FPantheliaGameplayEffectContext
 	// para que el resto del código no tenga que hacerlo manualmente.
 	// Se usan en ExecCalc_Damage (setters) y AttributeSet (getters).
 

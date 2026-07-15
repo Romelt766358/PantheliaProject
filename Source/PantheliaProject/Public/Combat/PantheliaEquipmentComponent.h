@@ -6,8 +6,11 @@
 #include "Components/ActorComponent.h"
 #include "PantheliaEquipmentComponent.generated.h"
 
+class ACharacter;
 class APantheliaWeapon;
 class UPantheliaWeaponDefinition;
+class UMeshComponent;
+class USkeletalMeshComponent;
 
 // Delegate para avisar cuándo cambia el arma equipada (UI, animaciones, etc.).
 // Pasa el arma nueva (puede ser null si se desequipó).
@@ -38,22 +41,28 @@ class PANTHELIAPROJECT_API UPantheliaEquipmentComponent : public UActorComponent
 public:
 	UPantheliaEquipmentComponent();
 
-	// Equipa un arma a partir de su WeaponDefinition:
-	//   1. Si ya hay un arma equipada, la desequipa (destruye su Actor).
-	//   2. Spawnea un APantheliaWeapon, le asigna el WeaponDefinition y lo inicializa.
-	//   3. Lo attachea al socket de la mano del personaje (HandSocketName).
-	//   4. Lo cachea como arma equipada y dispara OnWeaponEquipped.
-	// WeaponClass: la clase de Actor a spawnear (normalmente un BP hijo de APantheliaWeapon).
+	// Wrapper compatible con Blueprints existentes. Intenta equipar el arma de forma
+	// transaccional y conserva el arma anterior si la nueva configuración falla.
 	UFUNCTION(BlueprintCallable, Category = "Equipment")
 	void EquipWeapon(TSubclassOf<APantheliaWeapon> WeaponClass, UPantheliaWeaponDefinition* Definition);
+
+	// Equipa un arma de forma transaccional:
+	//   1. Valida owner, socket de mano, clase y WeaponDefinition.
+	//   2. Spawnea e inicializa el arma nueva en una variable temporal.
+	//   3. Valida mesh activo y sockets de Weapon Trace.
+	//   4. Valida el attachment.
+	//   5. Solo entonces publica el arma nueva y destruye la anterior.
+	// Devuelve false sin alterar el arma válida anterior cuando falla cualquier paso.
+	UFUNCTION(BlueprintCallable, Category = "Equipment")
+	bool TryEquipWeapon(TSubclassOf<APantheliaWeapon> WeaponClass, UPantheliaWeaponDefinition* Definition);
 
 	// Desequipa y destruye el arma actual (si hay). Dispara OnWeaponEquipped con null.
 	UFUNCTION(BlueprintCallable, Category = "Equipment")
 	void UnequipWeapon();
 
-	// Devuelve el Actor del arma equipada actualmente. Null si no hay arma.
+	// Devuelve el Actor del arma equipada actualmente. Null si no hay arma válida.
 	UFUNCTION(BlueprintCallable, Category = "Equipment")
-	APantheliaWeapon* GetEquippedWeapon() const { return EquippedWeapon; }
+	APantheliaWeapon* GetEquippedWeapon() const;
 
 	// Atajo: devuelve el WeaponDefinition del arma equipada. Null si no hay arma.
 	// La ability lo usa para leer moveset/daño/stamina sin pasar por el Actor.
@@ -71,6 +80,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	// Si se asigna, el componente equipa esta arma automáticamente al empezar.
 	// Útil para dar al jugador un arma inicial sin lógica extra.
@@ -84,4 +94,10 @@ private:
 	// El arma equipada actualmente (un solo slot en esta fase). Null si no hay.
 	UPROPERTY()
 	TObjectPtr<APantheliaWeapon> EquippedWeapon;
+
+	bool ResolveOwnerAndHandSocket(ACharacter*& OutOwnerCharacter, USkeletalMeshComponent*& OutOwnerMesh) const;
+	bool ValidateCandidateWeapon(APantheliaWeapon* CandidateWeapon,
+		UPantheliaWeaponDefinition* Definition, UMeshComponent*& OutWeaponMesh) const;
+	void ClearOwnerWeaponTraceSource() const;
+	void DestroyEquippedWeapon(bool bBroadcastChange);
 };

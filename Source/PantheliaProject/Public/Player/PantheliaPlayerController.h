@@ -26,6 +26,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 	virtual void SetupInputComponent() override;
 	virtual void PlayerTick(float DeltaTime) override;
 
@@ -95,6 +96,8 @@ private:
 	// --- INTERACTION TRACE ---
 
 	void InteractionTrace();
+	void SetInteractionTarget(AActor* NewTarget);
+	void ClearInteractionTarget();
 
 	UPROPERTY()
 	TScriptInterface<IEnemy> LastActor;

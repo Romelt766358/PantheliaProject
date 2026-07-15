@@ -7,6 +7,7 @@
 #include "AbilitySystem/Data/PantheliaAbilityInfo.h"
 #include "AbilitySystem/Data/PantheliaLevelUpInfo.h"
 #include "Player/PantheliaPlayerState.h"
+#include "PantheliaGameplayTags.h"
 #include "PantheliaLogChannels.h"
 
 void UOverlayWidgetController::BroadcastInitialValues()
@@ -173,7 +174,7 @@ void UOverlayWidgetController::OnEffectAssetTagsReceived(const FGameplayTagConta
 {
 	for (const FGameplayTag& Tag : AssetTags)
 	{
-		const FGameplayTag MessageTag = FGameplayTag::RequestGameplayTag(FName("Message"));
+		const FGameplayTag MessageTag = FPantheliaGameplayTags::Get().Message;
 		if (!Tag.MatchesTag(MessageTag))
 		{
 			continue;
@@ -224,7 +225,7 @@ void UOverlayWidgetController::OnInitializeStartupAbilities(UPantheliaAbilitySys
 			// son botones del gamepad, no iconos equipables. Saltarlas silenciosamente evita
 			// los errores "No se encontro entrada" en el log para abilities que correctamente
 			// no estan en DA_AbilityInfo.
-			const FGameplayTag SpellParentTag = FGameplayTag::RequestGameplayTag(FName("Abilities.Spell"));
+			const FGameplayTag SpellParentTag = FPantheliaGameplayTags::Get().Abilities_Spell;
 			if (!AbilityTag.MatchesTag(SpellParentTag))
 			{
 				return;

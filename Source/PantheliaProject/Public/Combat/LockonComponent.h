@@ -110,6 +110,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	// =========================
 	// Configuración de búsqueda
@@ -230,6 +231,20 @@ private:
 	// =========================
 
 	bool bLockonStateApplied = false;
+
+	// Snapshot exacto de los valores que este componente sustituye mientras hay lock-on.
+	// Se restaura sobre los mismos objetos que recibieron la solicitud, aunque las
+	// referencias cacheadas cambien por repossess o reconstrucción del Pawn.
+	TWeakObjectPtr<APlayerController> AppliedController;
+	TWeakObjectPtr<class UCharacterMovementComponent> AppliedMovementComp;
+	TWeakObjectPtr<class USpringArmComponent> AppliedSpringArmComp;
+
+	bool bOwnsIgnoreLookInputRequest = false;
+	bool bHasMovementSnapshot = false;
+	bool bSavedOrientRotationToMovement = true;
+	bool bSavedUseControllerDesiredRotation = false;
+	bool bHasSpringArmSnapshot = false;
+	FVector SavedSpringArmTargetOffset = FVector::ZeroVector;
 
 	// Acumula cuánto tiempo lleva bloqueada la línea de visión del target actual.
 	// Se resetea al cambiar de target o recuperar visibilidad.

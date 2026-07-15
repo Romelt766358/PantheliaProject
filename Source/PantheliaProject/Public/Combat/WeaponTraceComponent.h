@@ -196,4 +196,8 @@ private:
 	// arma cuyo Owner sea el atacante, caso jugador). Protege contra referencias a
 	// templates/CDO o componentes de otro actor, que producen traces lejos del personaje.
 	bool IsWeaponMeshValidForOwner() const;
+
+	// Resuelve y valida mesh, pertenencia, nombres de socket y existencia real.
+	// En modo externo nunca usa fallback. Devuelve false y deja el trace cerrado.
+	bool ResolveAndValidateTraceSource(bool bLogFailure);
 };
