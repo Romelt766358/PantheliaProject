@@ -85,6 +85,14 @@ protected:
 	UFUNCTION(BlueprintCallable, Category = "Projectile")
 	void SpawnProjectile();
 
-private:
+	// Devuelve el SocketTag configurado en el Blueprint o, si está vacío, el socket
+	// estándar de arma. Se mantiene protegido para que abilities especializadas
+	// (como Firebolt) reutilicen exactamente la misma resolución que SpawnProjectile().
+	FGameplayTag GetResolvedSocketTag() const;
+
+	// Devuelve el punto lógico hacia el que debe salir el proyectil. Con lock-on usa
+	// ULockonComponent::GetLockonLocation(), de modo que cámara, proyectiles y futuras
+	// trayectorias homing apunten al mismo punto del enemigo. Sin lock-on usa un punto
+	// frontal estable a 2000 cm, conservando el comportamiento actual del proyecto.
 	FVector GetFacingTargetLocation() const;
 };

@@ -30,6 +30,15 @@ void UPantheliaProjectileSpell::ActivateAbility(const FGameplayAbilitySpecHandle
 	Super::ActivateAbility(Handle, ActorInfo, ActivationInfo, TriggerEventData);
 }
 
+FGameplayTag UPantheliaProjectileSpell::GetResolvedSocketTag() const
+{
+	const FPantheliaGameplayTags& GameplayTags = FPantheliaGameplayTags::Get();
+
+	return SocketTag.IsValid()
+		? SocketTag
+		: GameplayTags.Montage_Attack_Weapon;
+}
+
 FVector UPantheliaProjectileSpell::GetFacingTargetLocation() const
 {
 	AActor* AvatarActor = GetAvatarActorFromActorInfo();
@@ -38,7 +47,10 @@ FVector UPantheliaProjectileSpell::GetFacingTargetLocation() const
 	ULockonComponent* LockonComp = AvatarActor->FindComponentByClass<ULockonComponent>();
 	if (LockonComp && IsValid(LockonComp->CurrentTargetActor))
 	{
-		return LockonComp->CurrentTargetActor->GetActorLocation();
+		// El punto lógico de lock-on puede estar en el torso, cabeza u otra zona
+		// configurada por enemigo. No usar GetActorLocation() aquí: normalmente apunta
+		// a los pies/origen y desincroniza cámara, proyectil y futuro homing.
+		return LockonComp->GetLockonLocation(LockonComp->CurrentTargetActor);
 	}
 
 	return AvatarActor->GetActorLocation() + AvatarActor->GetActorForwardVector() * 2000.f;
@@ -57,14 +69,9 @@ void UPantheliaProjectileSpell::SpawnProjectile()
 		return;
 	}
 
-	const FPantheliaGameplayTags& GameplayTags = FPantheliaGameplayTags::Get();
-
-	// Usar el SocketTag configurado en el BP del ability.
-	// Si no se configuró (tag inválido), fallback al socket de arma
-	// para mantener compatibilidad con el ability del jugador.
-	const FGameplayTag ResolvedSocketTag = SocketTag.IsValid()
-		? SocketTag
-		: GameplayTags.Montage_Attack_Weapon;
+	// Usar la misma resolución de socket que las abilities especializadas.
+	// Si SocketTag no se configuró, GetResolvedSocketTag() cae al socket de arma.
+	const FGameplayTag ResolvedSocketTag = GetResolvedSocketTag();
 
 	// BlueprintNativeEvent: llamar siempre via Execute_ en C++.
 	const FVector SocketLocation = ICombatInterface::Execute_GetCombatSocketLocation(

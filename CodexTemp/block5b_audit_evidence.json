@@ -1774,60 +1774,6 @@
       "graphs": []
     },
     {
-      "path": "/Game/Blueprints/GameplayEffects/GE_CrystalHeal.GE_CrystalHeal",
-      "class": "/Game/Blueprints/GameplayEffects/GE_CrystalHeal.GE_CrystalHeal_C",
-      "parent_class": "/Script/GameplayAbilities.GameplayEffect",
-      "actor_tags": [],
-      "components": [],
-      "root_component": null,
-      "graphs": []
-    },
-    {
-      "path": "/Game/Blueprints/GameplayEffects/GE_CrystalMana.GE_CrystalMana",
-      "class": "/Game/Blueprints/GameplayEffects/GE_CrystalMana.GE_CrystalMana_C",
-      "parent_class": "/Script/GameplayAbilities.GameplayEffect",
-      "actor_tags": [],
-      "components": [],
-      "root_component": null,
-      "graphs": []
-    },
-    {
-      "path": "/Game/Blueprints/GameplayEffects/GE_EventBasedEffect.GE_EventBasedEffect",
-      "class": "/Game/Blueprints/GameplayEffects/GE_EventBasedEffect.GE_EventBasedEffect_C",
-      "parent_class": "/Script/GameplayAbilities.GameplayEffect",
-      "actor_tags": [],
-      "components": [],
-      "root_component": null,
-      "graphs": []
-    },
-    {
-      "path": "/Game/Blueprints/GameplayEffects/GE_FireArena.GE_FireArena",
-      "class": "/Game/Blueprints/GameplayEffects/GE_FireArena.GE_FireArena_C",
-      "parent_class": "/Script/GameplayAbilities.GameplayEffect",
-      "actor_tags": [],
-      "components": [],
-      "root_component": null,
-      "graphs": []
-    },
-    {
-      "path": "/Game/Blueprints/GameplayEffects/GE_PotionHeal.GE_PotionHeal",
-      "class": "/Game/Blueprints/GameplayEffects/GE_PotionHeal.GE_PotionHeal_C",
-      "parent_class": "/Script/GameplayAbilities.GameplayEffect",
-      "actor_tags": [],
-      "components": [],
-      "root_component": null,
-      "graphs": []
-    },
-    {
-      "path": "/Game/Blueprints/GameplayEffects/GE_PotionMana.GE_PotionMana",
-      "class": "/Game/Blueprints/GameplayEffects/GE_PotionMana.GE_PotionMana_C",
-      "parent_class": "/Script/GameplayAbilities.GameplayEffect",
-      "actor_tags": [],
-      "components": [],
-      "root_component": null,
-      "graphs": []
-    },
-    {
       "path": "/Game/Blueprints/GameplayEffects/BP_FireArea.BP_FireArea",
       "class": "/Game/Blueprints/GameplayEffects/BP_FireArea.BP_FireArea_C",
       "parent_class": "/Script/PantheliaProject.PantheliaEffectActor",
@@ -2050,6 +1996,60 @@
         }
       ],
       "root_component": "/Game/Blueprints/GameplayEffects/BP_PotionMana.Default__BP_PotionMana_C:Mesh",
+      "graphs": []
+    },
+    {
+      "path": "/Game/Blueprints/GameplayEffects/GE_CrystalHeal.GE_CrystalHeal",
+      "class": "/Game/Blueprints/GameplayEffects/GE_CrystalHeal.GE_CrystalHeal_C",
+      "parent_class": "/Script/GameplayAbilities.GameplayEffect",
+      "actor_tags": [],
+      "components": [],
+      "root_component": null,
+      "graphs": []
+    },
+    {
+      "path": "/Game/Blueprints/GameplayEffects/GE_CrystalMana.GE_CrystalMana",
+      "class": "/Game/Blueprints/GameplayEffects/GE_CrystalMana.GE_CrystalMana_C",
+      "parent_class": "/Script/GameplayAbilities.GameplayEffect",
+      "actor_tags": [],
+      "components": [],
+      "root_component": null,
+      "graphs": []
+    },
+    {
+      "path": "/Game/Blueprints/GameplayEffects/GE_EventBasedEffect.GE_EventBasedEffect",
+      "class": "/Game/Blueprints/GameplayEffects/GE_EventBasedEffect.GE_EventBasedEffect_C",
+      "parent_class": "/Script/GameplayAbilities.GameplayEffect",
+      "actor_tags": [],
+      "components": [],
+      "root_component": null,
+      "graphs": []
+    },
+    {
+      "path": "/Game/Blueprints/GameplayEffects/GE_FireArena.GE_FireArena",
+      "class": "/Game/Blueprints/GameplayEffects/GE_FireArena.GE_FireArena_C",
+      "parent_class": "/Script/GameplayAbilities.GameplayEffect",
+      "actor_tags": [],
+      "components": [],
+      "root_component": null,
+      "graphs": []
+    },
+    {
+      "path": "/Game/Blueprints/GameplayEffects/GE_PotionHeal.GE_PotionHeal",
+      "class": "/Game/Blueprints/GameplayEffects/GE_PotionHeal.GE_PotionHeal_C",
+      "parent_class": "/Script/GameplayAbilities.GameplayEffect",
+      "actor_tags": [],
+      "components": [],
+      "root_component": null,
+      "graphs": []
+    },
+    {
+      "path": "/Game/Blueprints/GameplayEffects/GE_PotionMana.GE_PotionMana",
+      "class": "/Game/Blueprints/GameplayEffects/GE_PotionMana.GE_PotionMana_C",
+      "parent_class": "/Script/GameplayAbilities.GameplayEffect",
+      "actor_tags": [],
+      "components": [],
+      "root_component": null,
       "graphs": []
     },
     {
@@ -2922,30 +2922,6 @@
       "graphs": []
     },
     {
-      "path": "/Game/ThirdPerson/Blueprints/BP_ThirdPersonGameMode.BP_ThirdPersonGameMode",
-      "class": "/Game/ThirdPerson/Blueprints/BP_ThirdPersonGameMode.BP_ThirdPersonGameMode_C",
-      "parent_class": "/Script/Engine.GameModeBase",
-      "actor_tags": [],
-      "components": [],
-      "root_component": null,
-      "graphs": []
-    },
-    {
-      "path": "/Game/ThirdPerson/Blueprints/BP_ThirdPersonPlayerController.BP_ThirdPersonPlayerController",
-      "class": "/Game/ThirdPerson/Blueprints/BP_ThirdPersonPlayerController.BP_ThirdPersonPlayerController_C",
-      "parent_class": "/Script/Engine.PlayerController",
-      "actor_tags": [],
-      "components": [
-        {
-          "name": "TransformComponent0",
-          "class": "/Script/Engine.SceneComponent",
-          "component_tags": []
-        }
-      ],
-      "root_component": "/Game/ThirdPerson/Blueprints/BP_ThirdPersonPlayerController.Default__BP_ThirdPersonPlayerController_C:TransformComponent0",
-      "graphs": []
-    },
-    {
       "path": "/Game/ThirdPerson/Blueprints/BP_ThirdPersonCharacter.BP_ThirdPersonCharacter",
       "class": "/Game/ThirdPerson/Blueprints/BP_ThirdPersonCharacter.BP_ThirdPersonCharacter_C",
       "parent_class": "/Script/PantheliaProject.MainCharacter",
@@ -3102,7 +3078,7 @@
           "name": "CameraBoom",
           "class": "/Script/Engine.SpringArmComponent",
           "component_tags": [],
-          "target_offset": "<Struct 'Vector' (0x0000021D2DB562B0) {x: 0.000000, y: 0.000000, z: 0.000000}>"
+          "target_offset": "<Struct 'Vector' (0x0000013053B5F6B0) {x: 0.000000, y: 0.000000, z: 0.000000}>"
         },
         {
           "name": "PlayerCameraComponent",
@@ -3129,11 +3105,6 @@
         {
           "name": "LockonComponent",
           "class": "/Script/PantheliaProject.LockonComponent",
-          "component_tags": []
-        },
-        {
-          "name": "BlockComponent",
-          "class": "/Script/PantheliaProject.BlockComponent",
           "component_tags": []
         },
         {
@@ -3326,6 +3297,30 @@
           ]
         }
       ]
+    },
+    {
+      "path": "/Game/ThirdPerson/Blueprints/BP_ThirdPersonGameMode.BP_ThirdPersonGameMode",
+      "class": "/Game/ThirdPerson/Blueprints/BP_ThirdPersonGameMode.BP_ThirdPersonGameMode_C",
+      "parent_class": "/Script/Engine.GameModeBase",
+      "actor_tags": [],
+      "components": [],
+      "root_component": null,
+      "graphs": []
+    },
+    {
+      "path": "/Game/ThirdPerson/Blueprints/BP_ThirdPersonPlayerController.BP_ThirdPersonPlayerController",
+      "class": "/Game/ThirdPerson/Blueprints/BP_ThirdPersonPlayerController.BP_ThirdPersonPlayerController_C",
+      "parent_class": "/Script/Engine.PlayerController",
+      "actor_tags": [],
+      "components": [
+        {
+          "name": "TransformComponent0",
+          "class": "/Script/Engine.SceneComponent",
+          "component_tags": []
+        }
+      ],
+      "root_component": "/Game/ThirdPerson/Blueprints/BP_ThirdPersonPlayerController.Default__BP_ThirdPersonPlayerController_C:TransformComponent0",
+      "graphs": []
     },
     {
       "path": "/Game/UI/WBP_Lockon.WBP_Lockon",
