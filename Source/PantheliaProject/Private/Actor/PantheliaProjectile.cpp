@@ -2,6 +2,8 @@
 
 #include "Actor/PantheliaProjectile.h"
 #include "Components/SphereComponent.h"
+#include "Components/SceneComponent.h"
+#include "Engine/World.h"
 #include "GameFramework/ProjectileMovementComponent.h"
 #include "Kismet/GameplayStatics.h"
 #include "NiagaraFunctionLibrary.h"
@@ -13,6 +15,8 @@
 // en el contexto del spec antes de aplicarlo (clase 313).
 #include "PantheliaGameplayTags.h"
 #include "AbilitySystem/PantheliaAbilitySystemLibrary.h"
+#include "Interfaces/Enemy.h"
+#include "TimerManager.h"
 
 namespace
 {
@@ -55,11 +59,18 @@ namespace
 
 APantheliaProjectile::APantheliaProjectile()
 {
-	PrimaryActorTick.bCanEverTick = false;
+	// El tick permanece desactivado casi toda la vida del actor. Solo se habilita
+	// durante la breve ventana de soft homing para actualizar el punto lógico móvil.
+	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bStartWithTickEnabled = false;
 	bReplicates = true;
 
 	Sphere = CreateDefaultSubobject<USphereComponent>(TEXT("Sphere"));
 	SetRootComponent(Sphere);
+
+	HomingTargetSceneComponent = CreateDefaultSubobject<USceneComponent>(TEXT("HomingTargetSceneComponent"));
+	HomingTargetSceneComponent->SetupAttachment(Sphere);
+	HomingTargetSceneComponent->SetAbsolute(true, true, true);
 
 	Sphere->SetCollisionObjectType(ECC_Projectile);
 	Sphere->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
@@ -104,6 +115,202 @@ void APantheliaProjectile::BeginPlay()
 	{
 		LoopingSoundComponent = UGameplayStatics::SpawnSoundAttached(LoopingSound, GetRootComponent());
 	}
+
+	if (bSoftHomingConfigured)
+	{
+		// La rotación del SpawnTransform representa la trayectoria inicial exacta.
+		// Usarla evita depender del momento interno en que ProjectileMovement inicializa
+		// Velocity durante el spawn diferido.
+		SoftHomingInitialDirection = GetActorForwardVector().GetSafeNormal();
+
+		if (SoftHomingSettings.StartDelay <= KINDA_SMALL_NUMBER)
+		{
+			StartSoftHoming();
+		}
+		else if (UWorld* World = GetWorld())
+		{
+			World->GetTimerManager().SetTimer(
+				SoftHomingStartTimerHandle,
+				this,
+				&APantheliaProjectile::StartSoftHoming,
+				SoftHomingSettings.StartDelay,
+				false);
+		}
+	}
+}
+
+void APantheliaProjectile::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(SoftHomingStartTimerHandle);
+		World->GetTimerManager().ClearTimer(SoftHomingStopTimerHandle);
+	}
+
+	StopSoftHoming();
+
+	Super::EndPlay(EndPlayReason);
+}
+
+void APantheliaProjectile::Tick(const float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+
+	if (bSoftHomingActive)
+	{
+		UpdateSoftHomingTarget();
+	}
+}
+
+void APantheliaProjectile::SetProjectileSpeed(const float InSpeed)
+{
+	if (!ProjectileMovement || !FMath::IsFinite(InSpeed) || InSpeed <= 0.f)
+	{
+		return;
+	}
+
+	ProjectileMovement->InitialSpeed = InSpeed;
+	ProjectileMovement->MaxSpeed = InSpeed;
+	ProjectileMovement->Velocity = GetActorForwardVector().GetSafeNormal() * InSpeed;
+}
+
+void APantheliaProjectile::ConfigureSoftHoming(
+	AActor* InTargetActor,
+	const FPantheliaProjectileHomingSettings& InSettings)
+{
+	SoftHomingTargetActor = InTargetActor;
+	SoftHomingSettings = InSettings;
+
+	SoftHomingSettings.StartDelay = FMath::Max(0.f, SoftHomingSettings.StartDelay);
+	SoftHomingSettings.Duration = FMath::Max(0.f, SoftHomingSettings.Duration);
+	SoftHomingSettings.AccelerationMagnitude =
+		FMath::Max(0.f, SoftHomingSettings.AccelerationMagnitude);
+	SoftHomingSettings.MaxCorrectionAngleDegrees =
+		FMath::Clamp(SoftHomingSettings.MaxCorrectionAngleDegrees, 0.f, 180.f);
+
+	bSoftHomingConfigured =
+		SoftHomingSettings.bEnabled &&
+		IsValid(InTargetActor) &&
+		SoftHomingSettings.Duration > KINDA_SMALL_NUMBER &&
+		SoftHomingSettings.AccelerationMagnitude > KINDA_SMALL_NUMBER &&
+		SoftHomingSettings.MaxCorrectionAngleDegrees > KINDA_SMALL_NUMBER;
+}
+
+void APantheliaProjectile::StartSoftHoming()
+{
+	if (!bSoftHomingConfigured || !ProjectileMovement ||
+		!IsValid(SoftHomingTargetActor.Get()) || !HomingTargetSceneComponent)
+	{
+		StopSoftHoming();
+		return;
+	}
+
+	const FVector TargetLocation = ResolveSoftHomingTargetLocation();
+	if (!IsSoftHomingTargetInsideCorrectionCone(TargetLocation))
+	{
+		StopSoftHoming();
+		return;
+	}
+
+	HomingTargetSceneComponent->SetWorldLocation(TargetLocation);
+	ProjectileMovement->HomingTargetComponent = HomingTargetSceneComponent;
+	ProjectileMovement->HomingAccelerationMagnitude =
+		SoftHomingSettings.AccelerationMagnitude;
+	ProjectileMovement->bIsHomingProjectile = true;
+	bSoftHomingActive = true;
+	SetActorTickEnabled(true);
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(
+			SoftHomingStopTimerHandle,
+			this,
+			&APantheliaProjectile::StopSoftHoming,
+			SoftHomingSettings.Duration,
+			false);
+	}
+}
+
+void APantheliaProjectile::StopSoftHoming()
+{
+	bSoftHomingActive = false;
+	SetActorTickEnabled(false);
+
+	if (ProjectileMovement)
+	{
+		ProjectileMovement->bIsHomingProjectile = false;
+		ProjectileMovement->HomingTargetComponent.Reset();
+	}
+
+	if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().ClearTimer(SoftHomingStopTimerHandle);
+	}
+}
+
+void APantheliaProjectile::UpdateSoftHomingTarget()
+{
+	if (!IsValid(SoftHomingTargetActor.Get()) || !HomingTargetSceneComponent)
+	{
+		StopSoftHoming();
+		return;
+	}
+
+	const FVector TargetLocation = ResolveSoftHomingTargetLocation();
+	if (!IsSoftHomingTargetInsideCorrectionCone(TargetLocation))
+	{
+		// El objetivo salió del cono original. El proyectil mantiene la velocidad
+		// actual y continúa sin intentar darse la vuelta para perseguirlo.
+		StopSoftHoming();
+		return;
+	}
+
+	HomingTargetSceneComponent->SetWorldLocation(TargetLocation);
+}
+
+FVector APantheliaProjectile::ResolveSoftHomingTargetLocation() const
+{
+	AActor* TargetActor = SoftHomingTargetActor.Get();
+	if (!IsValid(TargetActor))
+	{
+		return GetActorLocation() + GetActorForwardVector() * 1000.f;
+	}
+
+	if (TargetActor->GetClass()->ImplementsInterface(UEnemy::StaticClass()))
+	{
+		return IEnemy::Execute_GetLockonLocation(TargetActor);
+	}
+
+	if (const USceneComponent* TargetRoot = TargetActor->GetRootComponent())
+	{
+		return TargetRoot->GetComponentLocation();
+	}
+
+	return TargetActor->GetActorLocation();
+}
+
+bool APantheliaProjectile::IsSoftHomingTargetInsideCorrectionCone(
+	const FVector& TargetLocation) const
+{
+	if (SoftHomingSettings.MaxCorrectionAngleDegrees >= 180.f - KINDA_SMALL_NUMBER)
+	{
+		return true;
+	}
+
+	const FVector DesiredDirection =
+		(TargetLocation - GetActorLocation()).GetSafeNormal();
+	if (DesiredDirection.IsNearlyZero() || SoftHomingInitialDirection.IsNearlyZero())
+	{
+		return false;
+	}
+
+	const float Dot = FMath::Clamp(
+		FVector::DotProduct(SoftHomingInitialDirection, DesiredDirection),
+		-1.f,
+		1.f);
+	const float AngleDegrees = FMath::RadiansToDegrees(FMath::Acos(Dot));
+
+	return AngleDegrees <= SoftHomingSettings.MaxCorrectionAngleDegrees;
 }
 
 void APantheliaProjectile::OnSphereOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,

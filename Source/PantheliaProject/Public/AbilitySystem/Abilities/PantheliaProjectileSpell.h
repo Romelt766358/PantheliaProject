@@ -8,6 +8,7 @@
 
 class APantheliaProjectile;
 class UAnimMontage;
+struct FPantheliaProjectileHomingSettings;
 
 /**
  * UPantheliaProjectileSpell
@@ -15,10 +16,11 @@ class UAnimMontage;
  * Ability base para hechizos que spawnan proyectiles.
  * Hereda de UPantheliaDamageGameplayAbility para tener acceso a DamageTypes y PoiseDamage.
  *
- * SpawnProjectile() crea el proyectil, le asigna el GE de daño con SetByCaller
- * para cada entrada de DamageTypes (y Damage.Poise si > 0), y lo lanza.
+ * SpawnProjectile() mantiene el flujo de un único proyectil usado por Firebolt y por
+ * enemigos ranged. Las subclases especializadas pueden reutilizar
+ * SpawnProjectileWithRotation() para crear patrones sin duplicar el pipeline de daño.
  *
- * Flujo de uso en el Event Graph del Blueprint hijo:
+ * Flujo de uso en el Event Graph del Blueprint hijo de proyectil único:
  *   1. ActivateAbility → CommitAbility (una sola vez)
  *   2. Si CommitAbility devuelve true: UpdateFacingTarget → PlayMontageAndWait
  *   3. WaitGameplayEvent (SocketTag) → SpawnProjectile()
@@ -80,19 +82,34 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Projectile")
 	TSubclassOf<APantheliaProjectile> ProjectileClass;
 
-	// Spawna el proyectil y le asigna el spec de daño completo.
+	// Spawna un único proyectil y le asigna el spec de daño completo.
 	// Llamar desde Blueprint cuando WaitGameplayEvent recibe el evento del notify.
 	UFUNCTION(BlueprintCallable, Category = "Projectile")
 	void SpawnProjectile();
 
 	// Devuelve el SocketTag configurado en el Blueprint o, si está vacío, el socket
-	// estándar de arma. Se mantiene protegido para que abilities especializadas
-	// (como Firebolt) reutilicen exactamente la misma resolución que SpawnProjectile().
+	// estándar de arma. Las abilities especializadas reutilizan la misma resolución.
 	FGameplayTag GetResolvedSocketTag() const;
 
+	// Devuelve el actor de lock-on actual. Null cuando el caster no tiene lock-on.
+	// Se deja virtual para que futuras variantes enemigas resuelvan su CombatTarget
+	// sin duplicar el resto del sistema de proyectiles.
+	virtual AActor* GetFacingTargetActor() const;
+
 	// Devuelve el punto lógico hacia el que debe salir el proyectil. Con lock-on usa
-	// ULockonComponent::GetLockonLocation(), de modo que cámara, proyectiles y futuras
-	// trayectorias homing apunten al mismo punto del enemigo. Sin lock-on usa un punto
-	// frontal estable a 2000 cm, conservando el comportamiento actual del proyecto.
-	FVector GetFacingTargetLocation() const;
+	// ULockonComponent::GetLockonLocation(), de modo que cámara, proyectiles y homing
+	// apunten al mismo punto. Sin lock-on usa un punto frontal estable a 2000 cm.
+	virtual FVector GetFacingTargetLocation() const;
+
+	// Obtiene el socket real de este disparo mediante ICombatInterface.
+	FVector GetProjectileSocketLocation() const;
+
+	// Ruta única de spawn para proyectiles simples y múltiples. Cada llamada crea un
+	// spec de daño independiente; esto evita compartir un EffectContext mutable entre
+	// proyectiles hermanos que pueden impactar al mismo tiempo.
+	APantheliaProjectile* SpawnProjectileWithRotation(
+		const FRotator& ProjectileRotation,
+		AActor* HomingTargetActor = nullptr,
+		const FPantheliaProjectileHomingSettings* HomingSettings = nullptr,
+		float ProjectileSpeedOverride = 0.f);
 };

@@ -10,7 +10,7 @@
  * UPantheliaProjectilePatternLibrary
  *
  * Utilidades matemáticas puras para patrones de proyectiles.
- * No spawnea actores, no conoce GAS y no conoce Firebolt: solo transforma datos.
+ * No spawnea actores, no conoce GAS y no conoce ningún elemento: solo transforma datos.
  *
  * Separar la geometría del patrón de la ability permite reutilizarla en hechizos,
  * ataques de bosses, trampas y patrones radiales sin duplicar el algoritmo.

@@ -1,13 +1,11 @@
 // Fill out your copyright notice in the Description page of Project Settings.
 
 #include "AbilitySystem/Abilities/PantheliaProjectileSpell.h"
+
 #include "Actor/PantheliaProjectile.h"
-#include "Interfaces/CombatInterface.h"
 #include "Combat/LockonComponent.h"
-#include "AbilitySystemBlueprintLibrary.h"
-#include "AbilitySystemComponent.h"
+#include "Interfaces/CombatInterface.h"
 #include "PantheliaGameplayTags.h"
-#include "AbilitySystem/PantheliaAttributeSet.h"
 
 UPantheliaProjectileSpell::UPantheliaProjectileSpell()
 {
@@ -22,7 +20,8 @@ UPantheliaProjectileSpell::UPantheliaProjectileSpell()
 	AdditionalResourceCosts.Add(StaminaCost);
 }
 
-void UPantheliaProjectileSpell::ActivateAbility(const FGameplayAbilitySpecHandle Handle,
+void UPantheliaProjectileSpell::ActivateAbility(
+	const FGameplayAbilitySpecHandle Handle,
 	const FGameplayAbilityActorInfo* ActorInfo,
 	const FGameplayAbilityActivationInfo ActivationInfo,
 	const FGameplayEventData* TriggerEventData)
@@ -39,87 +38,150 @@ FGameplayTag UPantheliaProjectileSpell::GetResolvedSocketTag() const
 		: GameplayTags.Montage_Attack_Weapon;
 }
 
+AActor* UPantheliaProjectileSpell::GetFacingTargetActor() const
+{
+	AActor* AvatarActor = GetAvatarActorFromActorInfo();
+	if (!IsValid(AvatarActor))
+	{
+		return nullptr;
+	}
+
+	if (ULockonComponent* LockonComp =
+		AvatarActor->FindComponentByClass<ULockonComponent>())
+	{
+		return IsValid(LockonComp->CurrentTargetActor)
+			? LockonComp->CurrentTargetActor.Get()
+			: nullptr;
+	}
+
+	return nullptr;
+}
+
 FVector UPantheliaProjectileSpell::GetFacingTargetLocation() const
 {
 	AActor* AvatarActor = GetAvatarActorFromActorInfo();
-	if (!AvatarActor) return FVector::ZeroVector;
-
-	ULockonComponent* LockonComp = AvatarActor->FindComponentByClass<ULockonComponent>();
-	if (LockonComp && IsValid(LockonComp->CurrentTargetActor))
+	if (!IsValid(AvatarActor))
 	{
-		// El punto lógico de lock-on puede estar en el torso, cabeza u otra zona
-		// configurada por enemigo. No usar GetActorLocation() aquí: normalmente apunta
-		// a los pies/origen y desincroniza cámara, proyectil y futuro homing.
-		return LockonComp->GetLockonLocation(LockonComp->CurrentTargetActor);
+		return FVector::ZeroVector;
 	}
 
-	return AvatarActor->GetActorLocation() + AvatarActor->GetActorForwardVector() * 2000.f;
+	if (AActor* TargetActor = GetFacingTargetActor())
+	{
+		if (ULockonComponent* LockonComp =
+			AvatarActor->FindComponentByClass<ULockonComponent>())
+		{
+			// El punto lógico puede estar en torso, cabeza u otra zona configurada.
+			// No usar GetActorLocation(): normalmente apunta a los pies/origen.
+			return LockonComp->GetLockonLocation(TargetActor);
+		}
+	}
+
+	return AvatarActor->GetActorLocation() +
+		AvatarActor->GetActorForwardVector() * 2000.f;
+}
+
+FVector UPantheliaProjectileSpell::GetProjectileSocketLocation() const
+{
+	AActor* AvatarActor = GetAvatarActorFromActorInfo();
+	if (!IsValid(AvatarActor))
+	{
+		return FVector::ZeroVector;
+	}
+
+	if (!AvatarActor->GetClass()->ImplementsInterface(UCombatInterface::StaticClass()))
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("PantheliaProjectileSpell::GetProjectileSocketLocation — %s no implementa CombatInterface."),
+			*GetNameSafe(AvatarActor));
+		return AvatarActor->GetActorLocation();
+	}
+
+	// BlueprintNativeEvent: llamar siempre via Execute_ en C++.
+	return ICombatInterface::Execute_GetCombatSocketLocation(
+		AvatarActor,
+		GetResolvedSocketTag());
 }
 
 void UPantheliaProjectileSpell::SpawnProjectile()
 {
+	const FVector SocketLocation = GetProjectileSocketLocation();
+	const FVector TargetLocation = GetFacingTargetLocation();
+	const FVector Direction = (TargetLocation - SocketLocation).GetSafeNormal();
+
+	if (Direction.IsNearlyZero())
+	{
+		UE_LOG(LogTemp, Warning,
+			TEXT("PantheliaProjectileSpell::SpawnProjectile — dirección inválida en %s."),
+			*GetName());
+		return;
+	}
+
+	FRotator ProjectileRotation = Direction.Rotation();
+	ProjectileRotation.Pitch = 0.f;
+	ProjectileRotation.Roll = 0.f;
+
+	SpawnProjectileWithRotation(ProjectileRotation);
+}
+
+APantheliaProjectile* UPantheliaProjectileSpell::SpawnProjectileWithRotation(
+	const FRotator& ProjectileRotation,
+	AActor* HomingTargetActor,
+	const FPantheliaProjectileHomingSettings* HomingSettings,
+	const float ProjectileSpeedOverride)
+{
 	AActor* AvatarActor = GetAvatarActorFromActorInfo();
-	if (!AvatarActor || !AvatarActor->HasAuthority()) return;
+	UWorld* World = GetWorld();
+	if (!IsValid(AvatarActor) || !IsValid(World) || !AvatarActor->HasAuthority())
+	{
+		return nullptr;
+	}
 
 	// Si no se asignó ProjectileClass en el Blueprint del ability, no hay nada que spawnear.
 	// Sin este guard, SpawnActorDeferred devuelve null y FinishSpawning crashea.
 	if (!ProjectileClass)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("PantheliaProjectileSpell::SpawnProjectile — ProjectileClass no asignado en %s"), *GetName());
-		return;
+		UE_LOG(LogTemp, Warning,
+			TEXT("PantheliaProjectileSpell::SpawnProjectileWithRotation — ProjectileClass no asignado en %s"),
+			*GetName());
+		return nullptr;
 	}
 
-	// Usar la misma resolución de socket que las abilities especializadas.
-	// Si SocketTag no se configuró, GetResolvedSocketTag() cae al socket de arma.
-	const FGameplayTag ResolvedSocketTag = GetResolvedSocketTag();
-
-	// BlueprintNativeEvent: llamar siempre via Execute_ en C++.
-	const FVector SocketLocation = ICombatInterface::Execute_GetCombatSocketLocation(
-		AvatarActor, ResolvedSocketTag);
-	const FVector TargetLocation = GetFacingTargetLocation();
-	const FVector Direction = (TargetLocation - SocketLocation).GetSafeNormal();
-
-	FRotator ProjectileRotation = Direction.Rotation();
-	ProjectileRotation.Pitch = 0.f;
-
 	FTransform SpawnTransform;
-	SpawnTransform.SetLocation(SocketLocation);
+	SpawnTransform.SetLocation(GetProjectileSocketLocation());
 	SpawnTransform.SetRotation(ProjectileRotation.Quaternion());
 
-	APantheliaProjectile* Projectile = GetWorld()->SpawnActorDeferred<APantheliaProjectile>(
+	APantheliaProjectile* Projectile = World->SpawnActorDeferred<APantheliaProjectile>(
 		ProjectileClass,
 		SpawnTransform,
 		GetOwningActorFromActorInfo(),
 		Cast<APawn>(AvatarActor),
-		ESpawnActorCollisionHandlingMethod::AlwaysSpawn
-	);
+		ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 
 	// SpawnActorDeferred puede devolver null si la clase no es válida o hay un
 	// conflicto de colisión irrecuperable. Siempre verificar antes de usar.
 	if (!Projectile)
 	{
-		UE_LOG(LogTemp, Warning, TEXT("PantheliaProjectileSpell::SpawnProjectile — SpawnActorDeferred devolvió null para %s"), *ProjectileClass->GetName());
-		return;
+		UE_LOG(LogTemp, Warning,
+			TEXT("PantheliaProjectileSpell::SpawnProjectileWithRotation — SpawnActorDeferred devolvió null para %s"),
+			*ProjectileClass->GetName());
+		return nullptr;
 	}
 
 	if (DamageEffectClass)
 	{
-		if (UAbilitySystemComponent* SourceASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(AvatarActor))
-		{
-			FGameplayEffectContextHandle EffectContextHandle = SourceASC->MakeEffectContext();
-			EffectContextHandle.AddSourceObject(AvatarActor);
+		// Un spec nuevo por proyectil. APantheliaProjectile escribe dirección de muerte,
+		// knockback y launch en su EffectContext al impactar; compartir el mismo spec entre
+		// hermanos permitiría que dos impactos simultáneos contaminaran ese contexto.
+		Projectile->DamageEffectSpecHandle = MakeDamageSpec();
+	}
 
-			FGameplayEffectSpecHandle DamageSpecHandle = SourceASC->MakeOutgoingSpec(
-				DamageEffectClass, GetAbilityLevel(), EffectContextHandle);
-
-			// Aplicar todo el escalado de daño (base + atributos + postura) al spec.
-			// Lógica centralizada en la clase base UPantheliaDamageGameplayAbility,
-			// compartida con CauseDamage (melee) para garantizar consistencia.
-			ApplyDamageScalingToSpec(DamageSpecHandle, SourceASC);
-
-			Projectile->DamageEffectSpecHandle = DamageSpecHandle;
-		}
+	if (HomingSettings && HomingSettings->bEnabled && IsValid(HomingTargetActor))
+	{
+		Projectile->ConfigureSoftHoming(HomingTargetActor, *HomingSettings);
 	}
 
 	Projectile->FinishSpawning(SpawnTransform);
+	Projectile->SetProjectileSpeed(ProjectileSpeedOverride);
+
+	return Projectile;
 }

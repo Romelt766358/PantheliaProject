@@ -8,9 +8,43 @@
 #include "PantheliaProjectile.generated.h"
 
 class USphereComponent;
+class USceneComponent;
 class UProjectileMovementComponent;
 class UNiagaraSystem;
 class UAudioComponent;
+
+/**
+ * FPantheliaProjectileHomingSettings
+ *
+ * Configuración runtime para una asistencia de seguimiento limitada.
+ * No representa un misil perfecto: el proyectil solo corrige durante una ventana
+ * concreta y abandona el seguimiento si el objetivo sale del cono permitido respecto
+ * a la dirección inicial del disparo.
+ */
+USTRUCT(BlueprintType)
+struct FPantheliaProjectileHomingSettings
+{
+	GENERATED_BODY()
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Homing")
+	bool bEnabled = false;
+
+	// Tiempo que el proyectil viaja libremente antes de comenzar a corregir.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Homing", meta = (ClampMin = "0.0"))
+	float StartDelay = 0.05f;
+
+	// Duración máxima de la corrección. Cero desactiva el seguimiento.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Homing", meta = (ClampMin = "0.0"))
+	float Duration = 0.5f;
+
+	// Aceleración aplicada por UProjectileMovementComponent hacia el target.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Homing", meta = (ClampMin = "0.0"))
+	float AccelerationMagnitude = 1200.f;
+
+	// Cono total permitido respecto a la dirección inicial. Evita giros de 180°.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Homing", meta = (ClampMin = "0.0", ClampMax = "180.0"))
+	float MaxCorrectionAngleDegrees = 55.f;
+};
 
 /**
  * APantheliaProjectile
@@ -18,10 +52,14 @@ class UAudioComponent;
  * Clase base para todos los proyectiles del juego (hechizos elementales, etc.).
  *
  * El proyectil lleva consigo un FGameplayEffectSpecHandle (DamageEffectSpecHandle)
- * que se crea en UPantheliaProjectileSpell::SpawnProjectile() antes de FinishSpawning.
- * Al impactar, aplica ese GE al ASC del actor golpeado. Los aliados del lanzador
- * se ignoran por completo: no reciben efectos, no generan feedback y no consumen
- * el proyectil. La geometría del mundo sí puede consumirlo normalmente.
+ * que se crea en UPantheliaProjectileSpell antes de FinishSpawning. Al impactar,
+ * aplica ese GE al ASC del actor golpeado. Los aliados del lanzador se ignoran por
+ * completo: no reciben efectos, no generan feedback y no consumen el proyectil.
+ * La geometría del mundo sí puede consumirlo normalmente.
+ *
+ * Puede recibir una configuración opcional de soft homing. El target se sigue mediante
+ * un componente proxy propio cuya posición se actualiza al punto lógico de lock-on del
+ * enemigo. Así no se obliga a que HomingTargetComponent apunte al origen/pies del actor.
  *
  * Efectos visuales/sonoros configurables desde el Blueprint de cada proyectil:
  * - ImpactEffect: Niagara al impactar
@@ -36,18 +74,30 @@ class PANTHELIAPROJECT_API APantheliaProjectile : public AActor
 public:
 	APantheliaProjectile();
 
+	virtual void Tick(float DeltaSeconds) override;
+
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<UProjectileMovementComponent> ProjectileMovement;
 
-	// El spec handle del GE de daño. Se setea desde UPantheliaProjectileSpell::SpawnProjectile()
+	// El spec handle del GE de daño. Se setea desde UPantheliaProjectileSpell
 	// entre SpawnActorDeferred y FinishSpawning para garantizar que está listo
 	// antes de que el proyectil pueda detectar overlaps.
 	// ExposeOnSpawn permite setearlo también desde nodos Blueprint de Spawn Actor.
 	UPROPERTY(BlueprintReadWrite, meta = (ExposeOnSpawn = true))
 	FGameplayEffectSpecHandle DamageEffectSpecHandle;
 
+	// Sobrescribe velocidad inicial y máxima después del spawn. Un valor <= 0 no hace nada.
+	void SetProjectileSpeed(float InSpeed);
+
+	// Se llama durante el spawn diferido. BeginPlay programa el inicio real del homing,
+	// porque UProjectileMovementComponent necesita un target runtime ya spawneado.
+	void ConfigureSoftHoming(
+		AActor* InTargetActor,
+		const FPantheliaProjectileHomingSettings& InSettings);
+
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	UFUNCTION()
 	void OnSphereOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
@@ -61,8 +111,21 @@ protected:
 
 private:
 	void ConsumeProjectile(bool bPlayImpactFeedback, const FVector& ImpactLocation);
+
+	void StartSoftHoming();
+	void StopSoftHoming();
+	void UpdateSoftHomingTarget();
+	FVector ResolveSoftHomingTargetLocation() const;
+	bool IsSoftHomingTargetInsideCorrectionCone(const FVector& TargetLocation) const;
+
 	UPROPERTY(VisibleAnywhere)
 	TObjectPtr<USphereComponent> Sphere;
+
+	// Proxy móvil e invisible usado como HomingTargetComponent. Está unido al actor
+	// únicamente para pertenecer a su ciclo de vida; usa transformación absoluta para
+	// que el movimiento del proyectil no arrastre el punto objetivo.
+	UPROPERTY(VisibleAnywhere, Category = "Projectile|Homing")
+	TObjectPtr<USceneComponent> HomingTargetSceneComponent;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Effects")
 	TObjectPtr<UNiagaraSystem> ImpactEffect;
@@ -88,4 +151,14 @@ private:
 
 	UPROPERTY(EditDefaultsOnly, Category = "Projectile")
 	float Lifespan = 15.f;
+
+	UPROPERTY()
+	TWeakObjectPtr<AActor> SoftHomingTargetActor;
+
+	FPantheliaProjectileHomingSettings SoftHomingSettings;
+	FVector SoftHomingInitialDirection = FVector::ForwardVector;
+	FTimerHandle SoftHomingStartTimerHandle;
+	FTimerHandle SoftHomingStopTimerHandle;
+	bool bSoftHomingConfigured = false;
+	bool bSoftHomingActive = false;
 };
