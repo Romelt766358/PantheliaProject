@@ -1774,6 +1774,60 @@
       "graphs": []
     },
     {
+      "path": "/Game/Blueprints/GameplayEffects/GE_CrystalHeal.GE_CrystalHeal",
+      "class": "/Game/Blueprints/GameplayEffects/GE_CrystalHeal.GE_CrystalHeal_C",
+      "parent_class": "/Script/GameplayAbilities.GameplayEffect",
+      "actor_tags": [],
+      "components": [],
+      "root_component": null,
+      "graphs": []
+    },
+    {
+      "path": "/Game/Blueprints/GameplayEffects/GE_CrystalMana.GE_CrystalMana",
+      "class": "/Game/Blueprints/GameplayEffects/GE_CrystalMana.GE_CrystalMana_C",
+      "parent_class": "/Script/GameplayAbilities.GameplayEffect",
+      "actor_tags": [],
+      "components": [],
+      "root_component": null,
+      "graphs": []
+    },
+    {
+      "path": "/Game/Blueprints/GameplayEffects/GE_EventBasedEffect.GE_EventBasedEffect",
+      "class": "/Game/Blueprints/GameplayEffects/GE_EventBasedEffect.GE_EventBasedEffect_C",
+      "parent_class": "/Script/GameplayAbilities.GameplayEffect",
+      "actor_tags": [],
+      "components": [],
+      "root_component": null,
+      "graphs": []
+    },
+    {
+      "path": "/Game/Blueprints/GameplayEffects/GE_FireArena.GE_FireArena",
+      "class": "/Game/Blueprints/GameplayEffects/GE_FireArena.GE_FireArena_C",
+      "parent_class": "/Script/GameplayAbilities.GameplayEffect",
+      "actor_tags": [],
+      "components": [],
+      "root_component": null,
+      "graphs": []
+    },
+    {
+      "path": "/Game/Blueprints/GameplayEffects/GE_PotionHeal.GE_PotionHeal",
+      "class": "/Game/Blueprints/GameplayEffects/GE_PotionHeal.GE_PotionHeal_C",
+      "parent_class": "/Script/GameplayAbilities.GameplayEffect",
+      "actor_tags": [],
+      "components": [],
+      "root_component": null,
+      "graphs": []
+    },
+    {
+      "path": "/Game/Blueprints/GameplayEffects/GE_PotionMana.GE_PotionMana",
+      "class": "/Game/Blueprints/GameplayEffects/GE_PotionMana.GE_PotionMana_C",
+      "parent_class": "/Script/GameplayAbilities.GameplayEffect",
+      "actor_tags": [],
+      "components": [],
+      "root_component": null,
+      "graphs": []
+    },
+    {
       "path": "/Game/Blueprints/GameplayEffects/BP_FireArea.BP_FireArea",
       "class": "/Game/Blueprints/GameplayEffects/BP_FireArea.BP_FireArea_C",
       "parent_class": "/Script/PantheliaProject.PantheliaEffectActor",
@@ -1996,60 +2050,6 @@
         }
       ],
       "root_component": "/Game/Blueprints/GameplayEffects/BP_PotionMana.Default__BP_PotionMana_C:Mesh",
-      "graphs": []
-    },
-    {
-      "path": "/Game/Blueprints/GameplayEffects/GE_CrystalHeal.GE_CrystalHeal",
-      "class": "/Game/Blueprints/GameplayEffects/GE_CrystalHeal.GE_CrystalHeal_C",
-      "parent_class": "/Script/GameplayAbilities.GameplayEffect",
-      "actor_tags": [],
-      "components": [],
-      "root_component": null,
-      "graphs": []
-    },
-    {
-      "path": "/Game/Blueprints/GameplayEffects/GE_CrystalMana.GE_CrystalMana",
-      "class": "/Game/Blueprints/GameplayEffects/GE_CrystalMana.GE_CrystalMana_C",
-      "parent_class": "/Script/GameplayAbilities.GameplayEffect",
-      "actor_tags": [],
-      "components": [],
-      "root_component": null,
-      "graphs": []
-    },
-    {
-      "path": "/Game/Blueprints/GameplayEffects/GE_EventBasedEffect.GE_EventBasedEffect",
-      "class": "/Game/Blueprints/GameplayEffects/GE_EventBasedEffect.GE_EventBasedEffect_C",
-      "parent_class": "/Script/GameplayAbilities.GameplayEffect",
-      "actor_tags": [],
-      "components": [],
-      "root_component": null,
-      "graphs": []
-    },
-    {
-      "path": "/Game/Blueprints/GameplayEffects/GE_FireArena.GE_FireArena",
-      "class": "/Game/Blueprints/GameplayEffects/GE_FireArena.GE_FireArena_C",
-      "parent_class": "/Script/GameplayAbilities.GameplayEffect",
-      "actor_tags": [],
-      "components": [],
-      "root_component": null,
-      "graphs": []
-    },
-    {
-      "path": "/Game/Blueprints/GameplayEffects/GE_PotionHeal.GE_PotionHeal",
-      "class": "/Game/Blueprints/GameplayEffects/GE_PotionHeal.GE_PotionHeal_C",
-      "parent_class": "/Script/GameplayAbilities.GameplayEffect",
-      "actor_tags": [],
-      "components": [],
-      "root_component": null,
-      "graphs": []
-    },
-    {
-      "path": "/Game/Blueprints/GameplayEffects/GE_PotionMana.GE_PotionMana",
-      "class": "/Game/Blueprints/GameplayEffects/GE_PotionMana.GE_PotionMana_C",
-      "parent_class": "/Script/GameplayAbilities.GameplayEffect",
-      "actor_tags": [],
-      "components": [],
-      "root_component": null,
       "graphs": []
     },
     {
@@ -2922,6 +2922,30 @@
       "graphs": []
     },
     {
+      "path": "/Game/ThirdPerson/Blueprints/BP_ThirdPersonGameMode.BP_ThirdPersonGameMode",
+      "class": "/Game/ThirdPerson/Blueprints/BP_ThirdPersonGameMode.BP_ThirdPersonGameMode_C",
+      "parent_class": "/Script/Engine.GameModeBase",
+      "actor_tags": [],
+      "components": [],
+      "root_component": null,
+      "graphs": []
+    },
+    {
+      "path": "/Game/ThirdPerson/Blueprints/BP_ThirdPersonPlayerController.BP_ThirdPersonPlayerController",
+      "class": "/Game/ThirdPerson/Blueprints/BP_ThirdPersonPlayerController.BP_ThirdPersonPlayerController_C",
+      "parent_class": "/Script/Engine.PlayerController",
+      "actor_tags": [],
+      "components": [
+        {
+          "name": "TransformComponent0",
+          "class": "/Script/Engine.SceneComponent",
+          "component_tags": []
+        }
+      ],
+      "root_component": "/Game/ThirdPerson/Blueprints/BP_ThirdPersonPlayerController.Default__BP_ThirdPersonPlayerController_C:TransformComponent0",
+      "graphs": []
+    },
+    {
       "path": "/Game/ThirdPerson/Blueprints/BP_ThirdPersonCharacter.BP_ThirdPersonCharacter",
       "class": "/Game/ThirdPerson/Blueprints/BP_ThirdPersonCharacter.BP_ThirdPersonCharacter_C",
       "parent_class": "/Script/PantheliaProject.MainCharacter",
@@ -3078,7 +3102,7 @@
           "name": "CameraBoom",
           "class": "/Script/Engine.SpringArmComponent",
           "component_tags": [],
-          "target_offset": "<Struct 'Vector' (0x000001791B4C0AB0) {x: 0.000000, y: 0.000000, z: 0.000000}>"
+          "target_offset": "<Struct 'Vector' (0x0000021D2DB562B0) {x: 0.000000, y: 0.000000, z: 0.000000}>"
         },
         {
           "name": "PlayerCameraComponent",
@@ -3302,30 +3326,6 @@
           ]
         }
       ]
-    },
-    {
-      "path": "/Game/ThirdPerson/Blueprints/BP_ThirdPersonGameMode.BP_ThirdPersonGameMode",
-      "class": "/Game/ThirdPerson/Blueprints/BP_ThirdPersonGameMode.BP_ThirdPersonGameMode_C",
-      "parent_class": "/Script/Engine.GameModeBase",
-      "actor_tags": [],
-      "components": [],
-      "root_component": null,
-      "graphs": []
-    },
-    {
-      "path": "/Game/ThirdPerson/Blueprints/BP_ThirdPersonPlayerController.BP_ThirdPersonPlayerController",
-      "class": "/Game/ThirdPerson/Blueprints/BP_ThirdPersonPlayerController.BP_ThirdPersonPlayerController_C",
-      "parent_class": "/Script/Engine.PlayerController",
-      "actor_tags": [],
-      "components": [
-        {
-          "name": "TransformComponent0",
-          "class": "/Script/Engine.SceneComponent",
-          "component_tags": []
-        }
-      ],
-      "root_component": "/Game/ThirdPerson/Blueprints/BP_ThirdPersonPlayerController.Default__BP_ThirdPersonPlayerController_C:TransformComponent0",
-      "graphs": []
     },
     {
       "path": "/Game/UI/WBP_Lockon.WBP_Lockon",
@@ -3799,9 +3799,7 @@
     "/Game/Blueprints/Actor/BP_HealthPotion.BP_HealthPotion": [
       "/Game/__ExternalActors__/ThirdPerson/Lvl_ThirdPerson/1/V8/VDTBQ0OI2S5NFQQEAXO84I"
     ],
-    "/Game/Blueprints/GameplayEffects/BP_FireArea.BP_FireArea": [
-      "/Game/__ExternalActors__/ThirdPerson/Lvl_ThirdPerson/1/89/KNHZTK01YRF8SPJC22TCNH"
-    ],
+    "/Game/Blueprints/GameplayEffects/BP_FireArea.BP_FireArea": [],
     "/Game/Blueprints/GameplayEffects/BP_HealthCrystal.BP_HealthCrystal": [
       "/Game/Maps/EQS_TestingMap",
       "/Game/__ExternalActors__/ThirdPerson/Lvl_ThirdPerson/9/6E/GC28W9B2Y48Q6OG2NFBCIZ"
@@ -4806,8 +4804,8 @@
       "mesh_asset": "/Game/ARPG_Pack/ARPG_Pack/ARPG_Halberd/Demo/Weapon/Mesh/Halberd_weapon.Halberd_weapon",
       "base_socket": "WeaponBase",
       "tip_socket": "WeaponTip",
-      "base_exists": false,
-      "tip_exists": false
+      "base_exists": true,
+      "tip_exists": true
     },
     "warrior_boss_trace": {
       "mesh_component": "/Game/Characters/WarriorBoss/BP_WarriorBoss.BP_WarriorBoss_C:SM_Sword_GEN_VARIABLE",
@@ -5586,34 +5584,6 @@
       },
       {
         "graph": "EventGraph",
-        "title": "Event ActorBeginOverlap",
-        "class": "/Script/BlueprintGraph.K2Node_Event",
-        "pins": [
-          {
-            "name": "OutputDelegate",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "then",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "OtherActor",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          }
-        ]
-      },
-      {
-        "graph": "EventGraph",
         "title": "Event Tick",
         "class": "/Script/BlueprintGraph.K2Node_Event",
         "pins": [
@@ -5909,34 +5879,6 @@
       },
       {
         "graph": "EventGraph",
-        "title": "Event ActorBeginOverlap",
-        "class": "/Script/BlueprintGraph.K2Node_Event",
-        "pins": [
-          {
-            "name": "OutputDelegate",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "then",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "OtherActor",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          }
-        ]
-      },
-      {
-        "graph": "EventGraph",
         "title": "Event Tick",
         "class": "/Script/BlueprintGraph.K2Node_Event",
         "pins": [
@@ -5960,161 +5902,6 @@
             "default_value": "0.0",
             "default_object": null,
             "linked_to": []
-          }
-        ]
-      },
-      {
-        "graph": "EventGraph",
-        "title": "On Component Begin Overlap (Sphere)",
-        "class": "/Script/BlueprintGraph.K2Node_ComponentBoundEvent",
-        "pins": [
-          {
-            "name": "OutputDelegate",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "then",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": [
-              {
-                "pin": "execute",
-                "node": "ApplyEffectToTarget",
-                "node_class": "/Script/BlueprintGraph.K2Node_CallFunction"
-              }
-            ]
-          },
-          {
-            "name": "OverlappedComponent",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "OtherActor",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": [
-              {
-                "pin": "TargetActor",
-                "node": "ApplyEffectToTarget",
-                "node_class": "/Script/BlueprintGraph.K2Node_CallFunction"
-              }
-            ]
-          },
-          {
-            "name": "OtherComp",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "OtherBodyIndex",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "0",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "bFromSweep",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "false",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "SweepResult",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          }
-        ]
-      },
-      {
-        "graph": "EventGraph",
-        "title": "ApplyEffectToTarget",
-        "class": "/Script/BlueprintGraph.K2Node_CallFunction",
-        "pins": [
-          {
-            "name": "execute",
-            "direction": "<EdGraphPinDirection.EGPD_INPUT: 0>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": [
-              {
-                "pin": "then",
-                "node": "On Component Begin Overlap (Sphere)",
-                "node_class": "/Script/BlueprintGraph.K2Node_ComponentBoundEvent"
-              }
-            ]
-          },
-          {
-            "name": "self",
-            "direction": "<EdGraphPinDirection.EGPD_INPUT: 0>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "TargetActor",
-            "direction": "<EdGraphPinDirection.EGPD_INPUT: 0>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": [
-              {
-                "pin": "OtherActor",
-                "node": "On Component Begin Overlap (Sphere)",
-                "node_class": "/Script/BlueprintGraph.K2Node_ComponentBoundEvent"
-              }
-            ]
-          },
-          {
-            "name": "GameplayEffectClass",
-            "direction": "<EdGraphPinDirection.EGPD_INPUT: 0>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": [
-              {
-                "pin": "DurationGameplayEffectClass",
-                "node": "Get DurationGameplayEffectClass",
-                "node_class": "/Script/BlueprintGraph.K2Node_VariableGet"
-              }
-            ]
-          },
-          {
-            "name": "then",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          }
-        ]
-      },
-      {
-        "graph": "EventGraph",
-        "title": "Get DurationGameplayEffectClass",
-        "class": "/Script/BlueprintGraph.K2Node_VariableGet",
-        "pins": [
-          {
-            "name": "DurationGameplayEffectClass",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": [
-              {
-                "pin": "GameplayEffectClass",
-                "node": "ApplyEffectToTarget",
-                "node_class": "/Script/BlueprintGraph.K2Node_CallFunction"
-              }
-            ]
           }
         ]
       }
@@ -6157,34 +5944,6 @@
       },
       {
         "graph": "EventGraph",
-        "title": "Event ActorBeginOverlap",
-        "class": "/Script/BlueprintGraph.K2Node_Event",
-        "pins": [
-          {
-            "name": "OutputDelegate",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "then",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "OtherActor",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          }
-        ]
-      },
-      {
-        "graph": "EventGraph",
         "title": "Event Tick",
         "class": "/Script/BlueprintGraph.K2Node_Event",
         "pins": [
@@ -6208,161 +5967,6 @@
             "default_value": "0.0",
             "default_object": null,
             "linked_to": []
-          }
-        ]
-      },
-      {
-        "graph": "EventGraph",
-        "title": "On Component Begin Overlap (Sphere)",
-        "class": "/Script/BlueprintGraph.K2Node_ComponentBoundEvent",
-        "pins": [
-          {
-            "name": "OutputDelegate",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "then",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": [
-              {
-                "pin": "execute",
-                "node": "ApplyEffectToTarget",
-                "node_class": "/Script/BlueprintGraph.K2Node_CallFunction"
-              }
-            ]
-          },
-          {
-            "name": "OverlappedComponent",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "OtherActor",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": [
-              {
-                "pin": "TargetActor",
-                "node": "ApplyEffectToTarget",
-                "node_class": "/Script/BlueprintGraph.K2Node_CallFunction"
-              }
-            ]
-          },
-          {
-            "name": "OtherComp",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "OtherBodyIndex",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "0",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "bFromSweep",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "false",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "SweepResult",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          }
-        ]
-      },
-      {
-        "graph": "EventGraph",
-        "title": "ApplyEffectToTarget",
-        "class": "/Script/BlueprintGraph.K2Node_CallFunction",
-        "pins": [
-          {
-            "name": "execute",
-            "direction": "<EdGraphPinDirection.EGPD_INPUT: 0>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": [
-              {
-                "pin": "then",
-                "node": "On Component Begin Overlap (Sphere)",
-                "node_class": "/Script/BlueprintGraph.K2Node_ComponentBoundEvent"
-              }
-            ]
-          },
-          {
-            "name": "self",
-            "direction": "<EdGraphPinDirection.EGPD_INPUT: 0>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "TargetActor",
-            "direction": "<EdGraphPinDirection.EGPD_INPUT: 0>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": [
-              {
-                "pin": "OtherActor",
-                "node": "On Component Begin Overlap (Sphere)",
-                "node_class": "/Script/BlueprintGraph.K2Node_ComponentBoundEvent"
-              }
-            ]
-          },
-          {
-            "name": "GameplayEffectClass",
-            "direction": "<EdGraphPinDirection.EGPD_INPUT: 0>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": [
-              {
-                "pin": "DurationGameplayEffectClass",
-                "node": "Get DurationGameplayEffectClass",
-                "node_class": "/Script/BlueprintGraph.K2Node_VariableGet"
-              }
-            ]
-          },
-          {
-            "name": "then",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          }
-        ]
-      },
-      {
-        "graph": "EventGraph",
-        "title": "Get DurationGameplayEffectClass",
-        "class": "/Script/BlueprintGraph.K2Node_VariableGet",
-        "pins": [
-          {
-            "name": "DurationGameplayEffectClass",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": [
-              {
-                "pin": "GameplayEffectClass",
-                "node": "ApplyEffectToTarget",
-                "node_class": "/Script/BlueprintGraph.K2Node_CallFunction"
-              }
-            ]
           }
         ]
       }
@@ -6405,34 +6009,6 @@
       },
       {
         "graph": "EventGraph",
-        "title": "Event ActorBeginOverlap",
-        "class": "/Script/BlueprintGraph.K2Node_Event",
-        "pins": [
-          {
-            "name": "OutputDelegate",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "then",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "OtherActor",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          }
-        ]
-      },
-      {
-        "graph": "EventGraph",
         "title": "Event Tick",
         "class": "/Script/BlueprintGraph.K2Node_Event",
         "pins": [
@@ -6456,161 +6032,6 @@
             "default_value": "0.0",
             "default_object": null,
             "linked_to": []
-          }
-        ]
-      },
-      {
-        "graph": "EventGraph",
-        "title": "On Component Begin Overlap (Sphere)",
-        "class": "/Script/BlueprintGraph.K2Node_ComponentBoundEvent",
-        "pins": [
-          {
-            "name": "OutputDelegate",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "then",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": [
-              {
-                "pin": "execute",
-                "node": "ApplyEffectToTarget",
-                "node_class": "/Script/BlueprintGraph.K2Node_CallFunction"
-              }
-            ]
-          },
-          {
-            "name": "OverlappedComponent",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "OtherActor",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": [
-              {
-                "pin": "TargetActor",
-                "node": "ApplyEffectToTarget",
-                "node_class": "/Script/BlueprintGraph.K2Node_CallFunction"
-              }
-            ]
-          },
-          {
-            "name": "OtherComp",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "OtherBodyIndex",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "0",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "bFromSweep",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "false",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "SweepResult",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          }
-        ]
-      },
-      {
-        "graph": "EventGraph",
-        "title": "ApplyEffectToTarget",
-        "class": "/Script/BlueprintGraph.K2Node_CallFunction",
-        "pins": [
-          {
-            "name": "execute",
-            "direction": "<EdGraphPinDirection.EGPD_INPUT: 0>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": [
-              {
-                "pin": "then",
-                "node": "On Component Begin Overlap (Sphere)",
-                "node_class": "/Script/BlueprintGraph.K2Node_ComponentBoundEvent"
-              }
-            ]
-          },
-          {
-            "name": "self",
-            "direction": "<EdGraphPinDirection.EGPD_INPUT: 0>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "TargetActor",
-            "direction": "<EdGraphPinDirection.EGPD_INPUT: 0>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": [
-              {
-                "pin": "OtherActor",
-                "node": "On Component Begin Overlap (Sphere)",
-                "node_class": "/Script/BlueprintGraph.K2Node_ComponentBoundEvent"
-              }
-            ]
-          },
-          {
-            "name": "GameplayEffectClass",
-            "direction": "<EdGraphPinDirection.EGPD_INPUT: 0>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": [
-              {
-                "pin": "InstantGameplayEffectClass",
-                "node": "Get InstantGameplayEffectClass",
-                "node_class": "/Script/BlueprintGraph.K2Node_VariableGet"
-              }
-            ]
-          },
-          {
-            "name": "then",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          }
-        ]
-      },
-      {
-        "graph": "EventGraph",
-        "title": "Get InstantGameplayEffectClass",
-        "class": "/Script/BlueprintGraph.K2Node_VariableGet",
-        "pins": [
-          {
-            "name": "InstantGameplayEffectClass",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": [
-              {
-                "pin": "GameplayEffectClass",
-                "node": "ApplyEffectToTarget",
-                "node_class": "/Script/BlueprintGraph.K2Node_CallFunction"
-              }
-            ]
           }
         ]
       }
@@ -6653,34 +6074,6 @@
       },
       {
         "graph": "EventGraph",
-        "title": "Event ActorBeginOverlap",
-        "class": "/Script/BlueprintGraph.K2Node_Event",
-        "pins": [
-          {
-            "name": "OutputDelegate",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "then",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "OtherActor",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          }
-        ]
-      },
-      {
-        "graph": "EventGraph",
         "title": "Event Tick",
         "class": "/Script/BlueprintGraph.K2Node_Event",
         "pins": [
@@ -6704,161 +6097,6 @@
             "default_value": "0.0",
             "default_object": null,
             "linked_to": []
-          }
-        ]
-      },
-      {
-        "graph": "EventGraph",
-        "title": "On Component Begin Overlap (Sphere)",
-        "class": "/Script/BlueprintGraph.K2Node_ComponentBoundEvent",
-        "pins": [
-          {
-            "name": "OutputDelegate",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "then",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": [
-              {
-                "pin": "execute",
-                "node": "ApplyEffectToTarget",
-                "node_class": "/Script/BlueprintGraph.K2Node_CallFunction"
-              }
-            ]
-          },
-          {
-            "name": "OverlappedComponent",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "OtherActor",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": [
-              {
-                "pin": "TargetActor",
-                "node": "ApplyEffectToTarget",
-                "node_class": "/Script/BlueprintGraph.K2Node_CallFunction"
-              }
-            ]
-          },
-          {
-            "name": "OtherComp",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "OtherBodyIndex",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "0",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "bFromSweep",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "false",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "SweepResult",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          }
-        ]
-      },
-      {
-        "graph": "EventGraph",
-        "title": "ApplyEffectToTarget",
-        "class": "/Script/BlueprintGraph.K2Node_CallFunction",
-        "pins": [
-          {
-            "name": "execute",
-            "direction": "<EdGraphPinDirection.EGPD_INPUT: 0>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": [
-              {
-                "pin": "then",
-                "node": "On Component Begin Overlap (Sphere)",
-                "node_class": "/Script/BlueprintGraph.K2Node_ComponentBoundEvent"
-              }
-            ]
-          },
-          {
-            "name": "self",
-            "direction": "<EdGraphPinDirection.EGPD_INPUT: 0>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "TargetActor",
-            "direction": "<EdGraphPinDirection.EGPD_INPUT: 0>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": [
-              {
-                "pin": "OtherActor",
-                "node": "On Component Begin Overlap (Sphere)",
-                "node_class": "/Script/BlueprintGraph.K2Node_ComponentBoundEvent"
-              }
-            ]
-          },
-          {
-            "name": "GameplayEffectClass",
-            "direction": "<EdGraphPinDirection.EGPD_INPUT: 0>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": [
-              {
-                "pin": "InstantGameplayEffectClass",
-                "node": "Get InstantGameplayEffectClass",
-                "node_class": "/Script/BlueprintGraph.K2Node_VariableGet"
-              }
-            ]
-          },
-          {
-            "name": "then",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          }
-        ]
-      },
-      {
-        "graph": "EventGraph",
-        "title": "Get InstantGameplayEffectClass",
-        "class": "/Script/BlueprintGraph.K2Node_VariableGet",
-        "pins": [
-          {
-            "name": "InstantGameplayEffectClass",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": [
-              {
-                "pin": "GameplayEffectClass",
-                "node": "ApplyEffectToTarget",
-                "node_class": "/Script/BlueprintGraph.K2Node_CallFunction"
-              }
-            ]
           }
         ]
       }
@@ -10069,129 +9307,6 @@
       },
       {
         "graph": "EventGraph",
-        "title": "EnhancedInputAction IA_Lockon",
-        "class": "/Script/InputBlueprintNodes.K2Node_EnhancedInputAction",
-        "pins": [
-          {
-            "name": "Triggered",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "Started",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": [
-              {
-                "pin": "execute",
-                "node": "ToggleLockon",
-                "node_class": "/Script/BlueprintGraph.K2Node_CallFunction"
-              }
-            ]
-          },
-          {
-            "name": "Ongoing",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "Canceled",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "Completed",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "ActionValue",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "false",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "ElapsedSeconds",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "TriggeredSeconds",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "InputAction",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "/Game/Input/Actions/IA_Lockon.IA_Lockon",
-            "default_object": null,
-            "linked_to": []
-          }
-        ]
-      },
-      {
-        "graph": "EventGraph",
-        "title": "ToggleLockon",
-        "class": "/Script/BlueprintGraph.K2Node_CallFunction",
-        "pins": [
-          {
-            "name": "execute",
-            "direction": "<EdGraphPinDirection.EGPD_INPUT: 0>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": [
-              {
-                "pin": "Started",
-                "node": "EnhancedInputAction IA_Lockon",
-                "node_class": "/Script/InputBlueprintNodes.K2Node_EnhancedInputAction"
-              }
-            ]
-          },
-          {
-            "name": "self",
-            "direction": "<EdGraphPinDirection.EGPD_INPUT: 0>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": [
-              {
-                "pin": "LockonComponent",
-                "node": "Get LockonComponent",
-                "node_class": "/Script/BlueprintGraph.K2Node_VariableGet"
-              }
-            ]
-          },
-          {
-            "name": "Radius",
-            "direction": "<EdGraphPinDirection.EGPD_INPUT: 0>",
-            "default_value": "1200.000000",
-            "default_object": null,
-            "linked_to": []
-          },
-          {
-            "name": "then",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": []
-          }
-        ]
-      },
-      {
-        "graph": "EventGraph",
         "title": "Get PlayerAnim",
         "class": "/Script/BlueprintGraph.K2Node_VariableGet",
         "pins": [
@@ -10260,26 +9375,6 @@
             "default_value": "",
             "default_object": null,
             "linked_to": []
-          }
-        ]
-      },
-      {
-        "graph": "EventGraph",
-        "title": "Get LockonComponent",
-        "class": "/Script/BlueprintGraph.K2Node_VariableGet",
-        "pins": [
-          {
-            "name": "LockonComponent",
-            "direction": "<EdGraphPinDirection.EGPD_OUTPUT: 1>",
-            "default_value": "",
-            "default_object": null,
-            "linked_to": [
-              {
-                "pin": "self",
-                "node": "ToggleLockon",
-                "node_class": "/Script/BlueprintGraph.K2Node_CallFunction"
-              }
-            ]
           }
         ]
       },

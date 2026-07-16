@@ -14,7 +14,6 @@
 // migración del ataque básico a GAS (Parte 5). El combate del jugador ahora usa
 // UPantheliaPlayerAttackAbility + UWeaponTraceComponent + UPantheliaEquipmentComponent.
 class ULockonComponent;
-class UBlockComponent;
 class UPlayerActionsComponent;
 class UPantheliaEquipmentComponent;
 class UWeaponTraceComponent;
@@ -49,9 +48,6 @@ public:
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat", meta = (AllowPrivateAccess = "true"))
 	ULockonComponent* LockonComponent;
-
-	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Combat", meta = (AllowPrivateAccess = "true"))
-	UBlockComponent* BlockComponent;
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Actions", meta = (AllowPrivateAccess = "true"))
 	UPlayerActionsComponent* PlayerActionsComponent;

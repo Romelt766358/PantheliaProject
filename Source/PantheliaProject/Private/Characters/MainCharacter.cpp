@@ -5,7 +5,6 @@
 #include "Characters/PlayerActionsComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Combat/LockonComponent.h"
-#include "Combat/BlockComponent.h"
 #include "Combat/PantheliaEquipmentComponent.h"
 #include "Combat/WeaponTraceComponent.h"
 #include "AbilitySystem/Abilities/PantheliaPlayerAttackAbility.h"
@@ -55,7 +54,6 @@ AMainCharacter::AMainCharacter()
 
     // CombatComponent y TraceComponent (melee legacy NO-GAS) retirados en la Parte 5.
     LockonComponent = CreateDefaultSubobject<ULockonComponent>(TEXT("LockonComponent"));
-    BlockComponent = CreateDefaultSubobject<UBlockComponent>(TEXT("BlockComponent"));
     PlayerActionsComponent = CreateDefaultSubobject<UPlayerActionsComponent>(TEXT("PlayerActionsComponent"));
 
     // Componente de equipo (GAS-ready). Gestiona el arma equipada del jugador
