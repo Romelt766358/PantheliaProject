@@ -1,0 +1,25 @@
+{
+  "FileVersion": 3,
+  "Version": 5,
+  "VersionName": "0.2.0-alpha3-local",
+  "FriendlyName": "Panthelia Developer Suite",
+  "Description": "Read-only editor diagnostics with validation profiles, JSON reports, observable dirty-package side-effect reporting, project snapshot export and montage inspection for Unreal Engine 5.8.",
+  "Category": "Panthelia",
+  "CreatedBy": "Panthelia Project",
+  "CanContainContent": false,
+  "IsBetaVersion": true,
+  "Installed": false,
+  "Modules": [
+    {
+      "Name": "PantheliaDeveloperSuite",
+      "Type": "Editor",
+      "LoadingPhase": "PostEngineInit"
+    }
+  ],
+  "Plugins": [
+    {
+      "Name": "DataValidation",
+      "Enabled": true
+    }
+  ]
+}
