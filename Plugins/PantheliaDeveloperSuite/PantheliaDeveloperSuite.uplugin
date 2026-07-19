@@ -1,9 +1,9 @@
 {
   "FileVersion": 3,
-  "Version": 9,
-  "VersionName": "0.3.0-alpha4-preliminary",
+  "Version": 11,
+  "VersionName": "0.4.0-alpha2-preliminary",
   "FriendlyName": "Panthelia Developer Suite",
-  "Description": "Read-only Unreal Engine 5.8 editor diagnostics with validation profiles, origin-aware project snapshots, deterministic snapshot comparison, cached history descriptors and an actionable Snapshot Diff Browser for Panthelia.",
+  "Description": "Read-only Unreal Engine 5.8 diagnostics with structured Toolset Registry automation for Unreal MCP, validation profiles, origin-aware snapshots, deterministic diffs and an actionable Snapshot Diff Browser for Panthelia.",
   "Category": "Panthelia",
   "CreatedBy": "Panthelia Project",
   "CanContainContent": false,
@@ -19,6 +19,10 @@
   "Plugins": [
     {
       "Name": "DataValidation",
+      "Enabled": true
+    },
+    {
+      "Name": "ToolsetRegistry",
       "Enabled": true
     }
   ]

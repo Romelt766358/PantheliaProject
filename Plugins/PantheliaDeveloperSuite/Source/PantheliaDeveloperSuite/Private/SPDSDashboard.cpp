@@ -35,7 +35,7 @@ void SPDSDashboard::Construct(const FArguments& InArgs)
             .Padding(0.0f, 0.0f, 0.0f, 8.0f)
             [
                 SNew(STextBlock)
-                .Text(LOCTEXT("Title", "Panthelia Developer Suite — v0.3 Alpha 4 Read-Only"))
+                .Text(LOCTEXT("Title", "Panthelia Developer Suite — v0.4 Alpha 2 MCP Automation Read-Only"))
             ]
 
             + SVerticalBox::Slot()
@@ -46,7 +46,7 @@ void SPDSDashboard::Construct(const FArguments& InArgs)
                 .AutoWrapText(true)
                 .Text(LOCTEXT(
                     "Description",
-                    "Project Doctor separa Panthelia y contenido externo. Snapshot History exporta inventario origin-aware, compara cambios, mantiene un baseline y ofrece un navegador accionable sin guardar assets."))
+                    "Project Doctor, Snapshot History y Snapshot Diff Browser continúan read-only. La Automation API expone respuestas estructuradas mediante Toolset Registry para Unreal MCP sin guardar assets."))
             ]
 
             + SVerticalBox::Slot()

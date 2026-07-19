@@ -29,6 +29,7 @@ public class PantheliaDeveloperSuite : ModuleRules
             "Slate",
             "SlateCore",
             "ToolMenus",
+            "ToolsetRegistry",
             "UnrealEd"
         });
     }

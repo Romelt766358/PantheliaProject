@@ -121,7 +121,7 @@ void SPDSSnapshotDiffBrowser::Construct(const FArguments& InArgs)
                 SNew(STextBlock)
                 .Text(LOCTEXT(
                     "Title",
-                    "Snapshot Diff Browser — v0.3 Alpha 4 Read-Only"))
+                    "Snapshot Diff Browser — v0.4 Alpha 2 Read-Only"))
             ]
 
             + SVerticalBox::Slot()

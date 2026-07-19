@@ -1,9 +1,12 @@
 #include "PantheliaDeveloperSuiteModule.h"
 
 #include "Framework/Docking/TabManager.h"
+#include "PantheliaDeveloperSuiteToolset.h"
 #include "SPDSDashboard.h"
 #include "SPDSSnapshotDiffBrowser.h"
 #include "ToolMenus.h"
+#include "ToolsetRegistry/UToolsetRegistry.h"
+#include "UObject/UObjectGlobals.h"
 #include "Widgets/Docking/SDockTab.h"
 
 #define LOCTEXT_NAMESPACE "PantheliaDeveloperSuiteModule"
@@ -15,6 +18,10 @@ const FName FPantheliaDeveloperSuiteModule::SnapshotDiffBrowserTabName(
 
 void FPantheliaDeveloperSuiteModule::StartupModule()
 {
+    // UE 5.8 registra sus toolsets oficiales explícitamente desde StartupModule.
+    UToolsetRegistry::RegisterToolsetClass(
+        UPantheliaDeveloperSuiteToolset::StaticClass());
+
     FGlobalTabmanager::Get()->RegisterNomadTabSpawner(
         DashboardTabName,
         FOnSpawnTab::CreateRaw(this, &FPantheliaDeveloperSuiteModule::SpawnDashboardTab))
@@ -37,6 +44,13 @@ void FPantheliaDeveloperSuiteModule::StartupModule()
 
 void FPantheliaDeveloperSuiteModule::ShutdownModule()
 {
+    // Mismo guard usado por GASToolsets en UE 5.8 durante el cierre del editor.
+    if (UObjectInitialized())
+    {
+        UToolsetRegistry::UnregisterToolsetClass(
+            UPantheliaDeveloperSuiteToolset::StaticClass());
+    }
+
     if (UToolMenus::IsToolMenuUIEnabled())
     {
         UToolMenus::UnRegisterStartupCallback(this);
@@ -62,7 +76,7 @@ void FPantheliaDeveloperSuiteModule::RegisterMenus()
         LOCTEXT("OpenDashboardLabel", "Panthelia Developer Suite"),
         LOCTEXT(
             "OpenDashboardTooltip",
-            "Open Project Doctor profiles, Project Snapshot, Snapshot Diff Browser and Montage Inspector."),
+            "Open Project Doctor, snapshots, diffs and Montage Inspector. Structured read-only automation is also exposed to Unreal MCP through Toolset Registry."),
         FSlateIcon(),
         FUIAction(FExecuteAction::CreateRaw(
             this,
