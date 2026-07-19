@@ -21,6 +21,17 @@ public:
         const FString& CurrentSnapshotPath,
         const FString& ComparisonLabel) const;
 
+    /**
+     * Persiste informes a partir de un diff ya calculado, sin volver a leer snapshots.
+     * ReportsDirectoryOverride y bWriteLatestAliases permiten pruebas aisladas sin
+     * sobrescribir los aliases de producción bajo Saved/PantheliaDeveloperSuite.
+     */
+    FPDSOperationResult PersistDiffReports(
+        const FPDSSnapshotDiff& Diff,
+        const FString& ComparisonLabel,
+        const FString& ReportsDirectoryOverride = FString(),
+        bool bWriteLatestAliases = true) const;
+
     static FString GetSnapshotsDirectory();
     static FString GetBaselineSnapshotPath();
     static TArray<FString> FindTimestampedSnapshotPathsNewestFirst();

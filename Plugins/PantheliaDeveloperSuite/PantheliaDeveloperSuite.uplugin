@@ -1,9 +1,9 @@
 {
   "FileVersion": 3,
-  "Version": 7,
-  "VersionName": "0.3.0-alpha2-preliminary",
+  "Version": 9,
+  "VersionName": "0.3.0-alpha4-preliminary",
   "FriendlyName": "Panthelia Developer Suite",
-  "Description": "Read-only Unreal Engine 5.8 editor diagnostics with validation profiles, origin-aware project snapshots, deterministic snapshot history comparison, baseline reports and montage inspection for Panthelia.",
+  "Description": "Read-only Unreal Engine 5.8 editor diagnostics with validation profiles, origin-aware project snapshots, deterministic snapshot comparison, cached history descriptors and an actionable Snapshot Diff Browser for Panthelia.",
   "Category": "Panthelia",
   "CreatedBy": "Panthelia Project",
   "CanContainContent": false,

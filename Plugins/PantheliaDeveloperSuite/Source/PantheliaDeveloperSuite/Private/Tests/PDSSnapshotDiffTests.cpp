@@ -1,4 +1,9 @@
 #include "Misc/AutomationTest.h"
+#include "HAL/FileManager.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Guid.h"
+#include "Misc/Paths.h"
+#include "PDSProjectSnapshotDiffService.h"
 #include "PDSSnapshotDiffTypes.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -175,5 +180,64 @@ bool FPDSSnapshotDiffHistoricalOriginCompatibilityTest::RunTest(const FString& P
     }
     return true;
 }
+
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FPDSSnapshotDiffPersistExistingDiffTest,
+    "Panthelia.DeveloperSuite.SnapshotDiff.PersistExistingDiff",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPDSSnapshotDiffPersistExistingDiffTest::RunTest(const FString& Parameters)
+{
+    FPDSSnapshotDiff Diff;
+    Diff.ProjectName = TEXT("PantheliaProject");
+    Diff.PreviousSnapshotPath = TEXT("synthetic_previous.json");
+    Diff.CurrentSnapshotPath = TEXT("synthetic_current.json");
+    Diff.PreviousGeneratedAtUtc = TEXT("2026-07-18T00:00:00Z");
+    Diff.CurrentGeneratedAtUtc = TEXT("2026-07-19T00:00:00Z");
+    Diff.PreviousSchemaVersion = TEXT("0.3.0-alpha4");
+    Diff.CurrentSchemaVersion = TEXT("0.3.0-alpha4");
+    Diff.PreviousAssetCount = 1;
+    Diff.CurrentAssetCount = 2;
+
+    FPDSSnapshotAssetRecord AddedAsset;
+    AddedAsset.ObjectPath = TEXT("/Game/Persisted.Persisted");
+    AddedAsset.PackageName = TEXT("/Game/Persisted");
+    AddedAsset.PackagePath = TEXT("/Game");
+    AddedAsset.ClassPath = TEXT("/Script/Engine.DataAsset");
+    AddedAsset.Origin = EPDSAssetOrigin::PantheliaCore;
+    Diff.AddedAssets.Add(MoveTemp(AddedAsset));
+
+    const FString TestDirectory = FPaths::Combine(
+        FPaths::ProjectSavedDir(),
+        TEXT("PantheliaDeveloperSuite"),
+        TEXT("Automation"),
+        FString(TEXT("PersistDiff_")) + FGuid::NewGuid().ToString(EGuidFormats::Digits));
+
+    const FPDSProjectSnapshotDiffService Service;
+    const FPDSOperationResult Result = Service.PersistDiffReports(
+        Diff,
+        TEXT("Automation Existing Diff"),
+        TestDirectory,
+        false);
+
+    TestTrue(TEXT("Existing diff persists without loading source files"), Result.bSuccess);
+    TestTrue(TEXT("Markdown output path exists"), IFileManager::Get().FileExists(*Result.OutputPath));
+    TestTrue(TEXT("JSON output path exists"), IFileManager::Get().FileExists(*Result.OutputJsonPath));
+
+    FString Markdown;
+    FString Json;
+    TestTrue(TEXT("Markdown output can be read"), FFileHelper::LoadFileToString(Markdown, *Result.OutputPath));
+    TestTrue(TEXT("JSON output can be read"), FFileHelper::LoadFileToString(Json, *Result.OutputJsonPath));
+    TestTrue(TEXT("Markdown contains synthetic current path"), Markdown.Contains(TEXT("synthetic_current.json")));
+    TestTrue(TEXT("JSON contains persisted asset"), Json.Contains(TEXT("/Game/Persisted.Persisted")));
+    TestFalse(
+        TEXT("Isolated persistence does not write production latest aliases"),
+        IFileManager::Get().FileExists(*FPaths::Combine(TestDirectory, TEXT("latest_snapshot_diff.json"))));
+
+    IFileManager::Get().DeleteDirectory(*TestDirectory, false, true);
+    return true;
+}
+
 
 #endif

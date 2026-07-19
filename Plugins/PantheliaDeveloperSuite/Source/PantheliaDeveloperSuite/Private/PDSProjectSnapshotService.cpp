@@ -17,7 +17,7 @@
 
 namespace
 {
-    TSharedRef<FJsonObject> BuildIssueJson(const FPDSIssue& Issue)
+    TSharedRef<FJsonObject> BuildSnapshotIssueJson(const FPDSIssue& Issue)
     {
         TSharedRef<FJsonObject> IssueJson = MakeShared<FJsonObject>();
         IssueJson->SetStringField(
@@ -120,7 +120,7 @@ namespace
         TArray<TSharedPtr<FJsonValue>> IssuesJson;
         for (const FPDSIssue& Issue : Summary->Issues)
         {
-            IssuesJson.Add(MakeShared<FJsonValueObject>(BuildIssueJson(Issue)));
+            IssuesJson.Add(MakeShared<FJsonValueObject>(BuildSnapshotIssueJson(Issue)));
         }
         ValidationJson->SetArrayField(TEXT("issues"), IssuesJson);
 

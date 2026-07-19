@@ -24,6 +24,7 @@ private:
     FReply OnCompareLatestSnapshotsClicked();
     FReply OnSetSnapshotBaselineClicked();
     FReply OnCompareBaselineClicked();
+    FReply OnOpenSnapshotDiffBrowserClicked();
     FReply OnInspectMontagesClicked();
     FReply OnOpenOutputFolderClicked();
 

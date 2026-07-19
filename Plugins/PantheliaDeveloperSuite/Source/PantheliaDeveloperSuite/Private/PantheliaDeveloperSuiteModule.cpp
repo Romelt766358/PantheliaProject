@@ -2,6 +2,7 @@
 
 #include "Framework/Docking/TabManager.h"
 #include "SPDSDashboard.h"
+#include "SPDSSnapshotDiffBrowser.h"
 #include "ToolMenus.h"
 #include "Widgets/Docking/SDockTab.h"
 
@@ -9,6 +10,8 @@
 
 const FName FPantheliaDeveloperSuiteModule::DashboardTabName(
     TEXT("PantheliaDeveloperSuite.Dashboard"));
+const FName FPantheliaDeveloperSuiteModule::SnapshotDiffBrowserTabName(
+    TEXT("PantheliaDeveloperSuite.SnapshotDiffBrowser"));
 
 void FPantheliaDeveloperSuiteModule::StartupModule()
 {
@@ -16,6 +19,14 @@ void FPantheliaDeveloperSuiteModule::StartupModule()
         DashboardTabName,
         FOnSpawnTab::CreateRaw(this, &FPantheliaDeveloperSuiteModule::SpawnDashboardTab))
         .SetDisplayName(LOCTEXT("DashboardTabTitle", "Panthelia Developer Suite"))
+        .SetMenuType(ETabSpawnerMenuType::Hidden);
+
+    FGlobalTabmanager::Get()->RegisterNomadTabSpawner(
+        SnapshotDiffBrowserTabName,
+        FOnSpawnTab::CreateRaw(
+            this,
+            &FPantheliaDeveloperSuiteModule::SpawnSnapshotDiffBrowserTab))
+        .SetDisplayName(LOCTEXT("SnapshotDiffTabTitle", "PDS Snapshot Diff Browser"))
         .SetMenuType(ETabSpawnerMenuType::Hidden);
 
     UToolMenus::RegisterStartupCallback(
@@ -32,6 +43,7 @@ void FPantheliaDeveloperSuiteModule::ShutdownModule()
         UToolMenus::UnregisterOwner(this);
     }
 
+    FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(SnapshotDiffBrowserTabName);
     FGlobalTabmanager::Get()->UnregisterNomadTabSpawner(DashboardTabName);
 }
 
@@ -48,14 +60,34 @@ void FPantheliaDeveloperSuiteModule::RegisterMenus()
     Section.AddMenuEntry(
         TEXT("OpenPantheliaDeveloperSuite"),
         LOCTEXT("OpenDashboardLabel", "Panthelia Developer Suite"),
-        LOCTEXT("OpenDashboardTooltip", "Open Project Doctor profiles, Project Snapshot and Montage Inspector."),
+        LOCTEXT(
+            "OpenDashboardTooltip",
+            "Open Project Doctor profiles, Project Snapshot, Snapshot Diff Browser and Montage Inspector."),
         FSlateIcon(),
-        FUIAction(FExecuteAction::CreateRaw(this, &FPantheliaDeveloperSuiteModule::OpenDashboard)));
+        FUIAction(FExecuteAction::CreateRaw(
+            this,
+            &FPantheliaDeveloperSuiteModule::OpenDashboard)));
+
+    Section.AddMenuEntry(
+        TEXT("OpenPantheliaSnapshotDiffBrowser"),
+        LOCTEXT("OpenSnapshotDiffBrowserLabel", "PDS Snapshot Diff Browser"),
+        LOCTEXT(
+            "OpenSnapshotDiffBrowserTooltip",
+            "Open the read-only browser for selecting, filtering and inspecting snapshot differences."),
+        FSlateIcon(),
+        FUIAction(FExecuteAction::CreateRaw(
+            this,
+            &FPantheliaDeveloperSuiteModule::OpenSnapshotDiffBrowser)));
 }
 
 void FPantheliaDeveloperSuiteModule::OpenDashboard()
 {
     FGlobalTabmanager::Get()->TryInvokeTab(DashboardTabName);
+}
+
+void FPantheliaDeveloperSuiteModule::OpenSnapshotDiffBrowser()
+{
+    FGlobalTabmanager::Get()->TryInvokeTab(SnapshotDiffBrowserTabName);
 }
 
 TSharedRef<SDockTab> FPantheliaDeveloperSuiteModule::SpawnDashboardTab(
@@ -65,6 +97,16 @@ TSharedRef<SDockTab> FPantheliaDeveloperSuiteModule::SpawnDashboardTab(
         .TabRole(ETabRole::NomadTab)
         [
             SNew(SPDSDashboard)
+        ];
+}
+
+TSharedRef<SDockTab> FPantheliaDeveloperSuiteModule::SpawnSnapshotDiffBrowserTab(
+    const FSpawnTabArgs& SpawnTabArgs)
+{
+    return SNew(SDockTab)
+        .TabRole(ETabRole::NomadTab)
+        [
+            SNew(SPDSSnapshotDiffBrowser)
         ];
 }
 

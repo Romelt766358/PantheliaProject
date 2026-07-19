@@ -2,6 +2,8 @@
 
 #include "HAL/PlatformProcess.h"
 #include "Misc/Paths.h"
+#include "Modules/ModuleManager.h"
+#include "PantheliaDeveloperSuiteModule.h"
 #include "PDSAssetUtilities.h"
 #include "PDSDeveloperSettings.h"
 #include "PDSMontageInspectorService.h"
@@ -33,7 +35,7 @@ void SPDSDashboard::Construct(const FArguments& InArgs)
             .Padding(0.0f, 0.0f, 0.0f, 8.0f)
             [
                 SNew(STextBlock)
-                .Text(LOCTEXT("Title", "Panthelia Developer Suite — v0.3 Alpha 2 Read-Only"))
+                .Text(LOCTEXT("Title", "Panthelia Developer Suite — v0.3 Alpha 4 Read-Only"))
             ]
 
             + SVerticalBox::Slot()
@@ -44,7 +46,7 @@ void SPDSDashboard::Construct(const FArguments& InArgs)
                 .AutoWrapText(true)
                 .Text(LOCTEXT(
                     "Description",
-                    "Project Doctor separa Panthelia y contenido externo. Snapshot History exporta inventario origin-aware, compara cambios y mantiene un baseline bajo Saved sin modificar assets."))
+                    "Project Doctor separa Panthelia y contenido externo. Snapshot History exporta inventario origin-aware, compara cambios, mantiene un baseline y ofrece un navegador accionable sin guardar assets."))
             ]
 
             + SVerticalBox::Slot()
@@ -125,6 +127,13 @@ void SPDSDashboard::Construct(const FArguments& InArgs)
                 ]
 
                 + SUniformGridPanel::Slot(0, 5)
+                [
+                    SNew(SButton)
+                    .Text(LOCTEXT("OpenSnapshotDiffBrowser", "Open Snapshot Diff Browser"))
+                    .OnClicked(this, &SPDSDashboard::OnOpenSnapshotDiffBrowserClicked)
+                ]
+
+                + SUniformGridPanel::Slot(1, 5)
                 [
                     SNew(SButton)
                     .Text(LOCTEXT("OpenOutput", "Open Saved Output Folder"))
@@ -208,6 +217,15 @@ FReply SPDSDashboard::OnCompareBaselineClicked()
 {
     const FPDSProjectSnapshotDiffService Service;
     SetOutput(Service.CompareLatestSnapshotWithBaseline().ToMultilineText());
+    return FReply::Handled();
+}
+
+FReply SPDSDashboard::OnOpenSnapshotDiffBrowserClicked()
+{
+    FPantheliaDeveloperSuiteModule& Module =
+        FModuleManager::LoadModuleChecked<FPantheliaDeveloperSuiteModule>(
+            TEXT("PantheliaDeveloperSuite"));
+    Module.OpenSnapshotDiffBrowser();
     return FReply::Handled();
 }
 

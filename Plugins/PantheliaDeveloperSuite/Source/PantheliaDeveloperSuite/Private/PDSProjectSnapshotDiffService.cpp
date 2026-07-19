@@ -480,18 +480,30 @@ FPDSOperationResult FPDSProjectSnapshotDiffService::CompareSnapshotFiles(
     const FString& CurrentSnapshotPath,
     const FString& ComparisonLabel) const
 {
-    FPDSOperationResult Result;
+    FPDSOperationResult LoadResult;
     FPDSSnapshotDocument Previous;
     FPDSSnapshotDocument Current;
 
-    if (!LoadSnapshotDocument(PreviousSnapshotPath, Previous, Result.Issues)
-        || !LoadSnapshotDocument(CurrentSnapshotPath, Current, Result.Issues))
+    if (!LoadSnapshotDocument(PreviousSnapshotPath, Previous, LoadResult.Issues)
+        || !LoadSnapshotDocument(CurrentSnapshotPath, Current, LoadResult.Issues))
     {
-        Result.Summary = TEXT("No fue posible cargar ambos snapshots para comparación.");
-        return Result;
+        LoadResult.Summary = TEXT("No fue posible cargar ambos snapshots para comparación.");
+        return LoadResult;
     }
 
-    FPDSSnapshotDiff Diff = PDSSnapshotDiff::Compare(Previous, Current);
+    const FPDSSnapshotDiff Diff = PDSSnapshotDiff::Compare(Previous, Current);
+    FPDSOperationResult PersistResult = PersistDiffReports(Diff, ComparisonLabel);
+    PersistResult.Issues.Append(LoadResult.Issues);
+    return PersistResult;
+}
+
+FPDSOperationResult FPDSProjectSnapshotDiffService::PersistDiffReports(
+    const FPDSSnapshotDiff& Diff,
+    const FString& ComparisonLabel,
+    const FString& ReportsDirectoryOverride,
+    const bool bWriteLatestAliases) const
+{
+    FPDSOperationResult Result;
     Result.Issues.Append(Diff.Issues);
 
     const FString Markdown = BuildMarkdown(Diff);
@@ -502,16 +514,31 @@ FPDSOperationResult FPDSProjectSnapshotDiffService::CompareSnapshotFiles(
         Result.Issues.Add({
             EPDSIssueSeverity::Error,
             TEXT("PDS.SnapshotDiff.SerializationFailed"),
-            CurrentSnapshotPath,
+            Diff.CurrentSnapshotPath,
             Result.Summary
         });
         return Result;
     }
 
-    const FString ReportsDirectory = FPaths::Combine(
-        PDSAssetUtilities::GetSuiteSavedDirectory(),
-        TEXT("Reports"));
-    PDSAssetUtilities::EnsureDirectoryExists(ReportsDirectory);
+    FString ReportsDirectory = ReportsDirectoryOverride.IsEmpty()
+        ? FPaths::Combine(
+            PDSAssetUtilities::GetSuiteSavedDirectory(),
+            TEXT("Reports"))
+        : FPaths::ConvertRelativePathToFull(ReportsDirectoryOverride);
+    FPaths::NormalizeDirectoryName(ReportsDirectory);
+
+    if (!PDSAssetUtilities::EnsureDirectoryExists(ReportsDirectory))
+    {
+        Result.Summary = TEXT("El diff se calculó, pero no fue posible preparar la carpeta de informes.");
+        Result.Issues.Add({
+            EPDSIssueSeverity::Error,
+            TEXT("PDS.SnapshotDiff.ReportDirectoryFailed"),
+            ReportsDirectory,
+            Result.Summary
+        });
+        return Result;
+    }
+
     const FString Timestamp = PDSAssetUtilities::MakeTimestampForFileName();
     const FString MarkdownPath = FPaths::Combine(
         ReportsDirectory,
@@ -530,10 +557,16 @@ FPDSOperationResult FPDSProjectSnapshotDiffService::CompareSnapshotFiles(
         FFileHelper::SaveStringToFile(Markdown, *MarkdownPath);
     const bool bTimestampedJsonSaved =
         FFileHelper::SaveStringToFile(Json, *JsonPath);
-    const bool bLatestMarkdownSaved =
-        PDSAssetUtilities::SaveStringAtomically(Markdown, LatestMarkdownPath);
-    const bool bLatestJsonSaved =
-        PDSAssetUtilities::SaveStringAtomically(Json, LatestJsonPath);
+
+    bool bLatestMarkdownSaved = true;
+    bool bLatestJsonSaved = true;
+    if (bWriteLatestAliases)
+    {
+        bLatestMarkdownSaved =
+            PDSAssetUtilities::SaveStringAtomically(Markdown, LatestMarkdownPath);
+        bLatestJsonSaved =
+            PDSAssetUtilities::SaveStringAtomically(Json, LatestJsonPath);
+    }
 
     Result.bSuccess = bTimestampedMarkdownSaved
         && bTimestampedJsonSaved
@@ -562,7 +595,9 @@ FPDSOperationResult FPDSProjectSnapshotDiffService::CompareSnapshotFiles(
             EPDSIssueSeverity::Error,
             TEXT("PDS.SnapshotDiff.SaveFailed"),
             ReportsDirectory,
-            TEXT("El diff se calculó, pero uno o más informes timestamped/latest no pudieron guardarse.")
+            bWriteLatestAliases
+                ? TEXT("El diff se calculó, pero uno o más informes timestamped/latest no pudieron guardarse.")
+                : TEXT("El diff se calculó, pero uno o más informes timestamped no pudieron guardarse.")
         });
     }
 

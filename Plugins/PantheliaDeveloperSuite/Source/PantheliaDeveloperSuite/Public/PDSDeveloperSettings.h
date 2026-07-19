@@ -57,6 +57,15 @@ public:
     int32 SnapshotDiffPreviewLimit = 50;
 
     /**
+     * Cantidad máxima de snapshots timestamped mostrados en el navegador. Baseline y
+     * latest se incluyen aparte. Evita que el refresco del selector escale sin límite.
+     */
+    UPROPERTY(Config, EditAnywhere, Category = "Snapshot History", meta = (
+        ClampMin = "10", ClampMax = "500",
+        ToolTip = "Máximo de snapshots timestamped enumerados por Snapshot Diff Browser. Baseline y latest siempre se incluyen si existen."))
+    int32 SnapshotBrowserMaxTimestampedSnapshots = 20;
+
+    /**
      * Eleva a Error un paquete que aparece dirty después de la operación.
      * La detección es un efecto secundario observable; no demuestra por sí sola que el plugin
      * haya modificado deliberadamente el asset. El default conservador es Warning.

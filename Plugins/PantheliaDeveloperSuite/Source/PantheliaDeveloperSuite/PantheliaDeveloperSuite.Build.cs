@@ -21,6 +21,7 @@ public class PantheliaDeveloperSuite : ModuleRules
             "ContentBrowser",
             "DataValidation",
             "GameplayTags",
+            "InputCore",
             "Json",
             "JsonUtilities",
             "LevelEditor",
