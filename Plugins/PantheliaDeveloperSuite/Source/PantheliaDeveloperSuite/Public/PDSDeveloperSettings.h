@@ -6,7 +6,9 @@
 
 /**
  * Configuración compartida del plugin. Se expone en Project Settings para que
- * Panthelia pueda ajustar perfiles sin recompilar el módulo.
+ * Panthelia pueda ajustar perfiles sin recompilar el módulo. Config=Game se mantiene
+ * porque fue la variante que registró la sección correctamente en el Panthelia real
+ * con UE 5.8; la clase y el módulo continúan siendo exclusivamente Editor-only.
  */
 UCLASS(Config = Game, DefaultConfig, meta = (DisplayName = "Panthelia Developer Suite"))
 class PANTHELIADEVELOPERSUITE_API UPDSDeveloperSettings final : public UDeveloperSettings
@@ -47,6 +49,12 @@ public:
     /** Cantidad máxima de issues mostrados en el cuadro de texto del dashboard. */
     UPROPERTY(Config, EditAnywhere, Category = "Dashboard", meta = (ClampMin = "10", ClampMax = "1000"))
     int32 DashboardIssuePreviewLimit = 100;
+
+    /** Cantidad máxima de entradas por categoría mostradas en el resumen de Snapshot Diff. */
+    UPROPERTY(Config, EditAnywhere, Category = "Dashboard", meta = (
+        ClampMin = "5", ClampMax = "500",
+        ToolTip = "Limita solo la vista del dashboard. Los informes Markdown y JSON conservan el diff completo."))
+    int32 SnapshotDiffPreviewLimit = 50;
 
     /**
      * Eleva a Error un paquete que aparece dirty después de la operación.

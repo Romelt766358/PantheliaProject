@@ -7,6 +7,7 @@
 #include "PDSMontageInspectorService.h"
 #include "PDSProjectDoctorService.h"
 #include "PDSProjectSnapshotService.h"
+#include "PDSProjectSnapshotDiffService.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SMultiLineEditableTextBox.h"
 #include "Widgets/Layout/SBorder.h"
@@ -32,7 +33,7 @@ void SPDSDashboard::Construct(const FArguments& InArgs)
             .Padding(0.0f, 0.0f, 0.0f, 8.0f)
             [
                 SNew(STextBlock)
-                .Text(LOCTEXT("Title", "Panthelia Developer Suite — v0.2 Alpha 3 Read-Only"))
+                .Text(LOCTEXT("Title", "Panthelia Developer Suite — v0.3 Alpha 2 Read-Only"))
             ]
 
             + SVerticalBox::Slot()
@@ -43,7 +44,7 @@ void SPDSDashboard::Construct(const FArguments& InArgs)
                 .AutoWrapText(true)
                 .Text(LOCTEXT(
                     "Description",
-                    "Project Doctor separa Panthelia y contenido externo, genera Markdown/JSON y reporta efectos dirty observables sin asumir causalidad; Snapshot e Inspector continúan sin modificar assets."))
+                    "Project Doctor separa Panthelia y contenido externo. Snapshot History exporta inventario origin-aware, compara cambios y mantiene un baseline bajo Saved sin modificar assets."))
             ]
 
             + SVerticalBox::Slot()
@@ -98,11 +99,32 @@ void SPDSDashboard::Construct(const FArguments& InArgs)
                 + SUniformGridPanel::Slot(0, 3)
                 [
                     SNew(SButton)
+                    .Text(LOCTEXT("CompareLatestSnapshots", "Compare Latest Two Snapshots"))
+                    .OnClicked(this, &SPDSDashboard::OnCompareLatestSnapshotsClicked)
+                ]
+
+                + SUniformGridPanel::Slot(1, 3)
+                [
+                    SNew(SButton)
+                    .Text(LOCTEXT("SetSnapshotBaseline", "Set Latest Snapshot as Baseline"))
+                    .OnClicked(this, &SPDSDashboard::OnSetSnapshotBaselineClicked)
+                ]
+
+                + SUniformGridPanel::Slot(0, 4)
+                [
+                    SNew(SButton)
+                    .Text(LOCTEXT("CompareBaseline", "Compare Latest with Baseline"))
+                    .OnClicked(this, &SPDSDashboard::OnCompareBaselineClicked)
+                ]
+
+                + SUniformGridPanel::Slot(1, 4)
+                [
+                    SNew(SButton)
                     .Text(LOCTEXT("InspectMontages", "Inspect Selected Montages"))
                     .OnClicked(this, &SPDSDashboard::OnInspectMontagesClicked)
                 ]
 
-                + SUniformGridPanel::Slot(1, 3)
+                + SUniformGridPanel::Slot(0, 5)
                 [
                     SNew(SButton)
                     .Text(LOCTEXT("OpenOutput", "Open Saved Output Folder"))
@@ -165,6 +187,27 @@ FReply SPDSDashboard::OnExportSnapshotClicked()
     const FPDSOperationResult Result = Service.ExportProjectSnapshot(
         bHasValidationSummary ? &LastValidationSummary : nullptr);
     SetOutput(Result.ToMultilineText());
+    return FReply::Handled();
+}
+
+FReply SPDSDashboard::OnCompareLatestSnapshotsClicked()
+{
+    const FPDSProjectSnapshotDiffService Service;
+    SetOutput(Service.CompareLatestTwoSnapshots().ToMultilineText());
+    return FReply::Handled();
+}
+
+FReply SPDSDashboard::OnSetSnapshotBaselineClicked()
+{
+    const FPDSProjectSnapshotDiffService Service;
+    SetOutput(Service.SetLatestSnapshotAsBaseline().ToMultilineText());
+    return FReply::Handled();
+}
+
+FReply SPDSDashboard::OnCompareBaselineClicked()
+{
+    const FPDSProjectSnapshotDiffService Service;
+    SetOutput(Service.CompareLatestSnapshotWithBaseline().ToMultilineText());
     return FReply::Handled();
 }
 

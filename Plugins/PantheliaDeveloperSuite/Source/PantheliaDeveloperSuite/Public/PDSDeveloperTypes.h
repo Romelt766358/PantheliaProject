@@ -104,6 +104,7 @@ struct FPDSOperationResult
     bool bCancelled = false;
     FString Summary;
     FString OutputPath;
+    FString OutputJsonPath;
     TArray<FPDSIssue> Issues;
 
     FString ToMultilineText() const;

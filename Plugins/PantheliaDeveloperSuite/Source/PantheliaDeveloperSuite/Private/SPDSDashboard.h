@@ -21,6 +21,9 @@ private:
     FReply OnValidateExternalContentClicked();
     FReply OnValidateProjectClicked();
     FReply OnExportSnapshotClicked();
+    FReply OnCompareLatestSnapshotsClicked();
+    FReply OnSetSnapshotBaselineClicked();
+    FReply OnCompareBaselineClicked();
     FReply OnInspectMontagesClicked();
     FReply OnOpenOutputFolderClicked();
 

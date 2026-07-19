@@ -10,6 +10,7 @@
 #include "Misc/ScopedSlowTask.h"
 #include "PDSAssetUtilities.h"
 #include "PDSMontageInspectorService.h"
+#include "PDSDeveloperSettings.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
 #include "UObject/GarbageCollection.h"
@@ -145,9 +146,11 @@ FPDSOperationResult FPDSProjectSnapshotService::ExportProjectSnapshot(
     const FString ProjectName = FApp::GetProjectName();
     const bool bIsPantheliaProjectContext =
         ProjectName.Equals(TEXT("PantheliaProject"), ESearchCase::IgnoreCase);
+    const FPDSOriginResolver OriginResolver = FPDSOriginResolver::FromSettings();
+    const UPDSDeveloperSettings* DeveloperSettings = GetDefault<UPDSDeveloperSettings>();
 
     TSharedRef<FJsonObject> RootJson = MakeShared<FJsonObject>();
-    RootJson->SetStringField(TEXT("schemaVersion"), TEXT("0.2.0-alpha3"));
+    RootJson->SetStringField(TEXT("schemaVersion"), TEXT("0.3.0-alpha2"));
     RootJson->SetStringField(
         TEXT("generatedAtUtc"),
         FDateTime::UtcNow().ToIso8601());
@@ -205,6 +208,30 @@ FPDSOperationResult FPDSProjectSnapshotService::ExportProjectSnapshot(
         TEXT("Los paquetes /Game/__ExternalActors__ y /Game/__ExternalObjects__ se excluyen para evitar ruido masivo en snapshots destinados a IA. Los mapas UWorld permanecen en el inventario."));
     RootJson->SetObjectField(TEXT("assetInventoryContext"), InventoryContextJson);
 
+
+    TSharedRef<FJsonObject> ClassificationJson = MakeShared<FJsonObject>();
+    const auto AddStringArray = [&ClassificationJson](
+        const TCHAR* FieldName,
+        const TArray<FString>& Values)
+    {
+        TArray<TSharedPtr<FJsonValue>> JsonValues;
+        for (const FString& Value : Values)
+        {
+            JsonValues.Add(MakeShared<FJsonValueString>(Value));
+        }
+        ClassificationJson->SetArrayField(FieldName, JsonValues);
+    };
+    if (DeveloperSettings)
+    {
+        AddStringArray(TEXT("pantheliaCoreRoots"), DeveloperSettings->PantheliaCorePackageRoots);
+        AddStringArray(TEXT("externalContentRoots"), DeveloperSettings->ExternalContentPackageRoots);
+        AddStringArray(TEXT("alwaysExcludedRoots"), DeveloperSettings->AlwaysExcludedPackageRoots);
+    }
+    ClassificationJson->SetStringField(
+        TEXT("precedence"),
+        TEXT("Always Excluded -> External Content -> Panthelia Core -> Game Content"));
+    RootJson->SetObjectField(TEXT("assetClassificationContext"), ClassificationJson);
+
     TArray<TSharedPtr<FJsonValue>> InventoryJson;
     TArray<TSharedPtr<FJsonValue>> MontagesJson;
     int32 MontageCount = 0;
@@ -251,6 +278,10 @@ FPDSOperationResult FPDSProjectSnapshotService::ExportProjectSnapshot(
         AssetJson->SetStringField(
             TEXT("classPath"),
             AssetData.AssetClassPath.ToString());
+        AssetJson->SetStringField(
+            TEXT("origin"),
+            PDSDeveloperTypes::AssetOriginToString(
+                OriginResolver.Classify(AssetData.PackagePath.ToString())));
         InventoryJson.Add(MakeShared<FJsonValueObject>(AssetJson));
 
         if (AssetData.IsInstanceOf(UAnimMontage::StaticClass(), EResolveClass::No))

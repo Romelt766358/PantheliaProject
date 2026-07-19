@@ -289,6 +289,11 @@ FString FPDSOperationResult::ToMultilineText() const
         Output += FString::Printf(TEXT("\n\nSalida: %s"), *OutputPath);
     }
 
+    if (!OutputJsonPath.IsEmpty())
+    {
+        Output += FString::Printf(TEXT("\nInforme JSON: %s"), *OutputJsonPath);
+    }
+
     if (!Issues.IsEmpty())
     {
         Output += TEXT("\n\nHallazgos:\n");

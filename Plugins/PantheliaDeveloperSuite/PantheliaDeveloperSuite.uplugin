@@ -1,9 +1,9 @@
 {
   "FileVersion": 3,
-  "Version": 5,
-  "VersionName": "0.2.0-alpha3-local",
+  "Version": 7,
+  "VersionName": "0.3.0-alpha2-preliminary",
   "FriendlyName": "Panthelia Developer Suite",
-  "Description": "Read-only editor diagnostics with validation profiles, JSON reports, observable dirty-package side-effect reporting, project snapshot export and montage inspection for Unreal Engine 5.8.",
+  "Description": "Read-only Unreal Engine 5.8 editor diagnostics with validation profiles, origin-aware project snapshots, deterministic snapshot history comparison, baseline reports and montage inspection for Panthelia.",
   "Category": "Panthelia",
   "CreatedBy": "Panthelia Project",
   "CanContainContent": false,
