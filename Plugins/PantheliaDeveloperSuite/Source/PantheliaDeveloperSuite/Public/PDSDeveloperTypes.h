@@ -29,6 +29,15 @@ enum class EPDSValidationProfile : uint8
     EntireProject
 };
 
+/** Estado técnico de una ejecución de Project Doctor. */
+enum class EPDSValidationExecutionState : uint8
+{
+    NotStarted,
+    Completed,
+    Cancelled,
+    InfrastructureFailure
+};
+
 /** Hallazgo serializable/presentable sin depender de un tipo de asset concreto. */
 struct FPDSIssue
 {
@@ -63,6 +72,9 @@ struct FPDSValidationSummary
     int32 NumSkipped = 0;
     int32 NumUnableToValidate = 0;
     bool bAssetLimitReached = false;
+    EPDSValidationExecutionState ExecutionState =
+        EPDSValidationExecutionState::NotStarted;
+    /** Espejo de compatibilidad; SetExecutionState mantiene este campo sincronizado. */
     bool bCancelled = false;
     FString GeneratedAtUtc;
     FString ScopeId;
@@ -87,6 +99,9 @@ struct FPDSValidationSummary
 
     TArray<FPDSIssue> Issues;
 
+    void SetExecutionState(EPDSValidationExecutionState NewState);
+    bool WasValidationCompleted() const;
+    bool HasInfrastructureFailure() const;
     bool HasErrors() const;
     TArray<FPDSIssueGroup> BuildIssueGroups(int32 SampleAssetLimit = 3) const;
 
@@ -116,5 +131,7 @@ namespace PDSDeveloperTypes
     FString AssetOriginToString(EPDSAssetOrigin Origin);
     FString ValidationProfileToId(EPDSValidationProfile Profile);
     FString ValidationProfileToLabel(EPDSValidationProfile Profile);
+    FString ValidationExecutionStateToString(
+        EPDSValidationExecutionState State);
     FString CompactMessage(FString Message, int32 MaxCharacters = 240);
 }

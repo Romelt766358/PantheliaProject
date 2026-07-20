@@ -1,7 +1,7 @@
 {
   "FileVersion": 3,
-  "Version": 11,
-  "VersionName": "0.4.0-alpha2-preliminary",
+  "Version": 12,
+  "VersionName": "0.4.0-alpha3-preliminary",
   "FriendlyName": "Panthelia Developer Suite",
   "Description": "Read-only Unreal Engine 5.8 diagnostics with structured Toolset Registry automation for Unreal MCP, validation profiles, origin-aware snapshots, deterministic diffs and an actionable Snapshot Diff Browser for Panthelia.",
   "Category": "Panthelia",

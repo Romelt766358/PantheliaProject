@@ -69,6 +69,10 @@ namespace
             TEXT("assetLimitReached"),
             Summary->bAssetLimitReached);
         ValidationJson->SetBoolField(TEXT("cancelled"), Summary->bCancelled);
+        ValidationJson->SetStringField(
+            TEXT("executionState"),
+            PDSDeveloperTypes::ValidationExecutionStateToString(
+                Summary->ExecutionState));
 
         TSharedRef<FJsonObject> OriginsJson = MakeShared<FJsonObject>();
         OriginsJson->SetNumberField(
@@ -150,7 +154,7 @@ FPDSOperationResult FPDSProjectSnapshotService::ExportProjectSnapshot(
     const UPDSDeveloperSettings* DeveloperSettings = GetDefault<UPDSDeveloperSettings>();
 
     TSharedRef<FJsonObject> RootJson = MakeShared<FJsonObject>();
-    RootJson->SetStringField(TEXT("schemaVersion"), TEXT("0.3.0-alpha2"));
+    RootJson->SetStringField(TEXT("schemaVersion"), TEXT("0.3.0-alpha3"));
     RootJson->SetStringField(
         TEXT("generatedAtUtc"),
         FDateTime::UtcNow().ToIso8601());

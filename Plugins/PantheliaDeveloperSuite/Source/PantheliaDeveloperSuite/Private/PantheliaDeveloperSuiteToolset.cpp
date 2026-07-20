@@ -21,7 +21,7 @@ UPantheliaDeveloperSuiteToolset::ListSnapshots(const int32 Limit)
     return Service.ListSnapshots(Limit);
 }
 
-FPDSAutomationOperationResult
+FPDSAutomationSnapshotExportResult
 UPantheliaDeveloperSuiteToolset::ExportProjectSnapshot()
 {
     const FPDSAutomationService Service;
@@ -37,7 +37,7 @@ UPantheliaDeveloperSuiteToolset::ValidateProfile(
     return Service.ValidateProfile(Profile, MaxIssues);
 }
 
-FPDSAutomationOperationResult
+FPDSAutomationBaselineUpdateResult
 UPantheliaDeveloperSuiteToolset::SetLatestSnapshotAsBaseline()
 {
     const FPDSAutomationService Service;

@@ -84,6 +84,23 @@ namespace PDSDeveloperTypes
         }
     }
 
+    FString ValidationExecutionStateToString(
+        const EPDSValidationExecutionState State)
+    {
+        switch (State)
+        {
+        case EPDSValidationExecutionState::Completed:
+            return TEXT("Completed");
+        case EPDSValidationExecutionState::Cancelled:
+            return TEXT("Cancelled");
+        case EPDSValidationExecutionState::InfrastructureFailure:
+            return TEXT("InfrastructureFailure");
+        case EPDSValidationExecutionState::NotStarted:
+        default:
+            return TEXT("NotStarted");
+        }
+    }
+
     FString CompactMessage(FString Message, const int32 MaxCharacters)
     {
         Message.ReplaceInline(TEXT("\r"), TEXT(" "));
@@ -117,6 +134,24 @@ FString FPDSIssue::ToDisplayString(const bool bCompactMessage) const
         *PDSDeveloperTypes::AssetOriginToString(Origin),
         AssetPath.IsEmpty() ? TEXT("<sin asset>") : *AssetPath,
         *DisplayMessage);
+}
+
+void FPDSValidationSummary::SetExecutionState(
+    const EPDSValidationExecutionState NewState)
+{
+    ExecutionState = NewState;
+    bCancelled = NewState == EPDSValidationExecutionState::Cancelled;
+}
+
+bool FPDSValidationSummary::WasValidationCompleted() const
+{
+    return ExecutionState == EPDSValidationExecutionState::Completed;
+}
+
+bool FPDSValidationSummary::HasInfrastructureFailure() const
+{
+    return ExecutionState ==
+        EPDSValidationExecutionState::InfrastructureFailure;
 }
 
 bool FPDSValidationSummary::HasErrors() const
@@ -191,7 +226,8 @@ TArray<FPDSIssueGroup> FPDSValidationSummary::BuildIssueGroups(
 FString FPDSValidationSummary::ToMultilineText(const int32 MaxIssues) const
 {
     FString Output = FString::Printf(
-        TEXT("Validación completada\nPerfil: %s\nGenerada UTC: %s\nSolicitados: %d\nComprobados: %d\nVálidos: %d\nInválidos: %d\nCon warnings: %d\nNo validados: %d\nOmitidos: %d\nNo se pudieron validar: %d\nLímite alcanzado: %s\nCancelado: %s\n"),
+        TEXT("Estado de validación: %s\nPerfil: %s\nGenerada UTC: %s\nSolicitados: %d\nComprobados: %d\nVálidos: %d\nInválidos: %d\nCon warnings: %d\nNo validados: %d\nOmitidos: %d\nNo se pudieron validar: %d\nLímite alcanzado: %s\nCancelado: %s\n"),
+        *PDSDeveloperTypes::ValidationExecutionStateToString(ExecutionState),
         ScopeLabel.IsEmpty() ? TEXT("<desconocido>") : *ScopeLabel,
         GeneratedAtUtc.IsEmpty() ? TEXT("<desconocida>") : *GeneratedAtUtc,
         NumRequested,

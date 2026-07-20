@@ -14,11 +14,11 @@ class PANTHELIADEVELOPERSUITE_API FPDSAutomationService
 public:
     FPDSAutomationStatusResult GetStatus() const;
     FPDSAutomationSnapshotHistoryResult ListSnapshots(int32 Limit) const;
-    FPDSAutomationOperationResult ExportProjectSnapshot() const;
+    FPDSAutomationSnapshotExportResult ExportProjectSnapshot() const;
     FPDSAutomationValidationResult ValidateProfile(
         EPDSAutomationValidationProfile Profile,
         int32 MaxIssues) const;
-    FPDSAutomationOperationResult SetLatestSnapshotAsBaseline() const;
+    FPDSAutomationBaselineUpdateResult SetLatestSnapshotAsBaseline() const;
     FPDSAutomationDiffResult CompareLatestSnapshotWithBaseline(int32 MaxEntries) const;
     FPDSAutomationDiffResult CompareLatestTwoSnapshots(int32 MaxEntries) const;
 
@@ -27,6 +27,12 @@ public:
 
 namespace PDSAutomation
 {
+    /** Proyección pura y testeable de un snapshot ya parseado. */
+    PANTHELIADEVELOPERSUITE_API FPDSAutomationSnapshotMetadata
+    BuildSnapshotMetadata(
+        const FPDSSnapshotDocument& Document,
+        const FString& FilePath);
+
     /** Conversión común para futuros adaptadores, tests y commandlets. */
     PANTHELIADEVELOPERSUITE_API FPDSAutomationOperationResult ConvertOperationResult(
         const FPDSOperationResult& Source,

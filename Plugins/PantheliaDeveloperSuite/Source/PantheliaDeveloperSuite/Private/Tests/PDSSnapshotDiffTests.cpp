@@ -119,9 +119,9 @@ IMPLEMENT_SIMPLE_AUTOMATION_TEST(
 bool FPDSSnapshotDiffSchemaCompatibilityTest::RunTest(const FString& Parameters)
 {
     const FString PreviousJson =
-        TEXT("{\"schemaVersion\":\"0.2.0-alpha3\",\"generatedAtUtc\":\"old\",\"project\":{\"name\":\"PantheliaProject\"},\"assetInventory\":[],\"gameplayTags\":[],\"montages\":[],\"validation\":{\"included\":false}}");
+        TEXT("{\"schemaVersion\":\"0.3.0-alpha2\",\"generatedAtUtc\":\"old\",\"project\":{\"name\":\"PantheliaProject\"},\"assetInventory\":[],\"gameplayTags\":[],\"montages\":[],\"validation\":{\"included\":false}}");
     const FString CurrentJson =
-        TEXT("{\"schemaVersion\":\"0.3.0-alpha2\",\"generatedAtUtc\":\"new\",\"project\":{\"name\":\"PantheliaProject\"},\"assetInventory\":[],\"gameplayTags\":[],\"montages\":[],\"validation\":{\"included\":false}}");
+        TEXT("{\"schemaVersion\":\"0.3.0-alpha3\",\"generatedAtUtc\":\"new\",\"project\":{\"name\":\"PantheliaProject\"},\"assetInventory\":[],\"gameplayTags\":[],\"montages\":[],\"validation\":{\"included\":false,\"executionState\":\"Completed\"}}");
 
     FPDSSnapshotDocument Previous;
     FPDSSnapshotDocument Current;
@@ -131,6 +131,20 @@ bool FPDSSnapshotDiffSchemaCompatibilityTest::RunTest(const FString& Parameters)
 
     const FPDSSnapshotDiff Diff = PDSSnapshotDiff::Compare(Previous, Current);
     TestEqual(TEXT("Schema change creates one info issue"), Diff.Issues.Num(), 1);
+    TestEqual(TEXT("No asset changes"), Diff.AddedAssets.Num() + Diff.RemovedAssets.Num() + Diff.ChangedAssets.Num(), 0);
+    TestEqual(TEXT("No Gameplay Tag changes"), Diff.AddedGameplayTags.Num() + Diff.RemovedGameplayTags.Num(), 0);
+    TestEqual(TEXT("No montage changes"), Diff.AddedMontages.Num() + Diff.RemovedMontages.Num() + Diff.ChangedMontages.Num(), 0);
+    if (Diff.Issues.Num() == 1)
+    {
+        TestEqual(
+            TEXT("Schema issue rule"),
+            Diff.Issues[0].RuleId,
+            FString(TEXT("PDS.SnapshotDiff.SchemaChanged")));
+        TestEqual(
+            TEXT("Schema issue severity"),
+            static_cast<uint8>(Diff.Issues[0].Severity),
+            static_cast<uint8>(EPDSIssueSeverity::Info));
+    }
     return true;
 }
 

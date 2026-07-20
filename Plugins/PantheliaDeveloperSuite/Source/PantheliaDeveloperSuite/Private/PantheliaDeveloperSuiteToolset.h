@@ -28,23 +28,29 @@ public:
      * Enumera snapshots disponibles con respuesta acotada. AvailableSnapshotCount
      * representa todos los archivos físicos; la enumeración de descriptores también
      * respeta SnapshotBrowserMaxTimestampedSnapshots de los settings del plugin.
-     * @param Limit Máximo de descriptores devueltos. Valores <= 0 usan 20.
+     * @param Limit Máximo de descriptores devueltos. Valores <= 0 usan 20;
+     * valores superiores a 500 se limitan a 500.
      */
     UFUNCTION(meta = (AICallable), Category = "Panthelia Developer Suite")
     static FPDSAutomationSnapshotHistoryResult ListSnapshots(int32 Limit);
 
     /**
-     * Exporta un snapshot origin-aware del proyecto bajo Saved.
+     * Exporta un snapshot origin-aware bajo Saved y devuelve metadata estructurada
+     * obtenida mediante readback del JSON persistido.
      */
     UFUNCTION(meta = (AICallable), Category = "Panthelia Developer Suite")
-    static FPDSAutomationOperationResult ExportProjectSnapshot();
+    static FPDSAutomationSnapshotExportResult ExportProjectSnapshot();
 
     /**
      * Ejecuta Project Doctor para un perfil explícito y persiste sus informes.
-     * bValidationCompleted indica que la operación terminó; bSuccess además exige
-     * que no existan errores bloqueantes de validación.
+     * bValidationCompleted indica únicamente ExecutionState=Completed; bSuccess
+     * además exige que no existan errores bloqueantes de validación.
+     * ExecutionState usa NotStarted, Completed, Cancelled o InfrastructureFailure.
+     * Los booleanos son el contrato primario; Cancelled está reservado y Project
+     * Doctor de UE 5.8 no lo produce actualmente.
      * @param Profile Perfil read-only que debe validarse.
-     * @param MaxIssues Máximo de issues incluidos en la respuesta. El informe conserva todos.
+     * @param MaxIssues Máximo de issues incluidos en la respuesta. Valores <= 0
+     * usan 100 y valores superiores a 500 se limitan a 500. El informe conserva todos.
      */
     UFUNCTION(meta = (AICallable), Category = "Panthelia Developer Suite")
     static FPDSAutomationValidationResult ValidateProfile(
@@ -52,14 +58,16 @@ public:
         int32 MaxIssues);
 
     /**
-     * Reemplaza baseline.json con una copia del latest snapshot bajo Saved.
+     * Reemplaza baseline.json con una copia del latest snapshot bajo Saved y
+     * devuelve metadata estructurada del baseline anterior y del nuevo.
      */
     UFUNCTION(meta = (AICallable), Category = "Panthelia Developer Suite")
-    static FPDSAutomationOperationResult SetLatestSnapshotAsBaseline();
+    static FPDSAutomationBaselineUpdateResult SetLatestSnapshotAsBaseline();
 
     /**
      * Compara latest.json con baseline.json y devuelve un diff estructurado.
      * @param MaxEntries Máximo de cambios por categoría incluidos en la respuesta.
+     * Valores <= 0 usan 100 y valores superiores a 500 se limitan a 500.
      */
     UFUNCTION(meta = (AICallable), Category = "Panthelia Developer Suite")
     static FPDSAutomationDiffResult CompareLatestSnapshotWithBaseline(
@@ -68,6 +76,7 @@ public:
     /**
      * Compara los dos snapshots timestamped más recientes.
      * @param MaxEntries Máximo de cambios por categoría incluidos en la respuesta.
+     * Valores <= 0 usan 100 y valores superiores a 500 se limitan a 500.
      */
     UFUNCTION(meta = (AICallable), Category = "Panthelia Developer Suite")
     static FPDSAutomationDiffResult CompareLatestTwoSnapshots(

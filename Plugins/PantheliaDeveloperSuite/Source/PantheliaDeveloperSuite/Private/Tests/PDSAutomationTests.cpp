@@ -24,6 +24,12 @@ bool FPDSAutomationToolsetSchemaTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("Schema exposes SetLatestSnapshotAsBaseline"), Schema.Contains(TEXT("SetLatestSnapshotAsBaseline")));
     TestTrue(TEXT("Schema exposes baseline comparison"), Schema.Contains(TEXT("CompareLatestSnapshotWithBaseline")));
     TestTrue(TEXT("Schema exposes latest-two comparison"), Schema.Contains(TEXT("CompareLatestTwoSnapshots")));
+    TestTrue(TEXT("Schema exposes duration"), Schema.Contains(TEXT("durationMilliseconds")));
+    TestTrue(TEXT("Schema exposes validation state"), Schema.Contains(TEXT("executionState")));
+    TestTrue(TEXT("Schema exposes infrastructure failures"), Schema.Contains(TEXT("bInfrastructureFailure")));
+    TestTrue(TEXT("Schema exposes structured export"), Schema.Contains(TEXT("timestampedSnapshot")));
+    TestTrue(TEXT("Schema exposes previous baseline metadata"), Schema.Contains(TEXT("previousBaseline")));
+    TestTrue(TEXT("Schema exposes new baseline metadata"), Schema.Contains(TEXT("newBaseline")));
 
     const UPantheliaDeveloperSuiteToolset* ToolsetCDO =
         GetDefault<UPantheliaDeveloperSuiteToolset>();
@@ -33,7 +39,7 @@ bool FPDSAutomationToolsetSchemaTest::RunTest(const FString& Parameters)
         TestEqual(
             TEXT("Toolset version matches Automation API"),
             ToolsetCDO->GetToolsetVersion(),
-            FString(TEXT("0.4.0-alpha2")));
+            FString(TEXT("0.4.0-alpha3")));
     }
     return true;
 }
@@ -133,6 +139,8 @@ bool FPDSAutomationValidationCompletionSemanticsTest::RunTest(
     const FString& Parameters)
 {
     FPDSValidationSummary CompletedWithErrors;
+    CompletedWithErrors.SetExecutionState(
+        EPDSValidationExecutionState::Completed);
     CompletedWithErrors.ScopeId = TEXT("external-content");
     CompletedWithErrors.ScopeLabel = TEXT("External Content");
     CompletedWithErrors.NumRequested = 1;
@@ -156,9 +164,17 @@ bool FPDSAutomationValidationCompletionSemanticsTest::RunTest(
         TEXT("Blocking findings keep bSuccess false"),
         CompletedResult.bSuccess);
     TestFalse(TEXT("Completed validation was not cancelled"), CompletedResult.bCancelled);
+    TestFalse(
+        TEXT("Content findings are not infrastructure failures"),
+        CompletedResult.bInfrastructureFailure);
+    TestEqual(
+        TEXT("Completed state is exposed"),
+        CompletedResult.ExecutionState,
+        FString(TEXT("Completed")));
 
     FPDSValidationSummary CancelledSummary;
-    CancelledSummary.bCancelled = true;
+    CancelledSummary.SetExecutionState(
+        EPDSValidationExecutionState::Cancelled);
     const FPDSAutomationValidationResult CancelledResult =
         PDSAutomation::ConvertValidationSummary(CancelledSummary, 10);
 
@@ -185,12 +201,139 @@ bool FPDSAutomationStatusContractTest::RunTest(const FString& Parameters)
     TestEqual(
         TEXT("Automation API version"),
         Result.AutomationApiVersion,
-        FString(TEXT("0.4.0-alpha2")));
+        FString(TEXT("0.4.0-alpha3")));
     TestFalse(
         TEXT("GetStatus does not claim snapshot validity was inspected"),
         Result.bSnapshotValidityKnown);
     TestEqual(TEXT("Valid count is unknown"), Result.ValidSnapshotCount, -1);
     TestEqual(TEXT("Invalid count is unknown"), Result.InvalidSnapshotCount, -1);
+    TestTrue(
+        TEXT("Duration is non-negative"),
+        Result.DurationMilliseconds >= 0.0);
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FPDSAutomationInfrastructureFailureSemanticsTest,
+    "Panthelia.DeveloperSuite.Automation.InfrastructureFailureSemantics",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPDSAutomationInfrastructureFailureSemanticsTest::RunTest(
+    const FString& Parameters)
+{
+    FPDSValidationSummary Summary;
+    Summary.SetExecutionState(
+        EPDSValidationExecutionState::InfrastructureFailure);
+
+    FPDSIssue FailureIssue;
+    FailureIssue.Severity = EPDSIssueSeverity::Error;
+    FailureIssue.RuleId = TEXT("PDS.Validation.EditorUnavailable");
+    Summary.Issues.Add(MoveTemp(FailureIssue));
+
+    const FPDSAutomationValidationResult Result =
+        PDSAutomation::ConvertValidationSummary(Summary, 10);
+
+    TestFalse(TEXT("Infrastructure failure is not completed"), Result.bValidationCompleted);
+    TestFalse(TEXT("Infrastructure failure is not successful"), Result.bSuccess);
+    TestFalse(TEXT("Infrastructure failure is not cancellation"), Result.bCancelled);
+    TestTrue(TEXT("Infrastructure failure flag is explicit"), Result.bInfrastructureFailure);
+    TestEqual(
+        TEXT("Infrastructure state is exposed"),
+        Result.ExecutionState,
+        FString(TEXT("InfrastructureFailure")));
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FPDSAutomationSnapshotMetadataProjectionTest,
+    "Panthelia.DeveloperSuite.Automation.SnapshotMetadataProjection",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPDSAutomationSnapshotMetadataProjectionTest::RunTest(
+    const FString& Parameters)
+{
+    FPDSSnapshotDocument Document;
+    Document.GeneratedAtUtc = TEXT("2026-07-19T18:25:22.487Z");
+    Document.SchemaVersion = TEXT("0.3.0-alpha3");
+    Document.ProjectName = TEXT("PantheliaProject");
+    Document.EngineVersion = TEXT("5.8.0-test");
+
+    FPDSSnapshotAssetRecord Asset;
+    Asset.ObjectPath = TEXT("/Game/Test.Test");
+    Document.AssetsByObjectPath.Add(Asset.ObjectPath, Asset);
+    Document.GameplayTags.Add(TEXT("Test.Tag"));
+
+    FPDSSnapshotMontageRecord Montage;
+    Montage.Path = TEXT("/Game/Montage.Montage");
+    Document.MontagesByPath.Add(Montage.Path, Montage);
+
+    const FPDSAutomationSnapshotMetadata Result =
+        PDSAutomation::BuildSnapshotMetadata(
+            Document,
+            TEXT("C:/Saved/test.json"));
+
+    TestTrue(TEXT("Metadata is valid"), Result.bValid);
+    TestEqual(TEXT("Asset count"), Result.AssetCount, 1);
+    TestEqual(TEXT("Gameplay Tag count"), Result.GameplayTagCount, 1);
+    TestEqual(TEXT("Montage count"), Result.MontageCount, 1);
+    TestEqual(
+        TEXT("Path is preserved"),
+        Result.FilePath,
+        FString(TEXT("C:/Saved/test.json")));
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FPDSAutomationResponseLimitContractTest,
+    "Panthelia.DeveloperSuite.Automation.ResponseLimitContract",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPDSAutomationResponseLimitContractTest::RunTest(
+    const FString& Parameters)
+{
+    FPDSSnapshotDiff Diff;
+    FPDSOperationResult PersistResult;
+    PersistResult.bSuccess = true;
+
+    const FPDSAutomationDiffResult ZeroResult =
+        PDSAutomation::BuildDiffResult(
+            Diff,
+            PersistResult,
+            TEXT("Zero"),
+            0,
+            100);
+    TestEqual(TEXT("Zero keeps raw request"), ZeroResult.RequestedEntryLimit, 0);
+    TestEqual(TEXT("Zero uses default"), ZeroResult.AppliedEntryLimit, 100);
+
+    const FPDSAutomationDiffResult NegativeResult =
+        PDSAutomation::BuildDiffResult(
+            Diff,
+            PersistResult,
+            TEXT("Negative"),
+            -7,
+            100);
+    TestEqual(TEXT("Negative keeps raw request"), NegativeResult.RequestedEntryLimit, -7);
+    TestEqual(TEXT("Negative uses default"), NegativeResult.AppliedEntryLimit, 100);
+
+    const FPDSAutomationDiffResult OneResult =
+        PDSAutomation::BuildDiffResult(
+            Diff,
+            PersistResult,
+            TEXT("One"),
+            1,
+            100);
+    TestEqual(TEXT("One is applied exactly"), OneResult.AppliedEntryLimit, 1);
+
+    const FPDSAutomationDiffResult CappedResult =
+        PDSAutomation::BuildDiffResult(
+            Diff,
+            PersistResult,
+            TEXT("Capped"),
+            9999,
+            100);
+    TestEqual(TEXT("Large request keeps raw value"), CappedResult.RequestedEntryLimit, 9999);
+    TestEqual(TEXT("Large request is capped"), CappedResult.AppliedEntryLimit, 500);
+    TestEqual(TEXT("Maximum is explicit"), CappedResult.MaximumAllowedEntryLimit, 500);
     return true;
 }
 

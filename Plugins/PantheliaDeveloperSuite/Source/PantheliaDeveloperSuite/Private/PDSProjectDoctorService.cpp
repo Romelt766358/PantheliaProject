@@ -272,6 +272,8 @@ FPDSValidationSummary FPDSProjectDoctorService::ValidateAssetSelection(
         Selection.HasAlignedOrigins(),
         TEXT("La validación requiere Assets y Origins alineados.")))
     {
+        Summary.SetExecutionState(
+            EPDSValidationExecutionState::InfrastructureFailure);
         Summary.NumNotValidated = Selection.Assets.Num();
         Summary.NumUnableToValidate = Selection.Assets.Num();
         Summary.Issues.Add({
@@ -330,6 +332,8 @@ FPDSValidationSummary FPDSProjectDoctorService::ValidateAssetSelection(
 
     if (Selection.Assets.IsEmpty())
     {
+        Summary.SetExecutionState(
+            EPDSValidationExecutionState::Completed);
         Summary.Issues.Add({
             EPDSIssueSeverity::Warning,
             TEXT("PDS.Validation.NoInput"),
@@ -343,6 +347,8 @@ FPDSValidationSummary FPDSProjectDoctorService::ValidateAssetSelection(
 
     if (!GEditor)
     {
+        Summary.SetExecutionState(
+            EPDSValidationExecutionState::InfrastructureFailure);
         Summary.NumNotValidated = Selection.Assets.Num();
         Summary.NumUnableToValidate = Selection.Assets.Num();
         Summary.Issues.Add({
@@ -361,6 +367,8 @@ FPDSValidationSummary FPDSProjectDoctorService::ValidateAssetSelection(
 
     if (!ValidatorSubsystem)
     {
+        Summary.SetExecutionState(
+            EPDSValidationExecutionState::InfrastructureFailure);
         Summary.NumNotValidated = Selection.Assets.Num();
         Summary.NumUnableToValidate = Selection.Assets.Num();
         Summary.Issues.Add({
@@ -389,6 +397,14 @@ FPDSValidationSummary FPDSProjectDoctorService::ValidateAssetSelection(
         Selection.Assets,
         Settings,
         ValidationResults);
+
+    // UE 5.8 no expone hoy un flag de cancelación en FValidateAssetsResults.
+    // El estado Cancelled queda reservado y este espejo permite adoptarlo sin
+    // cambiar el contrato cuando el subsystem lo exponga en el futuro.
+    Summary.SetExecutionState(
+        Summary.bCancelled
+            ? EPDSValidationExecutionState::Cancelled
+            : EPDSValidationExecutionState::Completed);
 
     Summary.NumRequested = ValidationResults.NumRequested;
     Summary.NumChecked = ValidationResults.NumChecked;
@@ -559,12 +575,16 @@ FString FPDSProjectDoctorService::BuildValidationReportMarkdown(
     const FPDSValidationSummary& Summary)
 {
     FString Markdown = TEXT("# Panthelia Developer Suite — Validation Report\n\n");
-    Markdown += TEXT("- Schema: `pds.validation.v0.2-alpha3`\n");
+    Markdown += TEXT("- Schema: `pds.validation.v0.2-alpha4`\n");
     Markdown += FString::Printf(TEXT("- Scope: `%s`\n"), *EscapeMarkdownInline(Summary.ScopeLabel));
     Markdown += FString::Printf(TEXT("- Scope ID: `%s`\n"), *EscapeMarkdownInline(Summary.ScopeId));
     Markdown += FString::Printf(
         TEXT("- Generated UTC: `%s`\n"),
         Summary.GeneratedAtUtc.IsEmpty() ? TEXT("<unknown>") : *Summary.GeneratedAtUtc);
+    Markdown += FString::Printf(
+        TEXT("- Execution state: `%s`\n"),
+        *PDSDeveloperTypes::ValidationExecutionStateToString(
+            Summary.ExecutionState));
     Markdown += FString::Printf(TEXT("- Requested: `%d`\n"), Summary.NumRequested);
     Markdown += FString::Printf(TEXT("- Checked: `%d`\n"), Summary.NumChecked);
     Markdown += FString::Printf(TEXT("- Valid: `%d`\n"), Summary.NumValid);
@@ -684,8 +704,12 @@ bool FPDSProjectDoctorService::BuildValidationReportJson(
     FString& OutSerializedJson)
 {
     TSharedRef<FJsonObject> RootJson = MakeShared<FJsonObject>();
-    RootJson->SetStringField(TEXT("schemaVersion"), TEXT("pds.validation.v0.2-alpha3"));
+    RootJson->SetStringField(TEXT("schemaVersion"), TEXT("pds.validation.v0.2-alpha4"));
     RootJson->SetStringField(TEXT("generatedAtUtc"), Summary.GeneratedAtUtc);
+    RootJson->SetStringField(
+        TEXT("executionState"),
+        PDSDeveloperTypes::ValidationExecutionStateToString(
+            Summary.ExecutionState));
 
     TSharedRef<FJsonObject> ScopeJson = MakeShared<FJsonObject>();
     ScopeJson->SetStringField(TEXT("id"), Summary.ScopeId);

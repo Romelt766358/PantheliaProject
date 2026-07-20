@@ -1,6 +1,7 @@
 #include "PDSAutomationService.h"
 
 #include "HAL/FileManager.h"
+#include "HAL/PlatformTime.h"
 #include "Misc/App.h"
 #include "Misc/EngineVersion.h"
 #include "Misc/Paths.h"
@@ -15,6 +16,13 @@ namespace
     constexpr int32 DefaultHistoryLimit = 20;
     constexpr int32 DefaultIssueLimit = 100;
     constexpr int32 MaximumResponseEntries = 500;
+
+    double ToMilliseconds(const double StartSeconds)
+    {
+        return FMath::Max(
+            0.0,
+            (FPlatformTime::Seconds() - StartSeconds) * 1000.0);
+    }
 
     struct FSnapshotFileInventory
     {
@@ -128,6 +136,41 @@ namespace
         return Result;
     }
 
+    bool TryLoadSnapshotMetadata(
+        const FString& FilePath,
+        FPDSAutomationSnapshotMetadata& OutMetadata,
+        TArray<FPDSIssue>& OutIssues)
+    {
+        OutMetadata = FPDSAutomationSnapshotMetadata();
+        OutMetadata.FilePath = FilePath;
+
+        if (FilePath.IsEmpty())
+        {
+            OutIssues.Add({
+                EPDSIssueSeverity::Error,
+                TEXT("PDS.Automation.SnapshotPathMissing"),
+                FString(),
+                TEXT("La operación no devolvió una ruta de snapshot para verificar."),
+                EPDSAssetOrigin::Unknown
+            });
+            return false;
+        }
+
+        FPDSSnapshotDocument Document;
+        if (!PDSSnapshotDiffBrowser::LoadSnapshotDocument(
+            FilePath,
+            Document,
+            OutIssues))
+        {
+            return false;
+        }
+
+        OutMetadata = PDSAutomation::BuildSnapshotMetadata(
+            Document,
+            FilePath);
+        return true;
+    }
+
     TMap<FString, FPDSSnapshotDescriptorCacheEntry>& GetAutomationDescriptorCache()
     {
         // Unreal MCP ejecuta tools serialmente en el game thread. Esta caché está
@@ -214,11 +257,13 @@ namespace
 
 FString FPDSAutomationService::GetAutomationApiVersion()
 {
-    return TEXT("0.4.0-alpha2");
+    return TEXT("0.4.0-alpha3");
 }
 
 FPDSAutomationStatusResult FPDSAutomationService::GetStatus() const
 {
+    const double StartSeconds = FPlatformTime::Seconds();
+
     // GetStatus funciona como ping barato para clientes MCP. Deliberadamente no
     // parsea snapshots ni calienta la caché; ListSnapshots realiza esa inspección.
     const FSnapshotFileInventory Inventory = CountSnapshotFiles();
@@ -236,12 +281,14 @@ FPDSAutomationStatusResult FPDSAutomationService::GetStatus() const
     Result.bSnapshotValidityKnown = false;
     Result.ValidSnapshotCount = -1;
     Result.InvalidSnapshotCount = -1;
+    Result.DurationMilliseconds = ToMilliseconds(StartSeconds);
     return Result;
 }
 
 FPDSAutomationSnapshotHistoryResult FPDSAutomationService::ListSnapshots(
     const int32 Limit) const
 {
+    const double StartSeconds = FPlatformTime::Seconds();
     const FSnapshotFileInventory Inventory = CountSnapshotFiles();
 
     TArray<FPDSIssue> Issues;
@@ -252,6 +299,11 @@ FPDSAutomationSnapshotHistoryResult FPDSAutomationService::ListSnapshots(
 
     FPDSAutomationSnapshotHistoryResult Result;
     Result.bSuccess = true;
+    Result.RequestedLimit = Limit;
+    Result.AppliedLimit = ClampResponseLimit(
+        Limit,
+        DefaultHistoryLimit);
+    Result.MaximumAllowedLimit = MaximumResponseEntries;
     Result.AvailableSnapshotCount = Inventory.GetTotalCount();
     Result.InspectedSnapshotCount = Descriptors.Num();
     Result.bDescriptorEnumerationCappedBySettings =
@@ -269,8 +321,9 @@ FPDSAutomationSnapshotHistoryResult FPDSAutomationService::ListSnapshots(
         }
     }
 
-    const int32 SafeLimit = ClampResponseLimit(Limit, DefaultHistoryLimit);
-    const int32 ReturnCount = FMath::Min(Descriptors.Num(), SafeLimit);
+    const int32 ReturnCount = FMath::Min(
+        Descriptors.Num(),
+        Result.AppliedLimit);
     Result.Snapshots.Reserve(ReturnCount);
 
     for (int32 Index = 0; Index < ReturnCount; ++Index)
@@ -289,60 +342,167 @@ FPDSAutomationSnapshotHistoryResult FPDSAutomationService::ListSnapshots(
         Result.TotalIssueCount,
         Result.bIssuesTruncated,
         Result.Issues);
+    Result.DurationMilliseconds = ToMilliseconds(StartSeconds);
     return Result;
 }
 
-FPDSAutomationOperationResult FPDSAutomationService::ExportProjectSnapshot() const
+FPDSAutomationSnapshotExportResult
+FPDSAutomationService::ExportProjectSnapshot() const
 {
+    const double StartSeconds = FPlatformTime::Seconds();
+
     const FPDSProjectSnapshotService Service;
-    return PDSAutomation::ConvertOperationResult(
-        Service.ExportProjectSnapshot(nullptr),
-        DefaultIssueLimit);
+    const FPDSOperationResult NativeResult =
+        Service.ExportProjectSnapshot(nullptr);
+
+    FPDSAutomationSnapshotExportResult Result;
+    Result.bSuccess = NativeResult.bSuccess;
+    Result.bCancelled = NativeResult.bCancelled;
+    Result.Summary = NativeResult.Summary;
+    Result.OutputPath = NativeResult.OutputPath;
+    Result.LatestSnapshotPath = FPaths::Combine(
+        FPDSProjectSnapshotDiffService::GetSnapshotsDirectory(),
+        TEXT("latest.json"));
+    Result.bLatestSnapshotExists =
+        IFileManager::Get().FileExists(*Result.LatestSnapshotPath);
+
+    TArray<FPDSIssue> CombinedIssues = NativeResult.Issues;
+
+    if (NativeResult.bSuccess)
+    {
+        Result.bTimestampedSnapshotReadable =
+            TryLoadSnapshotMetadata(
+                NativeResult.OutputPath,
+                Result.TimestampedSnapshot,
+                CombinedIssues);
+
+        if (!Result.bLatestSnapshotExists)
+        {
+            CombinedIssues.Add({
+                EPDSIssueSeverity::Error,
+                TEXT("PDS.Automation.LatestSnapshotMissing"),
+                Result.LatestSnapshotPath,
+                TEXT("La exportación informó éxito, pero latest.json no existe después de la escritura."),
+                EPDSAssetOrigin::Unknown
+            });
+        }
+
+        Result.bSuccess =
+            Result.bTimestampedSnapshotReadable
+            && Result.bLatestSnapshotExists;
+    }
+
+    CopyIssuesLimited(
+        CombinedIssues,
+        DefaultIssueLimit,
+        Result.TotalIssueCount,
+        Result.bIssuesTruncated,
+        Result.Issues);
+
+    Result.DurationMilliseconds = ToMilliseconds(StartSeconds);
+    return Result;
 }
 
 FPDSAutomationValidationResult FPDSAutomationService::ValidateProfile(
     const EPDSAutomationValidationProfile Profile,
     const int32 MaxIssues) const
 {
+    const double StartSeconds = FPlatformTime::Seconds();
+
     const FPDSProjectDoctorService Service;
     const FPDSValidationSummary Summary = Service.ValidateProfile(
         PDSAutomation::ToNativeValidationProfile(Profile));
 
-    return PDSAutomation::ConvertValidationSummary(Summary, MaxIssues);
+    FPDSAutomationValidationResult Result =
+        PDSAutomation::ConvertValidationSummary(
+            Summary,
+            MaxIssues);
+    Result.DurationMilliseconds = ToMilliseconds(StartSeconds);
+    return Result;
 }
 
-FPDSAutomationOperationResult
+FPDSAutomationBaselineUpdateResult
 FPDSAutomationService::SetLatestSnapshotAsBaseline() const
 {
+    const double StartSeconds = FPlatformTime::Seconds();
+
+    FPDSAutomationBaselineUpdateResult Result;
+    Result.BaselinePath =
+        FPDSProjectSnapshotDiffService::GetBaselineSnapshotPath();
+    Result.bPreviousBaselineExisted =
+        IFileManager::Get().FileExists(*Result.BaselinePath);
+
+    TArray<FPDSIssue> CombinedIssues;
+    if (Result.bPreviousBaselineExisted)
+    {
+        Result.bPreviousBaselineReadable =
+            TryLoadSnapshotMetadata(
+                Result.BaselinePath,
+                Result.PreviousBaseline,
+                CombinedIssues);
+    }
+
     const FPDSProjectSnapshotDiffService Service;
-    return PDSAutomation::ConvertOperationResult(
-        Service.SetLatestSnapshotAsBaseline(),
-        DefaultIssueLimit);
+    const FPDSOperationResult NativeResult =
+        Service.SetLatestSnapshotAsBaseline();
+
+    Result.bSuccess = NativeResult.bSuccess;
+    Result.bCancelled = NativeResult.bCancelled;
+    Result.Summary = NativeResult.Summary;
+    Result.OutputPath = NativeResult.OutputPath;
+    CombinedIssues.Append(NativeResult.Issues);
+
+    if (NativeResult.bSuccess)
+    {
+        Result.bNewBaselineReadable =
+            TryLoadSnapshotMetadata(
+                Result.BaselinePath,
+                Result.NewBaseline,
+                CombinedIssues);
+        Result.bSuccess = Result.bNewBaselineReadable;
+    }
+
+    CopyIssuesLimited(
+        CombinedIssues,
+        DefaultIssueLimit,
+        Result.TotalIssueCount,
+        Result.bIssuesTruncated,
+        Result.Issues);
+
+    Result.DurationMilliseconds = ToMilliseconds(StartSeconds);
+    return Result;
 }
 
 FPDSAutomationDiffResult
 FPDSAutomationService::CompareLatestSnapshotWithBaseline(
     const int32 MaxEntries) const
 {
+    const double StartSeconds = FPlatformTime::Seconds();
+
     const FString PreviousPath =
         FPDSProjectSnapshotDiffService::GetBaselineSnapshotPath();
     const FString CurrentPath = FPaths::Combine(
         FPDSProjectSnapshotDiffService::GetSnapshotsDirectory(),
         TEXT("latest.json"));
 
-    return CompareSnapshotPaths(
+    FPDSAutomationDiffResult Result = CompareSnapshotPaths(
         PreviousPath,
         CurrentPath,
         TEXT("MCP Latest vs Baseline"),
         MaxEntries);
+    Result.DurationMilliseconds = ToMilliseconds(StartSeconds);
+    return Result;
 }
 
 FPDSAutomationDiffResult FPDSAutomationService::CompareLatestTwoSnapshots(
     const int32 MaxEntries) const
 {
+    const double StartSeconds = FPlatformTime::Seconds();
+
     const TArray<FString> SnapshotPaths =
         FPDSProjectSnapshotDiffService::FindTimestampedSnapshotPathsNewestFirst();
 
+    FPDSAutomationDiffResult Result;
     if (SnapshotPaths.Num() < 2)
     {
         TArray<FPDSIssue> Issues;
@@ -366,23 +526,45 @@ FPDSAutomationDiffResult FPDSAutomationService::CompareLatestTwoSnapshots(
             TEXT("Se requieren al menos dos snapshots timestamped para comparar.");
         Failure.Issues = MoveTemp(Issues);
 
-        return PDSAutomation::BuildDiffResult(
+        Result = PDSAutomation::BuildDiffResult(
             EmptyDiff,
             Failure,
             TEXT("MCP Latest Two Snapshots"),
             MaxEntries,
             DefaultIssueLimit);
     }
+    else
+    {
+        Result = CompareSnapshotPaths(
+            SnapshotPaths[1],
+            SnapshotPaths[0],
+            TEXT("MCP Latest Two Snapshots"),
+            MaxEntries);
+    }
 
-    return CompareSnapshotPaths(
-        SnapshotPaths[1],
-        SnapshotPaths[0],
-        TEXT("MCP Latest Two Snapshots"),
-        MaxEntries);
+    Result.DurationMilliseconds = ToMilliseconds(StartSeconds);
+    return Result;
 }
 
 namespace PDSAutomation
 {
+    FPDSAutomationSnapshotMetadata BuildSnapshotMetadata(
+        const FPDSSnapshotDocument& Document,
+        const FString& FilePath)
+    {
+        FPDSAutomationSnapshotMetadata Result;
+        Result.FilePath = FilePath;
+        Result.GeneratedAtUtc = Document.GeneratedAtUtc;
+        Result.SchemaVersion = Document.SchemaVersion;
+        Result.ProjectName = Document.ProjectName;
+        Result.EngineVersion = Document.EngineVersion;
+        Result.AssetCount = Document.AssetsByObjectPath.Num();
+        Result.GameplayTagCount = Document.GameplayTags.Num();
+        Result.MontageCount = Document.MontagesByPath.Num();
+        Result.bValid = true;
+        return Result;
+    }
+
     FPDSAutomationOperationResult ConvertOperationResult(
         const FPDSOperationResult& Source,
         const int32 IssueLimit)
@@ -408,13 +590,26 @@ namespace PDSAutomation
         const int32 IssueLimit)
     {
         FPDSAutomationValidationResult Result;
-        Result.bValidationCompleted = !Source.bCancelled;
+        Result.ExecutionState =
+            PDSDeveloperTypes::ValidationExecutionStateToString(
+                Source.ExecutionState);
+        Result.bValidationCompleted =
+            Source.WasValidationCompleted();
+        Result.bCancelled =
+            Source.ExecutionState ==
+            EPDSValidationExecutionState::Cancelled;
+        Result.bInfrastructureFailure =
+            Source.HasInfrastructureFailure();
         Result.bSuccess =
             Result.bValidationCompleted && !Source.HasErrors();
-        Result.bCancelled = Source.bCancelled;
         Result.ProfileId = Source.ScopeId;
         Result.ProfileLabel = Source.ScopeLabel;
         Result.GeneratedAtUtc = Source.GeneratedAtUtc;
+        Result.RequestedIssueLimit = IssueLimit;
+        Result.AppliedIssueLimit = ClampResponseLimit(
+            IssueLimit,
+            DefaultIssueLimit);
+        Result.MaximumAllowedIssueLimit = MaximumResponseEntries;
         Result.NumRequested = Source.NumRequested;
         Result.NumChecked = Source.NumChecked;
         Result.NumValid = Source.NumValid;
@@ -429,14 +624,11 @@ namespace PDSAutomation
         Result.OutputPath = Source.OutputPath;
         Result.OutputJsonPath = Source.OutputJsonPath;
 
-        const int32 SafeLimit = ClampResponseLimit(
-            IssueLimit,
-            DefaultIssueLimit);
         Result.TotalNewlyDirtiedPackageCount =
             Source.NewlyDirtiedPackages.Num();
         const int32 DirtyPackageCount = FMath::Min(
             Result.TotalNewlyDirtiedPackageCount,
-            SafeLimit);
+            Result.AppliedIssueLimit);
         Result.NewlyDirtiedPackages.Reserve(DirtyPackageCount);
         for (int32 Index = 0; Index < DirtyPackageCount; ++Index)
         {
@@ -470,6 +662,9 @@ namespace PDSAutomation
         FPDSAutomationDiffResult Result;
         Result.bSuccess = PersistResult.bSuccess;
         Result.bHasChanges = Diff.HasChanges();
+        Result.RequestedEntryLimit = MaxEntries;
+        Result.AppliedEntryLimit = SafeEntryLimit;
+        Result.MaximumAllowedEntryLimit = MaximumResponseEntries;
         Result.ComparisonLabel = ComparisonLabel;
         Result.PreviousSnapshotPath = Diff.PreviousSnapshotPath;
         Result.CurrentSnapshotPath = Diff.CurrentSnapshotPath;

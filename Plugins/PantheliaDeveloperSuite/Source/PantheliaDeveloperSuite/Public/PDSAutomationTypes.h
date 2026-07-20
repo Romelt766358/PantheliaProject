@@ -106,6 +106,135 @@ struct PANTHELIADEVELOPERSUITE_API FPDSAutomationSnapshotDescriptor
     bool bIsValid = false;
 };
 
+/** Metadata normalizada de un snapshot persistido y parseado. */
+USTRUCT(BlueprintType)
+struct PANTHELIADEVELOPERSUITE_API FPDSAutomationSnapshotMetadata
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    FString FilePath;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    FString GeneratedAtUtc;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    FString SchemaVersion;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    FString ProjectName;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    FString EngineVersion;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    int32 AssetCount = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    int32 GameplayTagCount = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    int32 MontageCount = 0;
+
+    /** True cuando esta metadata procede de un snapshot parseado correctamente. */
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    bool bValid = false;
+};
+
+/** Resultado estructurado de la exportación de un snapshot. */
+USTRUCT(BlueprintType)
+struct PANTHELIADEVELOPERSUITE_API FPDSAutomationSnapshotExportResult
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    bool bSuccess = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    bool bCancelled = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    FString Summary;
+
+    /** Ruta del snapshot timestamped; se conserva el nombre usado en Alpha 2. */
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    FString OutputPath;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    FPDSAutomationSnapshotMetadata TimestampedSnapshot;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    FString LatestSnapshotPath;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    bool bTimestampedSnapshotReadable = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    bool bLatestSnapshotExists = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    double DurationMilliseconds = 0.0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    int32 TotalIssueCount = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    bool bIssuesTruncated = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    TArray<FPDSAutomationIssue> Issues;
+};
+
+/** Resultado estructurado del reemplazo de baseline.json. */
+USTRUCT(BlueprintType)
+struct PANTHELIADEVELOPERSUITE_API FPDSAutomationBaselineUpdateResult
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    bool bSuccess = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    bool bCancelled = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    FString Summary;
+
+    /** Ruta de baseline.json; se conserva el nombre usado en Alpha 2. */
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    FString OutputPath;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    FString BaselinePath;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    bool bPreviousBaselineExisted = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    bool bPreviousBaselineReadable = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    FPDSAutomationSnapshotMetadata PreviousBaseline;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    bool bNewBaselineReadable = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    FPDSAutomationSnapshotMetadata NewBaseline;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    double DurationMilliseconds = 0.0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    int32 TotalIssueCount = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    bool bIssuesTruncated = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    TArray<FPDSAutomationIssue> Issues;
+};
+
 /** Lista acotada de snapshots para evitar respuestas MCP excesivamente grandes. */
 USTRUCT(BlueprintType)
 struct PANTHELIADEVELOPERSUITE_API FPDSAutomationSnapshotHistoryResult
@@ -114,6 +243,19 @@ struct PANTHELIADEVELOPERSUITE_API FPDSAutomationSnapshotHistoryResult
 
     UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
     bool bSuccess = false;
+
+    /** Valor crudo recibido; <= 0 solicita el default de 20. */
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    int32 RequestedLimit = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    int32 AppliedLimit = 20;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    int32 MaximumAllowedLimit = 500;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    double DurationMilliseconds = 0.0;
 
     /** Número real de archivos snapshot presentes, incluidos los omitidos por settings. */
     UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
@@ -167,6 +309,9 @@ struct PANTHELIADEVELOPERSUITE_API FPDSAutomationStatusResult
 
     UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
     FString AutomationApiVersion;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    double DurationMilliseconds = 0.0;
 
     UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
     FString ProjectName;
@@ -224,12 +369,23 @@ struct PANTHELIADEVELOPERSUITE_API FPDSAutomationValidationResult
     UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
     bool bSuccess = false;
 
-    /** True cuando Project Doctor terminó, aunque haya encontrado assets inválidos. */
+    /** True únicamente cuando ExecutionState vale Completed. */
     UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
     bool bValidationCompleted = false;
 
+    /**
+     * Estado para logging: NotStarted, Completed, Cancelled o InfrastructureFailure.
+     * Los tres booleanos son el contrato primario para lógica de agentes.
+     * Cancelled está reservado; Project Doctor de UE 5.8 no lo produce actualmente.
+     */
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    FString ExecutionState;
+
     UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
     bool bCancelled = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    bool bInfrastructureFailure = false;
 
     UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
     FString ProfileId;
@@ -239,6 +395,19 @@ struct PANTHELIADEVELOPERSUITE_API FPDSAutomationValidationResult
 
     UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
     FString GeneratedAtUtc;
+
+    /** Valor crudo recibido; <= 0 solicita el default de 100. */
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    int32 RequestedIssueLimit = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    int32 AppliedIssueLimit = 100;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    int32 MaximumAllowedIssueLimit = 500;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    double DurationMilliseconds = 0.0;
 
     UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
     int32 NumRequested = 0;
@@ -334,6 +503,19 @@ struct PANTHELIADEVELOPERSUITE_API FPDSAutomationDiffResult
 
     UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
     bool bHasChanges = false;
+
+    /** Valor crudo recibido; <= 0 solicita el default de 100. */
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    int32 RequestedEntryLimit = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    int32 AppliedEntryLimit = 100;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    int32 MaximumAllowedEntryLimit = 500;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    double DurationMilliseconds = 0.0;
 
     UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
     FString ComparisonLabel;
