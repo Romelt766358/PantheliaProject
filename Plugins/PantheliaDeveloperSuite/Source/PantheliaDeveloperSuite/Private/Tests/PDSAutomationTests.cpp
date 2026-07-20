@@ -1,7 +1,9 @@
 #include "Misc/AutomationTest.h"
 
+#include "EditorValidatorSubsystem.h"
 #include "PantheliaDeveloperSuiteToolset.h"
 #include "PDSAutomationService.h"
+#include "PDSProjectDoctorService.h"
 #include "ToolsetRegistry/UToolsetRegistry.h"
 
 #if WITH_DEV_AUTOMATION_TESTS
@@ -72,6 +74,90 @@ bool FPDSAutomationValidationProfileMappingTest::RunTest(
         static_cast<uint8>(PDSAutomation::ToNativeValidationProfile(
             EPDSAutomationValidationProfile::EntireProject)),
         static_cast<uint8>(EPDSValidationProfile::EntireProject));
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FPDSAutomationValidationSettingsContractTest,
+    "Panthelia.DeveloperSuite.Automation.ValidationSettingsContract",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPDSAutomationValidationSettingsContractTest::RunTest(
+    const FString& Parameters)
+{
+    FValidateAssetsSettings NonInteractiveSettings;
+    FPDSProjectDoctorService::ConfigureValidationSettings(
+        NonInteractiveSettings,
+        true);
+
+    TestEqual(
+        TEXT("Non-interactive Project Doctor uses the manual validation usecase"),
+        static_cast<uint8>(NonInteractiveSettings.ValidationUsecase),
+        static_cast<uint8>(EDataValidationUsecase::Manual));
+    TestTrue(
+        TEXT("Non-interactive Project Doctor loads assets for validation"),
+        NonInteractiveSettings.bLoadAssetsForValidation);
+    TestFalse(
+        TEXT("Non-interactive Project Doctor does not load external objects separately"),
+        NonInteractiveSettings.bLoadExternalObjectsForValidation);
+    TestTrue(
+        TEXT("Non-interactive Project Doctor collects per-asset details"),
+        NonInteractiveSettings.bCollectPerAssetDetails);
+    TestTrue(
+        TEXT("Non-interactive Project Doctor skips excluded directories"),
+        NonInteractiveSettings.bSkipExcludedDirectories);
+    TestTrue(
+        TEXT("Non-interactive Project Doctor unloads assets loaded for validation"),
+        NonInteractiveSettings.bUnloadAssetsLoadedForValidation);
+    TestFalse(
+        TEXT("Non-interactive Project Doctor does not show results when there are no failures"),
+        NonInteractiveSettings.bShowIfNoFailures);
+    TestTrue(
+        TEXT("Non-interactive Project Doctor disables validation progress dialogs"),
+        NonInteractiveSettings.bSilent);
+    TestFalse(
+        TEXT("Non-interactive Project Doctor prevents automatic Message Log opening"),
+        NonInteractiveSettings.ShowMessageLogSeverity.IsSet());
+
+    FValidateAssetsSettings InteractiveSettings;
+    const auto DefaultShowMessageLogSeverity =
+        InteractiveSettings.ShowMessageLogSeverity;
+    FPDSProjectDoctorService::ConfigureValidationSettings(
+        InteractiveSettings,
+        false);
+
+    TestEqual(
+        TEXT("Interactive Project Doctor uses the manual validation usecase"),
+        static_cast<uint8>(InteractiveSettings.ValidationUsecase),
+        static_cast<uint8>(EDataValidationUsecase::Manual));
+    TestTrue(
+        TEXT("Interactive Project Doctor loads assets for validation"),
+        InteractiveSettings.bLoadAssetsForValidation);
+    TestFalse(
+        TEXT("Interactive Project Doctor does not load external objects separately"),
+        InteractiveSettings.bLoadExternalObjectsForValidation);
+    TestTrue(
+        TEXT("Interactive Project Doctor collects per-asset details"),
+        InteractiveSettings.bCollectPerAssetDetails);
+    TestTrue(
+        TEXT("Interactive Project Doctor skips excluded directories"),
+        InteractiveSettings.bSkipExcludedDirectories);
+    TestTrue(
+        TEXT("Interactive Project Doctor unloads assets loaded for validation"),
+        InteractiveSettings.bUnloadAssetsLoadedForValidation);
+    TestFalse(
+        TEXT("Interactive Project Doctor does not show results when there are no failures"),
+        InteractiveSettings.bShowIfNoFailures);
+    TestFalse(
+        TEXT("Interactive Project Doctor allows validation progress dialogs"),
+        InteractiveSettings.bSilent);
+    TestTrue(
+        TEXT("Interactive Project Doctor preserves automatic Message Log behavior"),
+        InteractiveSettings.ShowMessageLogSeverity.IsSet());
+    TestTrue(
+        TEXT("Interactive Project Doctor preserves the default Message Log severity"),
+        InteractiveSettings.ShowMessageLogSeverity
+            == DefaultShowMessageLogSeverity);
     return true;
 }
 

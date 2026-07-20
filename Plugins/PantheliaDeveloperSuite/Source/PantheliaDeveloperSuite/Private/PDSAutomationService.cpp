@@ -411,7 +411,8 @@ FPDSAutomationValidationResult FPDSAutomationService::ValidateProfile(
 
     const FPDSProjectDoctorService Service;
     const FPDSValidationSummary Summary = Service.ValidateProfile(
-        PDSAutomation::ToNativeValidationProfile(Profile));
+        PDSAutomation::ToNativeValidationProfile(Profile),
+        true);
 
     FPDSAutomationValidationResult Result =
         PDSAutomation::ConvertValidationSummary(

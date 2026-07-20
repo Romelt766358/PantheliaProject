@@ -1,5 +1,6 @@
 #include "PDSProjectDoctorService.h"
 
+#include "CoreGlobals.h"
 #include "Dom/JsonObject.h"
 #include "Editor.h"
 #include "EditorValidatorSubsystem.h"
@@ -12,6 +13,7 @@
 #include "PDSDeveloperSettings.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
+#include "Templates/UnrealTemplate.h"
 #include "UObject/Package.h"
 
 namespace
@@ -162,6 +164,29 @@ namespace
     }
 }
 
+void FPDSProjectDoctorService::ConfigureValidationSettings(
+    FValidateAssetsSettings& Settings,
+    const bool bNonInteractive)
+{
+    Settings.ValidationUsecase = EDataValidationUsecase::Manual;
+    Settings.bLoadAssetsForValidation = true;
+    Settings.bLoadExternalObjectsForValidation = false;
+    Settings.bCollectPerAssetDetails = true;
+    Settings.bSkipExcludedDirectories = true;
+    Settings.bUnloadAssetsLoadedForValidation = true;
+    Settings.bShowIfNoFailures = false;
+
+    if (bNonInteractive)
+    {
+        Settings.bSilent = true;
+        Settings.ShowMessageLogSeverity.Reset();
+    }
+    else
+    {
+        Settings.bSilent = false;
+    }
+}
+
 FPDSValidationSummary FPDSProjectDoctorService::ValidateSelectedAssets() const
 {
     FPDSValidationSummary Summary = ValidateAssets(
@@ -197,7 +222,8 @@ FPDSValidationSummary FPDSProjectDoctorService::ValidateProject() const
 }
 
 FPDSValidationSummary FPDSProjectDoctorService::ValidateProfile(
-    const EPDSValidationProfile Profile) const
+    const EPDSValidationProfile Profile,
+    const bool bNonInteractive) const
 {
     FPDSAssetQueryStats QueryStats;
     const FPDSAssetSelection Selection =
@@ -205,7 +231,10 @@ FPDSValidationSummary FPDSProjectDoctorService::ValidateProfile(
             Profile,
             &QueryStats);
 
-    FPDSValidationSummary Summary = ValidateAssetSelection(Selection, Profile);
+    FPDSValidationSummary Summary = ValidateAssetSelection(
+        Selection,
+        Profile,
+        bNonInteractive);
     Summary.NumExcludedMaps = QueryStats.NumExcludedMaps;
     Summary.NumExcludedExternalObjects = QueryStats.NumExcludedExternalObjects;
     Summary.NumExcludedByConfiguration = QueryStats.NumExcludedByConfiguration;
@@ -238,7 +267,8 @@ FPDSValidationSummary FPDSProjectDoctorService::ValidateProfile(
 
 FPDSValidationSummary FPDSProjectDoctorService::ValidateAssets(
     const TArray<FAssetData>& Assets,
-    const EPDSValidationProfile Profile) const
+    const EPDSValidationProfile Profile,
+    const bool bNonInteractive) const
 {
     const FPDSOriginResolver OriginResolver =
         FPDSOriginResolver::FromSettings();
@@ -253,12 +283,13 @@ FPDSValidationSummary FPDSProjectDoctorService::ValidateAssets(
             OriginResolver.Classify(AssetData.PackagePath.ToString()));
     }
 
-    return ValidateAssetSelection(Selection, Profile);
+    return ValidateAssetSelection(Selection, Profile, bNonInteractive);
 }
 
 FPDSValidationSummary FPDSProjectDoctorService::ValidateAssetSelection(
     const FPDSAssetSelection& Selection,
-    const EPDSValidationProfile Profile) const
+    const EPDSValidationProfile Profile,
+    const bool bNonInteractive) const
 {
     FPDSValidationSummary Summary;
     Summary.ScopeId = PDSDeveloperTypes::ValidationProfileToId(Profile);
@@ -383,20 +414,30 @@ FPDSValidationSummary FPDSProjectDoctorService::ValidateAssetSelection(
     }
 
     FValidateAssetsSettings Settings;
-    Settings.ValidationUsecase = EDataValidationUsecase::Manual;
-    Settings.bLoadAssetsForValidation = true;
-    Settings.bLoadExternalObjectsForValidation = false;
-    Settings.bCollectPerAssetDetails = true;
-    Settings.bSkipExcludedDirectories = true;
-    Settings.bUnloadAssetsLoadedForValidation = true;
-    Settings.bShowIfNoFailures = false;
-    Settings.bSilent = false;
+    ConfigureValidationSettings(Settings, bNonInteractive);
 
     FValidateAssetsResults ValidationResults;
-    ValidatorSubsystem->ValidateAssetsWithSettings(
-        Selection.Assets,
-        Settings,
-        ValidationResults);
+    if (bNonInteractive)
+    {
+        // UE 5.8 contiene una llamada interna a WaitForAssetCompilationIfNecessary después de
+        // Data.GetAsset() que usa su valor bShowProgress=true por defecto en lugar de los
+        // ajustes de validación. GIsSilent evita que FScopedSlowTask::MakeDialog() cree una
+        // ventana mientras este guard se limita exclusivamente a ValidateAssetsWithSettings.
+        // La espera de compilación y la validación de assets continúan ejecutándose.
+        TGuardValue<bool> SilentGuard(GIsSilent, true);
+
+        ValidatorSubsystem->ValidateAssetsWithSettings(
+            Selection.Assets,
+            Settings,
+            ValidationResults);
+    }
+    else
+    {
+        ValidatorSubsystem->ValidateAssetsWithSettings(
+            Selection.Assets,
+            Settings,
+            ValidationResults);
+    }
 
     // UE 5.8 no expone hoy un flag de cancelación en FValidateAssetsResults.
     // El estado Cancelled queda reservado y este espejo permite adoptarlo sin
