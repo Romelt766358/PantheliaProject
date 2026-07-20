@@ -35,8 +35,8 @@ public:
     static FPDSAutomationSnapshotHistoryResult ListSnapshots(int32 Limit);
 
     /**
-     * Exporta un snapshot origin-aware bajo Saved y devuelve metadata estructurada
-     * obtenida mediante readback del JSON persistido.
+     * Exporta un snapshot origin-aware bajo Saved y devuelve la ruta timestamped,
+     * la ruta latest y metadata estructurada obtenida mediante readback del JSON persistido.
      */
     UFUNCTION(meta = (AICallable), Category = "Panthelia Developer Suite")
     static FPDSAutomationSnapshotExportResult ExportProjectSnapshot();
@@ -59,7 +59,8 @@ public:
 
     /**
      * Reemplaza baseline.json con una copia del latest snapshot bajo Saved y
-     * devuelve metadata estructurada del baseline anterior y del nuevo.
+     * devuelve una única BaselinePath canónica, además de metadata estructurada
+     * del baseline anterior y del nuevo.
      */
     UFUNCTION(meta = (AICallable), Category = "Panthelia Developer Suite")
     static FPDSAutomationBaselineUpdateResult SetLatestSnapshotAsBaseline();

@@ -50,11 +50,13 @@ struct PANTHELIADEVELOPERSUITE_API FPDSAutomationOperationResult
     UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
     FString Summary;
 
+    /** Ruta del informe Markdown producido por la operación, cuando exista. */
     UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
-    FString OutputPath;
+    FString MarkdownReportPath;
 
+    /** Ruta del informe JSON producido por la operación, cuando exista. */
     UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
-    FString OutputJsonPath;
+    FString JsonReportPath;
 
     UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
     int32 TotalIssueCount = 0;
@@ -156,9 +158,9 @@ struct PANTHELIADEVELOPERSUITE_API FPDSAutomationSnapshotExportResult
     UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
     FString Summary;
 
-    /** Ruta del snapshot timestamped; se conserva el nombre usado en Alpha 2. */
+    /** Ruta exacta del snapshot timestamped producido por esta operación. */
     UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
-    FString OutputPath;
+    FString TimestampedSnapshotPath;
 
     UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
     FPDSAutomationSnapshotMetadata TimestampedSnapshot;
@@ -200,10 +202,7 @@ struct PANTHELIADEVELOPERSUITE_API FPDSAutomationBaselineUpdateResult
     UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
     FString Summary;
 
-    /** Ruta de baseline.json; se conserva el nombre usado en Alpha 2. */
-    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
-    FString OutputPath;
-
+    /** Ruta canónica de baseline.json reemplazada por esta operación. */
     UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
     FString BaselinePath;
 
@@ -448,11 +447,13 @@ struct PANTHELIADEVELOPERSUITE_API FPDSAutomationValidationResult
     UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
     TArray<FString> NewlyDirtiedPackages;
 
+    /** Ruta del informe Markdown persistido para esta respuesta. */
     UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
-    FString OutputPath;
+    FString MarkdownReportPath;
 
+    /** Ruta del informe JSON persistido para esta respuesta. */
     UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
-    FString OutputJsonPath;
+    FString JsonReportPath;
 
     UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
     int32 TotalIssueCount = 0;
@@ -616,11 +617,13 @@ struct PANTHELIADEVELOPERSUITE_API FPDSAutomationDiffResult
     UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
     FString Summary;
 
+    /** Ruta del informe Markdown persistido para esta respuesta. */
     UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
-    FString OutputPath;
+    FString MarkdownReportPath;
 
+    /** Ruta del informe JSON persistido para esta respuesta. */
     UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
-    FString OutputJsonPath;
+    FString JsonReportPath;
 
     UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
     int32 TotalIssueCount = 0;

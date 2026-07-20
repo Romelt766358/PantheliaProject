@@ -32,6 +32,24 @@ bool FPDSAutomationToolsetSchemaTest::RunTest(const FString& Parameters)
     TestTrue(TEXT("Schema exposes structured export"), Schema.Contains(TEXT("timestampedSnapshot")));
     TestTrue(TEXT("Schema exposes previous baseline metadata"), Schema.Contains(TEXT("previousBaseline")));
     TestTrue(TEXT("Schema exposes new baseline metadata"), Schema.Contains(TEXT("newBaseline")));
+    TestTrue(
+        TEXT("Schema exposes the explicit timestamped snapshot path"),
+        Schema.Contains(TEXT("timestampedSnapshotPath")));
+    TestTrue(
+        TEXT("Schema exposes the canonical baseline path"),
+        Schema.Contains(TEXT("baselinePath")));
+    TestTrue(
+        TEXT("Schema exposes explicit Markdown report paths"),
+        Schema.Contains(TEXT("markdownReportPath")));
+    TestTrue(
+        TEXT("Schema exposes explicit JSON report paths"),
+        Schema.Contains(TEXT("jsonReportPath")));
+    TestFalse(
+        TEXT("v0.5 schema removes the ambiguous outputPath alias"),
+        Schema.Contains(TEXT("\"outputPath\"")));
+    TestFalse(
+        TEXT("v0.5 schema removes the ambiguous outputJsonPath alias"),
+        Schema.Contains(TEXT("\"outputJsonPath\"")));
 
     const UPantheliaDeveloperSuiteToolset* ToolsetCDO =
         GetDefault<UPantheliaDeveloperSuiteToolset>();
@@ -41,7 +59,7 @@ bool FPDSAutomationToolsetSchemaTest::RunTest(const FString& Parameters)
         TestEqual(
             TEXT("Toolset version matches Automation API"),
             ToolsetCDO->GetToolsetVersion(),
-            FString(TEXT("0.4.0-alpha3")));
+            FString(TEXT("0.5.0-alpha1")));
     }
     return true;
 }
@@ -287,7 +305,7 @@ bool FPDSAutomationStatusContractTest::RunTest(const FString& Parameters)
     TestEqual(
         TEXT("Automation API version"),
         Result.AutomationApiVersion,
-        FString(TEXT("0.4.0-alpha3")));
+        FString(TEXT("0.5.0-alpha1")));
     TestFalse(
         TEXT("GetStatus does not claim snapshot validity was inspected"),
         Result.bSnapshotValidityKnown);
@@ -366,6 +384,33 @@ bool FPDSAutomationSnapshotMetadataProjectionTest::RunTest(
         TEXT("Path is preserved"),
         Result.FilePath,
         FString(TEXT("C:/Saved/test.json")));
+    return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(
+    FPDSAutomationPathContractTest,
+    "Panthelia.DeveloperSuite.Automation.PathContractV05",
+    EAutomationTestFlags::EditorContext | EAutomationTestFlags::EngineFilter)
+
+bool FPDSAutomationPathContractTest::RunTest(
+    const FString& Parameters)
+{
+    FPDSOperationResult NativeResult;
+    NativeResult.bSuccess = true;
+    NativeResult.OutputPath = TEXT("C:/Saved/PDS/report.md");
+    NativeResult.OutputJsonPath = TEXT("C:/Saved/PDS/report.json");
+
+    const FPDSAutomationOperationResult Result =
+        PDSAutomation::ConvertOperationResult(NativeResult, 10);
+
+    TestEqual(
+        TEXT("Markdown report path is projected explicitly"),
+        Result.MarkdownReportPath,
+        NativeResult.OutputPath);
+    TestEqual(
+        TEXT("JSON report path is projected explicitly"),
+        Result.JsonReportPath,
+        NativeResult.OutputJsonPath);
     return true;
 }
 

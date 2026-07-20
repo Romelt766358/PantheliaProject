@@ -33,7 +33,7 @@ namespace PDSAutomation
         const FPDSSnapshotDocument& Document,
         const FString& FilePath);
 
-    /** Conversión común para futuros adaptadores, tests y commandlets. */
+    /** Convierte informes nativos a rutas Markdown/JSON explícitas para adaptadores y tests. */
     PANTHELIADEVELOPERSUITE_API FPDSAutomationOperationResult ConvertOperationResult(
         const FPDSOperationResult& Source,
         int32 IssueLimit);

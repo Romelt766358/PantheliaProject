@@ -257,7 +257,7 @@ namespace
 
 FString FPDSAutomationService::GetAutomationApiVersion()
 {
-    return TEXT("0.4.0-alpha3");
+    return TEXT("0.5.0-alpha1");
 }
 
 FPDSAutomationStatusResult FPDSAutomationService::GetStatus() const
@@ -359,7 +359,7 @@ FPDSAutomationService::ExportProjectSnapshot() const
     Result.bSuccess = NativeResult.bSuccess;
     Result.bCancelled = NativeResult.bCancelled;
     Result.Summary = NativeResult.Summary;
-    Result.OutputPath = NativeResult.OutputPath;
+    Result.TimestampedSnapshotPath = NativeResult.OutputPath;
     Result.LatestSnapshotPath = FPaths::Combine(
         FPDSProjectSnapshotDiffService::GetSnapshotsDirectory(),
         TEXT("latest.json"));
@@ -372,7 +372,7 @@ FPDSAutomationService::ExportProjectSnapshot() const
     {
         Result.bTimestampedSnapshotReadable =
             TryLoadSnapshotMetadata(
-                NativeResult.OutputPath,
+                Result.TimestampedSnapshotPath,
                 Result.TimestampedSnapshot,
                 CombinedIssues);
 
@@ -450,7 +450,11 @@ FPDSAutomationService::SetLatestSnapshotAsBaseline() const
     Result.bSuccess = NativeResult.bSuccess;
     Result.bCancelled = NativeResult.bCancelled;
     Result.Summary = NativeResult.Summary;
-    Result.OutputPath = NativeResult.OutputPath;
+    if (!NativeResult.OutputPath.IsEmpty())
+    {
+        // La ruta nativa es la autoridad cuando la operación llegó a producir una salida.
+        Result.BaselinePath = NativeResult.OutputPath;
+    }
     CombinedIssues.Append(NativeResult.Issues);
 
     if (NativeResult.bSuccess)
@@ -574,8 +578,8 @@ namespace PDSAutomation
         Result.bSuccess = Source.bSuccess;
         Result.bCancelled = Source.bCancelled;
         Result.Summary = Source.Summary;
-        Result.OutputPath = Source.OutputPath;
-        Result.OutputJsonPath = Source.OutputJsonPath;
+        Result.MarkdownReportPath = Source.OutputPath;
+        Result.JsonReportPath = Source.OutputJsonPath;
 
         CopyIssuesLimited(
             Source.Issues,
@@ -622,8 +626,8 @@ namespace PDSAutomation
         Result.bAssetLimitReached = Source.bAssetLimitReached;
         Result.bReadOnlyVerificationPassed =
             Source.bReadOnlyVerificationPassed;
-        Result.OutputPath = Source.OutputPath;
-        Result.OutputJsonPath = Source.OutputJsonPath;
+        Result.MarkdownReportPath = Source.OutputPath;
+        Result.JsonReportPath = Source.OutputJsonPath;
 
         Result.TotalNewlyDirtiedPackageCount =
             Source.NewlyDirtiedPackages.Num();
@@ -698,8 +702,8 @@ namespace PDSAutomation
         Result.OriginNotComparableAssetCount =
             Diff.NumAssetsWithOriginNotComparable;
         Result.Summary = PersistResult.Summary;
-        Result.OutputPath = PersistResult.OutputPath;
-        Result.OutputJsonPath = PersistResult.OutputJsonPath;
+        Result.MarkdownReportPath = PersistResult.OutputPath;
+        Result.JsonReportPath = PersistResult.OutputJsonPath;
 
         Result.AssetChanges.Reserve(
             FMath::Min(Result.TotalAssetChangeCount, SafeEntryLimit));
