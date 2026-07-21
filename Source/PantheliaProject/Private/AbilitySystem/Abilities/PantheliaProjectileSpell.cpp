@@ -233,17 +233,6 @@ APantheliaProjectile* UPantheliaProjectileSpell::SpawnProjectileAtTransform(
 		return nullptr;
 	}
 
-	UE_LOG(LogTemp, Warning,
-		TEXT("[ProjectileDiag][SpawnRequest] Ability=%s Avatar=%s Owner=%s Instigator=%s Prepared=%s ProjectileClass=%s Location=%s Rotation=%s"),
-		*GetNameSafe(this),
-		*GetNameSafe(AvatarActor),
-		*GetNameSafe(GetOwningActorFromActorInfo()),
-		*GetNameSafe(Cast<APawn>(AvatarActor)),
-		bPrepareForDelayedLaunch ? TEXT("true") : TEXT("false"),
-		*GetNameSafe(ProjectileClass),
-		*SpawnTransform.GetLocation().ToCompactString(),
-		*SpawnTransform.Rotator().ToCompactString());
-
 	APantheliaProjectile* Projectile = World->SpawnActorDeferred<APantheliaProjectile>(
 		ProjectileClass,
 		SpawnTransform,
@@ -279,14 +268,6 @@ APantheliaProjectile* UPantheliaProjectileSpell::SpawnProjectileAtTransform(
 	}
 
 	Projectile->FinishSpawning(SpawnTransform);
-
-	UE_LOG(LogTemp, Warning,
-		TEXT("[ProjectileDiag][SpawnFinished] Ability=%s Projectile=%s ActualLocation=%s ActualRotation=%s Prepared=%s"),
-		*GetNameSafe(this),
-		*GetNameSafe(Projectile),
-		*Projectile->GetActorLocation().ToCompactString(),
-		*Projectile->GetActorRotation().ToCompactString(),
-		bPrepareForDelayedLaunch ? TEXT("true") : TEXT("false"));
 
 	if (!bPrepareForDelayedLaunch)
 	{

@@ -109,16 +109,6 @@ void APantheliaProjectile::BeginPlay()
 		Sphere->IgnoreActorWhenMoving(OwnerActor, true);
 	}
 
-	UE_LOG(LogTemp, Warning,
-		TEXT("[ProjectileDiag][BeginPlay] Projectile=%s Location=%s Rotation=%s Instigator=%s Owner=%s Prepared=%s Velocity=%s"),
-		*GetNameSafe(this),
-		*GetActorLocation().ToCompactString(),
-		*GetActorRotation().ToCompactString(),
-		*GetNameSafe(InstigatorActor),
-		*GetNameSafe(OwnerActor),
-		bPreparedForDelayedLaunch ? TEXT("true") : TEXT("false"),
-		ProjectileMovement ? *ProjectileMovement->Velocity.ToCompactString() : TEXT("NoMovementComponent"));
-
 	Sphere->OnComponentBeginOverlap.AddDynamic(this, &APantheliaProjectile::OnSphereOverlap);
 
 	if (ProjectileMovement)
@@ -469,18 +459,6 @@ void APantheliaProjectile::OnSphereOverlap(UPrimitiveComponent* OverlappedCompon
 	UPrimitiveComponent* OtherComp, int32 OtherBodyIndex,
 	bool bFromSweep, const FHitResult& SweepResult)
 {
-	UE_LOG(LogTemp, Warning,
-		TEXT("[ProjectileDiag][Overlap] Projectile=%s Age=%.4f Location=%s OtherActor=%s OtherComponent=%s FromSweep=%s Blocking=%s StartPenetrating=%s ImpactPoint=%s"),
-		*GetNameSafe(this),
-		GetGameTimeSinceCreation(),
-		*GetActorLocation().ToCompactString(),
-		*GetNameSafe(OtherActor),
-		*GetNameSafe(OtherComp),
-		bFromSweep ? TEXT("true") : TEXT("false"),
-		SweepResult.bBlockingHit ? TEXT("true") : TEXT("false"),
-		SweepResult.bStartPenetrating ? TEXT("true") : TEXT("false"),
-		*SweepResult.ImpactPoint.ToCompactString());
-
 	// FIX 1: Ignorar si el spec no está inicializado o el overlap no aporta actor.
 	// En cliente (sin autoridad) el spec nunca se setea — evita crash al hacer .Get().
 	if (!DamageEffectSpecHandle.Data.IsValid() || !IsValid(OtherActor)) return;
@@ -688,22 +666,6 @@ void APantheliaProjectile::OnSphereOverlap(UPrimitiveComponent* OverlappedCompon
 
 void APantheliaProjectile::OnProjectileStopped(const FHitResult& ImpactResult)
 {
-	UE_LOG(LogTemp, Warning,
-		TEXT("[ProjectileDiag][Stopped] Projectile=%s Age=%.4f Location=%s Velocity=%s Blocking=%s StartPenetrating=%s HitActor=%s HitComponent=%s ImpactPoint=%s ImpactNormal=%s TraceStart=%s TraceEnd=%s Prepared=%s"),
-		*GetNameSafe(this),
-		GetGameTimeSinceCreation(),
-		*GetActorLocation().ToCompactString(),
-		ProjectileMovement ? *ProjectileMovement->Velocity.ToCompactString() : TEXT("NoMovementComponent"),
-		ImpactResult.bBlockingHit ? TEXT("true") : TEXT("false"),
-		ImpactResult.bStartPenetrating ? TEXT("true") : TEXT("false"),
-		*GetNameSafe(ImpactResult.GetActor()),
-		*GetNameSafe(ImpactResult.GetComponent()),
-		*ImpactResult.ImpactPoint.ToCompactString(),
-		*ImpactResult.ImpactNormal.ToCompactString(),
-		*ImpactResult.TraceStart.ToCompactString(),
-		*ImpactResult.TraceEnd.ToCompactString(),
-		bPreparedForDelayedLaunch ? TEXT("true") : TEXT("false"));
-
 	// Materializar una formación detiene el movement component de forma intencional.
 	// Ese estado nunca debe interpretarse como un impacto contra geometría.
 	if (bPreparedForDelayedLaunch)
