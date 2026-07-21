@@ -72,12 +72,7 @@ APantheliaProjectile::APantheliaProjectile()
 	HomingTargetSceneComponent->SetupAttachment(Sphere);
 	HomingTargetSceneComponent->SetAbsolute(true, true, true);
 
-	Sphere->SetCollisionObjectType(ECC_Projectile);
-	Sphere->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-	Sphere->SetCollisionResponseToAllChannels(ECR_Ignore);
-	Sphere->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
-	Sphere->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
-	Sphere->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
+	ApplyCanonicalCollisionPolicy();
 
 	ProjectileMovement = CreateDefaultSubobject<UProjectileMovementComponent>(TEXT("ProjectileMovement"));
 	ProjectileMovement->InitialSpeed = 550.f;
@@ -95,13 +90,24 @@ void APantheliaProjectile::BeginPlay()
 	// Blueprint hijo pueden conservar respuestas serializadas de una versión anterior.
 	// Pawn usa overlap para permitir atravesar aliados e i-frames; la geometría usa
 	// blocking hit para no depender de GenerateOverlapEvents en cada pared del mapa.
-	Sphere->SetCollisionObjectType(ECC_Projectile);
-	Sphere->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
-	Sphere->SetGenerateOverlapEvents(true);
-	Sphere->SetCollisionResponseToAllChannels(ECR_Ignore);
-	Sphere->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
-	Sphere->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
-	Sphere->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
+	ApplyCanonicalCollisionPolicy();
+
+	// El proyectil puede nacer dentro o muy cerca del mesh, arma o cápsula del
+	// lanzador. Los overlaps ya filtran al source actor, pero una colisión bloqueante
+	// detendría ProjectileMovement antes de llegar a OnSphereOverlap. Ignoramos al
+	// instigador y al owner durante el movimiento para que el proyectil pueda abandonar
+	// con seguridad el volumen del caster sin disparar OnProjectileStopped.
+	AActor* InstigatorActor = GetInstigator();
+	if (IsValid(InstigatorActor))
+	{
+		Sphere->IgnoreActorWhenMoving(InstigatorActor, true);
+	}
+
+	AActor* OwnerActor = GetOwner();
+	if (IsValid(OwnerActor) && OwnerActor != InstigatorActor)
+	{
+		Sphere->IgnoreActorWhenMoving(OwnerActor, true);
+	}
 
 	Sphere->OnComponentBeginOverlap.AddDynamic(this, &APantheliaProjectile::OnSphereOverlap);
 
@@ -111,32 +117,14 @@ void APantheliaProjectile::BeginPlay()
 			this, &APantheliaProjectile::OnProjectileStopped);
 	}
 
-	if (IsValid(LoopingSound))
+	if (bPreparedForDelayedLaunch)
 	{
-		LoopingSoundComponent = UGameplayStatics::SpawnSoundAttached(LoopingSound, GetRootComponent());
+		ApplyPreparedProjectileState();
+		return;
 	}
 
-	if (bSoftHomingConfigured)
-	{
-		// La rotación del SpawnTransform representa la trayectoria inicial exacta.
-		// Usarla evita depender del momento interno en que ProjectileMovement inicializa
-		// Velocity durante el spawn diferido.
-		SoftHomingInitialDirection = GetActorForwardVector().GetSafeNormal();
-
-		if (SoftHomingSettings.StartDelay <= KINDA_SMALL_NUMBER)
-		{
-			StartSoftHoming();
-		}
-		else if (UWorld* World = GetWorld())
-		{
-			World->GetTimerManager().SetTimer(
-				SoftHomingStartTimerHandle,
-				this,
-				&APantheliaProjectile::StartSoftHoming,
-				SoftHomingSettings.StartDelay,
-				false);
-		}
-	}
+	StartLoopingSound();
+	ScheduleSoftHomingStart();
 }
 
 void APantheliaProjectile::EndPlay(const EEndPlayReason::Type EndPlayReason)
@@ -172,6 +160,159 @@ void APantheliaProjectile::SetProjectileSpeed(const float InSpeed)
 	ProjectileMovement->InitialSpeed = InSpeed;
 	ProjectileMovement->MaxSpeed = InSpeed;
 	ProjectileMovement->Velocity = GetActorForwardVector().GetSafeNormal() * InSpeed;
+}
+
+void APantheliaProjectile::PrepareForDelayedLaunch()
+{
+	bPreparedForDelayedLaunch = true;
+
+	// Durante SpawnActorDeferred BeginPlay todavía no ha ocurrido. El flag es suficiente
+	// para que BeginPlay aplique el estado preparado antes del primer tick de movimiento.
+	if (HasActorBegunPlay())
+	{
+		ApplyPreparedProjectileState();
+	}
+}
+
+bool APantheliaProjectile::LaunchPreparedProjectile(
+	const FRotator& LaunchRotation,
+	AActor* HomingTargetActor,
+	const FPantheliaProjectileHomingSettings* HomingSettings,
+	const float ProjectileSpeedOverride)
+{
+	if (!bPreparedForDelayedLaunch || bHit || !Sphere || !ProjectileMovement)
+	{
+		return false;
+	}
+
+	StopSoftHoming();
+
+	SetActorRotation(LaunchRotation, ETeleportType::TeleportPhysics);
+
+	ApplyCanonicalCollisionPolicy();
+
+	if (ProjectileMovement->UpdatedComponent != Sphere)
+	{
+		ProjectileMovement->SetUpdatedComponent(Sphere);
+	}
+
+	const bool bHasSpeedOverride =
+		FMath::IsFinite(ProjectileSpeedOverride) && ProjectileSpeedOverride > 0.f;
+	const float LaunchSpeed = bHasSpeedOverride
+		? ProjectileSpeedOverride
+		: FMath::Max(0.f, ProjectileMovement->InitialSpeed);
+
+	if (bHasSpeedOverride)
+	{
+		ProjectileMovement->InitialSpeed = ProjectileSpeedOverride;
+		ProjectileMovement->MaxSpeed = ProjectileSpeedOverride;
+	}
+
+	ProjectileMovement->bSimulationEnabled = true;
+	if (!ProjectileMovement->IsActive())
+	{
+		ProjectileMovement->Activate(true);
+	}
+	ProjectileMovement->Velocity = GetActorForwardVector().GetSafeNormal() * LaunchSpeed;
+	ProjectileMovement->UpdateComponentVelocity();
+
+	bPreparedForDelayedLaunch = false;
+	SetLifeSpan(Lifespan);
+	StartLoopingSound();
+
+	if (HomingSettings && HomingSettings->bEnabled && IsValid(HomingTargetActor))
+	{
+		ConfigureSoftHoming(HomingTargetActor, *HomingSettings);
+	}
+	else
+	{
+		bSoftHomingConfigured = false;
+		SoftHomingTargetActor.Reset();
+	}
+
+	ScheduleSoftHomingStart();
+	return true;
+}
+
+void APantheliaProjectile::ApplyCanonicalCollisionPolicy()
+{
+	if (!Sphere)
+	{
+		return;
+	}
+
+	Sphere->SetCollisionObjectType(ECC_Projectile);
+	Sphere->SetCollisionEnabled(ECollisionEnabled::QueryOnly);
+	Sphere->SetGenerateOverlapEvents(true);
+	Sphere->SetCollisionResponseToAllChannels(ECR_Ignore);
+	Sphere->SetCollisionResponseToChannel(ECC_WorldDynamic, ECR_Block);
+	Sphere->SetCollisionResponseToChannel(ECC_WorldStatic, ECR_Block);
+	Sphere->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
+}
+
+void APantheliaProjectile::ApplyPreparedProjectileState()
+{
+	StopSoftHoming();
+	SetLifeSpan(0.f);
+
+	// El sonido en loop representa el vuelo, no la materialización. Normalmente el
+	// componente todavía no existe porque PrepareForDelayedLaunch ocurre antes de
+	// BeginPlay; este bloque también cubre de forma segura una preparación tardía.
+	if (IsValid(LoopingSoundComponent))
+	{
+		LoopingSoundComponent->Stop();
+		LoopingSoundComponent = nullptr;
+	}
+
+	if (Sphere)
+	{
+		Sphere->SetGenerateOverlapEvents(false);
+		Sphere->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
+
+	if (ProjectileMovement)
+	{
+		ProjectileMovement->StopMovementImmediately();
+		ProjectileMovement->bSimulationEnabled = false;
+	}
+}
+
+void APantheliaProjectile::StartLoopingSound()
+{
+	if (!IsValid(LoopingSound) || IsValid(LoopingSoundComponent))
+	{
+		return;
+	}
+
+	LoopingSoundComponent = UGameplayStatics::SpawnSoundAttached(
+		LoopingSound,
+		GetRootComponent());
+}
+
+void APantheliaProjectile::ScheduleSoftHomingStart()
+{
+	if (!bSoftHomingConfigured || bPreparedForDelayedLaunch)
+	{
+		return;
+	}
+
+	// La rotación actual representa la trayectoria inicial exacta. En un proyectil
+	// preparado se actualiza justo antes de lanzar; en uno normal viene del SpawnTransform.
+	SoftHomingInitialDirection = GetActorForwardVector().GetSafeNormal();
+
+	if (SoftHomingSettings.StartDelay <= KINDA_SMALL_NUMBER)
+	{
+		StartSoftHoming();
+	}
+	else if (UWorld* World = GetWorld())
+	{
+		World->GetTimerManager().SetTimer(
+			SoftHomingStartTimerHandle,
+			this,
+			&APantheliaProjectile::StartSoftHoming,
+			SoftHomingSettings.StartDelay,
+			false);
+	}
 }
 
 void APantheliaProjectile::ConfigureSoftHoming(
@@ -244,6 +385,7 @@ void APantheliaProjectile::StopSoftHoming()
 
 	if (UWorld* World = GetWorld())
 	{
+		World->GetTimerManager().ClearTimer(SoftHomingStartTimerHandle);
 		World->GetTimerManager().ClearTimer(SoftHomingStopTimerHandle);
 	}
 }
@@ -524,6 +666,13 @@ void APantheliaProjectile::OnSphereOverlap(UPrimitiveComponent* OverlappedCompon
 
 void APantheliaProjectile::OnProjectileStopped(const FHitResult& ImpactResult)
 {
+	// Materializar una formación detiene el movement component de forma intencional.
+	// Ese estado nunca debe interpretarse como un impacto contra geometría.
+	if (bPreparedForDelayedLaunch)
+	{
+		return;
+	}
+
 	// Los personajes nunca deberían llegar por esta ruta: sus cápsulas ignoran el
 	// canal Projectile y sus meshes generan overlap. Esta callback queda reservada
 	// para paredes, suelo y props que bloquean el canal.

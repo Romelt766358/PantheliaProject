@@ -139,6 +139,20 @@ protected:
 	// Obtiene el socket real de este disparo mediante ICombatInterface.
 	FVector GetProjectileSocketLocation() const;
 
+	// Resuelve el punto lógico actual de un actor objetivo concreto. Permite que una
+	// descarga capture el actor una vez, pero recalcule su posición al lanzar cada
+	// proyectil. Devuelve false si el actor dejó de ser válido.
+	bool TryResolveTargetLocation(AActor* TargetActor, FVector& OutTargetLocation) const;
+
+	// Ruta base de spawn en un transform mundial explícito. Las formaciones suspendidas
+	// la usan para independizarse por completo del socket después del cast.
+	APantheliaProjectile* SpawnProjectileAtTransform(
+		const FTransform& SpawnTransform,
+		AActor* HomingTargetActor = nullptr,
+		const FPantheliaProjectileHomingSettings* HomingSettings = nullptr,
+		float ProjectileSpeedOverride = 0.f,
+		bool bPrepareForDelayedLaunch = false);
+
 	// Ruta única de spawn para proyectiles simples y múltiples. Cada llamada crea un
 	// spec de daño independiente; esto evita compartir un EffectContext mutable entre
 	// proyectiles hermanos que pueden impactar al mismo tiempo.

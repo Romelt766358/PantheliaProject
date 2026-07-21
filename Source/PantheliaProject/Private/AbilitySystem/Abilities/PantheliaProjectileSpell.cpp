@@ -4,6 +4,7 @@
 
 #include "Actor/PantheliaProjectile.h"
 #include "Combat/LockonComponent.h"
+#include "Components/SceneComponent.h"
 #include "Interfaces/CombatInterface.h"
 #include "PantheliaGameplayTags.h"
 
@@ -74,9 +75,19 @@ AActor* UPantheliaProjectileSpell::GetFacingTargetActor() const
 	if (ULockonComponent* LockonComp =
 		AvatarActor->FindComponentByClass<ULockonComponent>())
 	{
-		return IsValid(LockonComp->CurrentTargetActor)
-			? LockonComp->CurrentTargetActor.Get()
-			: nullptr;
+		AActor* TargetActor = LockonComp->CurrentTargetActor.Get();
+		if (!IsValid(TargetActor))
+		{
+			return nullptr;
+		}
+
+		if (TargetActor->GetClass()->ImplementsInterface(UCombatInterface::StaticClass())
+			&& ICombatInterface::Execute_IsDead(TargetActor))
+		{
+			return nullptr;
+		}
+
+		return TargetActor;
 	}
 
 	return nullptr;
@@ -90,15 +101,10 @@ FVector UPantheliaProjectileSpell::GetFacingTargetLocation() const
 		return FVector::ZeroVector;
 	}
 
-	if (AActor* TargetActor = GetFacingTargetActor())
+	FVector TargetLocation = FVector::ZeroVector;
+	if (TryResolveTargetLocation(GetFacingTargetActor(), TargetLocation))
 	{
-		if (ULockonComponent* LockonComp =
-			AvatarActor->FindComponentByClass<ULockonComponent>())
-		{
-			// El punto lógico puede estar en torso, cabeza u otra zona configurada.
-			// No usar GetActorLocation(): normalmente apunta a los pies/origen.
-			return LockonComp->GetLockonLocation(TargetActor);
-		}
+		return TargetLocation;
 	}
 
 	return AvatarActor->GetActorLocation() +
@@ -125,6 +131,43 @@ FVector UPantheliaProjectileSpell::GetProjectileSocketLocation() const
 	return ICombatInterface::Execute_GetCombatSocketLocation(
 		AvatarActor,
 		GetResolvedSocketTag());
+}
+
+bool UPantheliaProjectileSpell::TryResolveTargetLocation(
+	AActor* TargetActor,
+	FVector& OutTargetLocation) const
+{
+	if (!IsValid(TargetActor))
+	{
+		return false;
+	}
+
+	if (TargetActor->GetClass()->ImplementsInterface(UCombatInterface::StaticClass())
+		&& ICombatInterface::Execute_IsDead(TargetActor))
+	{
+		return false;
+	}
+
+	if (AActor* AvatarActor = GetAvatarActorFromActorInfo())
+	{
+		if (ULockonComponent* LockonComp =
+			AvatarActor->FindComponentByClass<ULockonComponent>())
+		{
+			// El punto lógico puede estar en torso, cabeza u otra zona configurada.
+			// No usar GetActorLocation(): normalmente apunta a los pies/origen.
+			OutTargetLocation = LockonComp->GetLockonLocation(TargetActor);
+			return true;
+		}
+	}
+
+	if (const USceneComponent* TargetRoot = TargetActor->GetRootComponent())
+	{
+		OutTargetLocation = TargetRoot->GetComponentLocation();
+		return true;
+	}
+
+	OutTargetLocation = TargetActor->GetActorLocation();
+	return true;
 }
 
 void UPantheliaProjectileSpell::SpawnProjectile()
@@ -154,6 +197,25 @@ APantheliaProjectile* UPantheliaProjectileSpell::SpawnProjectileWithRotation(
 	const FPantheliaProjectileHomingSettings* HomingSettings,
 	const float ProjectileSpeedOverride)
 {
+	FTransform SpawnTransform;
+	SpawnTransform.SetLocation(GetProjectileSocketLocation());
+	SpawnTransform.SetRotation(ProjectileRotation.Quaternion());
+
+	return SpawnProjectileAtTransform(
+		SpawnTransform,
+		HomingTargetActor,
+		HomingSettings,
+		ProjectileSpeedOverride,
+		false);
+}
+
+APantheliaProjectile* UPantheliaProjectileSpell::SpawnProjectileAtTransform(
+	const FTransform& SpawnTransform,
+	AActor* HomingTargetActor,
+	const FPantheliaProjectileHomingSettings* HomingSettings,
+	const float ProjectileSpeedOverride,
+	const bool bPrepareForDelayedLaunch)
+{
 	AActor* AvatarActor = GetAvatarActorFromActorInfo();
 	UWorld* World = GetWorld();
 	if (!IsValid(AvatarActor) || !IsValid(World) || !AvatarActor->HasAuthority())
@@ -166,14 +228,10 @@ APantheliaProjectile* UPantheliaProjectileSpell::SpawnProjectileWithRotation(
 	if (!ProjectileClass)
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("PantheliaProjectileSpell::SpawnProjectileWithRotation — ProjectileClass no asignado en %s"),
+			TEXT("PantheliaProjectileSpell::SpawnProjectileAtTransform — ProjectileClass no asignado en %s"),
 			*GetName());
 		return nullptr;
 	}
-
-	FTransform SpawnTransform;
-	SpawnTransform.SetLocation(GetProjectileSocketLocation());
-	SpawnTransform.SetRotation(ProjectileRotation.Quaternion());
 
 	APantheliaProjectile* Projectile = World->SpawnActorDeferred<APantheliaProjectile>(
 		ProjectileClass,
@@ -187,7 +245,7 @@ APantheliaProjectile* UPantheliaProjectileSpell::SpawnProjectileWithRotation(
 	if (!Projectile)
 	{
 		UE_LOG(LogTemp, Warning,
-			TEXT("PantheliaProjectileSpell::SpawnProjectileWithRotation — SpawnActorDeferred devolvió null para %s"),
+			TEXT("PantheliaProjectileSpell::SpawnProjectileAtTransform — SpawnActorDeferred devolvió null para %s"),
 			*ProjectileClass->GetName());
 		return nullptr;
 	}
@@ -200,13 +258,21 @@ APantheliaProjectile* UPantheliaProjectileSpell::SpawnProjectileWithRotation(
 		Projectile->DamageEffectSpecHandle = MakeDamageSpec();
 	}
 
-	if (HomingSettings && HomingSettings->bEnabled && IsValid(HomingTargetActor))
+	if (bPrepareForDelayedLaunch)
+	{
+		Projectile->PrepareForDelayedLaunch();
+	}
+	else if (HomingSettings && HomingSettings->bEnabled && IsValid(HomingTargetActor))
 	{
 		Projectile->ConfigureSoftHoming(HomingTargetActor, *HomingSettings);
 	}
 
 	Projectile->FinishSpawning(SpawnTransform);
-	Projectile->SetProjectileSpeed(ProjectileSpeedOverride);
+
+	if (!bPrepareForDelayedLaunch)
+	{
+		Projectile->SetProjectileSpeed(ProjectileSpeedOverride);
+	}
 
 	return Projectile;
 }

@@ -283,6 +283,39 @@ AActor* ULockonComponent::FindBestSoftLockTarget(float RadiusOverride)
 	return BestTarget;
 }
 
+AActor* ULockonComponent::FindNearestTarget(const float RadiusOverride)
+{
+	RefreshCachedReferences();
+
+	if (!OwnerRef)
+	{
+		return nullptr;
+	}
+
+	const float SearchRadius =
+		RadiusOverride > 0.0f ? RadiusOverride : InitialLockonRadius;
+	const TArray<AActor*> Candidates = FindLockonCandidates(SearchRadius);
+
+	AActor* NearestTarget = nullptr;
+	float NearestDistanceSquared = TNumericLimits<float>::Max();
+	const FVector OwnerLocation = OwnerRef->GetActorLocation();
+
+	for (AActor* Candidate : Candidates)
+	{
+		const float DistanceSquared = FVector::DistSquared(
+			OwnerLocation,
+			GetLockonLocation(Candidate));
+
+		if (DistanceSquared < NearestDistanceSquared)
+		{
+			NearestDistanceSquared = DistanceSquared;
+			NearestTarget = Candidate;
+		}
+	}
+
+	return NearestTarget;
+}
+
 // =========================
 // Tick / cámara
 // =========================

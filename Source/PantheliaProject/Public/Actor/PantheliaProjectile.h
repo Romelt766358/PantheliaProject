@@ -61,6 +61,9 @@ struct FPantheliaProjectileHomingSettings
  * un componente proxy propio cuya posición se actualiza al punto lógico de lock-on del
  * enemigo. Así no se obliga a que HomingTargetComponent apunte al origen/pies del actor.
  *
+ * También puede materializarse en estado preparado: visible, inmóvil y sin colisión,
+ * para que una ability lo lance más tarde sin volver a consultar el socket del caster.
+ *
  * Efectos visuales/sonoros configurables desde el Blueprint de cada proyectil:
  * - ImpactEffect: Niagara al impactar
  * - ImpactSound: sonido de impacto
@@ -95,6 +98,24 @@ public:
 		AActor* InTargetActor,
 		const FPantheliaProjectileHomingSettings& InSettings);
 
+	// Deja el proyectil materializado y visible, pero inmóvil y sin colisión. Debe
+	// llamarse durante SpawnActorDeferred, antes de FinishSpawning, para que BeginPlay
+	// no permita un frame de movimiento accidental.
+	void PrepareForDelayedLaunch();
+
+	// Lanza un proyectil previamente preparado. La rotación y el target se resuelven
+	// en el instante real de salida, no cuando la formación se materializa.
+	bool LaunchPreparedProjectile(
+		const FRotator& LaunchRotation,
+		AActor* HomingTargetActor = nullptr,
+		const FPantheliaProjectileHomingSettings* HomingSettings = nullptr,
+		float ProjectileSpeedOverride = 0.f);
+
+	bool IsPreparedForDelayedLaunch() const
+	{
+		return bPreparedForDelayedLaunch;
+	}
+
 protected:
 	virtual void BeginPlay() override;
 	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
@@ -112,6 +133,10 @@ protected:
 private:
 	void ConsumeProjectile(bool bPlayImpactFeedback, const FVector& ImpactLocation);
 
+	void ApplyCanonicalCollisionPolicy();
+	void ApplyPreparedProjectileState();
+	void StartLoopingSound();
+	void ScheduleSoftHomingStart();
 	void StartSoftHoming();
 	void StopSoftHoming();
 	void UpdateSoftHomingTarget();
@@ -161,4 +186,5 @@ private:
 	FTimerHandle SoftHomingStopTimerHandle;
 	bool bSoftHomingConfigured = false;
 	bool bSoftHomingActive = false;
+	bool bPreparedForDelayedLaunch = false;
 };

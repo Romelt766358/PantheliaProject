@@ -377,6 +377,60 @@ EDataValidationResult PantheliaSpellValidation::ValidateMultiProjectileSpell(
         TEXT("ProjectileSpeedOverride"),
         Spell.GetProjectileSpeedOverrideForEditor(),
         0.f);
+
+    if (Spell.GetSpawnPatternForEditor()
+        == EPantheliaMultiProjectileSpawnPattern::FixedWorldLineWaves)
+    {
+        ValidateSpellScalableFloat(
+            Context,
+            TEXT("FormationForwardOffset"),
+            Spell.GetFormationForwardOffsetForEditor(),
+            -100000.f,
+            100000.f);
+        ValidateSpellScalableFloat(
+            Context,
+            TEXT("FormationHeightOffset"),
+            Spell.GetFormationHeightOffsetForEditor(),
+            -100000.f,
+            100000.f);
+        ValidateSpellScalableFloat(
+            Context,
+            TEXT("FormationProjectileSpacing"),
+            Spell.GetFormationProjectileSpacingForEditor(),
+            0.f);
+        ValidateSpellScalableFloat(
+            Context,
+            TEXT("FormationHoldDuration"),
+            Spell.GetFormationHoldDurationForEditor(),
+            0.f);
+        ValidateSpellScalableFloat(
+            Context,
+            TEXT("ProjectileWaveDelay"),
+            Spell.GetProjectileWaveDelayForEditor(),
+            0.f);
+        ValidateSpellScalableFloat(
+            Context,
+            TEXT("FallbackTargetSearchRadius"),
+            Spell.GetFallbackTargetSearchRadiusForEditor(),
+            1.f);
+
+        if (Spell.GetInitialWaveProjectileCountForEditor() < 1
+            || Spell.GetInitialWaveProjectileCountForEditor() > 64)
+        {
+            AddSpellValidationError(
+                Context,
+                TEXT("InitialWaveProjectileCount debe estar entre 1 y 64."));
+        }
+
+        if (Spell.GetAdditionalWaveProjectileCountForEditor() < 1
+            || Spell.GetAdditionalWaveProjectileCountForEditor() > 64)
+        {
+            AddSpellValidationError(
+                Context,
+                TEXT("AdditionalWaveProjectileCount debe estar entre 1 y 64."));
+        }
+    }
+
     ValidateSpellScalableFloat(
         Context,
         TEXT("HomingStartDelay"),

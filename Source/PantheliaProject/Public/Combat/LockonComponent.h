@@ -104,6 +104,12 @@ public:
 	// ningún enemigo cercano/frontal pasa los filtros de visibilidad/targeteabilidad.
 	AActor* FindBestSoftLockTarget(float RadiusOverride = -1.0f);
 
+	// Devuelve el enemigo válido más cercano sin activar lock-on duro. Reutiliza los
+	// filtros canónicos de muerte, targeteabilidad y línea de visión del componente.
+	// Está pensado para hechizos que necesitan un objetivo implícito cuando el jugador
+	// lanza sin CurrentTargetActor.
+	AActor* FindNearestTarget(float RadiusOverride = -1.0f);
+
 	// Punto centralizado desde el que cámara, proyectiles y soft-lock pueden apuntar
 	// al enemigo. Hoy delega en IEnemy::GetLockonLocation() y cae a GetActorLocation.
 	FVector GetLockonLocation(AActor* TargetActor) const;
