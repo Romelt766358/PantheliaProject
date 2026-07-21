@@ -341,13 +341,15 @@ void FPantheliaGameplayTags::InitializeNativeGameplayTags()
 	// --- TAGS DE ABILITIES: HECHIZOS DEL JUGADOR ---
 	// Jerarquía coherente con Cooldown.Spell.*: mismos niveles, mismo propósito.
 	// ASIGNAR en cada ability Blueprint → Class Defaults → "Ability Tags":
-	//   GA_Firebolt → Abilities.Spell.Fire.Firebolt
+	//   GA_Firebolt  → Abilities.Spell.Fire.Firebolt
+	//   GA_FireVolley → Abilities.Spell.Fire.FireVolley
 	// Al tener padres, GetAbilityTagFromSpec lo detecta (filtra hijos de "Abilities") y
 	// las queries contra Abilities.Spell o Abilities.Spell.Fire también lo encuentran.
 	// Las hojas de Agua/Tormenta/Naturaleza se añadirán con cada Corazón Elemental.
 	GameplayTags.Abilities_Spell = Manager.AddNativeGameplayTag(FName("Abilities.Spell"), FString("Padre de todos los hechizos del jugador. Query: '¿tiene algún hechizo activo?'"));
 	GameplayTags.Abilities_Spell_Fire = Manager.AddNativeGameplayTag(FName("Abilities.Spell.Fire"), FString("Padre de hechizos de Fuego. Otorgados por el Corazón de Fuego."));
 	GameplayTags.Abilities_Spell_Fire_Firebolt = Manager.AddNativeGameplayTag(FName("Abilities.Spell.Fire.Firebolt"), FString("Hechizo Firebolt. Asignar en GA_Firebolt → Ability Tags."));
+	GameplayTags.Abilities_Spell_Fire_FireVolley = Manager.AddNativeGameplayTag(FName("Abilities.Spell.Fire.FireVolley"), FString("Hechizo Fire Volley de múltiples proyectiles. Asignar en GA_FireVolley → Ability Tags."));
 	GameplayTags.Abilities_Spell_Water = Manager.AddNativeGameplayTag(FName("Abilities.Spell.Water"), FString("Padre de hechizos de Agua. Otorgados por el Corazón de Agua (futuro)."));
 	GameplayTags.Abilities_Spell_Storm = Manager.AddNativeGameplayTag(FName("Abilities.Spell.Storm"), FString("Padre de hechizos de Tormenta. Otorgados por el Corazón de Tormenta (futuro)."));
 	GameplayTags.Abilities_Spell_Nature = Manager.AddNativeGameplayTag(FName("Abilities.Spell.Nature"), FString("Padre de hechizos de Naturaleza. Otorgados por el Corazón de Naturaleza (futuro)."));
@@ -596,7 +598,8 @@ void FPantheliaGameplayTags::InitializeNativeGameplayTags()
 	// Registramos la jerarquia completa. Los padres se registran como tags nativos vacios
 	// (sin descripcion util) para que existan en la jerarquia de GAS y permitan queries por
 	// nivel, aunque ningun GE los conceda directamente. Solo el tag hoja
-	// (Cooldown.Spell.Fire.Firebolt) se concede via Granted Tag en GE_Cooldown_Firebolt;
+	// Cada tag hoja (por ejemplo Cooldown.Spell.Fire.Firebolt o
+	// Cooldown.Spell.Fire.FireVolley) se concede via Granted Tag en su GE concreto;
 	// como tiene a los padres por encima, las queries contra Cooldown.Spell o
 	// Cooldown.Spell.Fire siguen detectandolo automaticamente (MatchesTag incluye hijos).
 	GameplayTags.Cooldown = Manager.AddNativeGameplayTag(
@@ -611,6 +614,9 @@ void FPantheliaGameplayTags::InitializeNativeGameplayTags()
 	GameplayTags.Cooldown_Spell_Fire_Firebolt = Manager.AddNativeGameplayTag(
 		FName("Cooldown.Spell.Fire.Firebolt"),
 		FString("Cooldown del hechizo Firebolt. Lo concede GE_Cooldown_Firebolt como Granted Tag."));
+	GameplayTags.Cooldown_Spell_Fire_FireVolley = Manager.AddNativeGameplayTag(
+		FName("Cooldown.Spell.Fire.FireVolley"),
+		FString("Cooldown del hechizo Fire Volley. Lo concede GE_Cooldown_FireVolley como Granted Tag."));
 	// Padres de los demás elementos (las hojas se añadirán con cada nuevo hechizo).
 	GameplayTags.Cooldown_Spell_Water = Manager.AddNativeGameplayTag(
 		FName("Cooldown.Spell.Water"),

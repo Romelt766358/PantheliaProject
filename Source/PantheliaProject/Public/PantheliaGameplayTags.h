@@ -260,15 +260,18 @@ public:
 	// Jerarquía coherente con Cooldown.Spell.*: mismos niveles, mismo propósito.
 	//   Abilities.Spell              → padre de todos los hechizos del jugador.
 	//   Abilities.Spell.Fire         → padre de hechizos de Fuego.
-	//   Abilities.Spell.Fire.Firebolt → la habilidad Firebolt concreta.
-	//   .Water / .Storm / .Nature    → padres de los demás elementos (hechizos futuros).
+	//   Abilities.Spell.Fire.Firebolt  → la habilidad Firebolt concreta.
+	//   Abilities.Spell.Fire.FireVolley → la descarga múltiple Fire Volley.
+	//   .Water / .Storm / .Nature     → padres de los demás elementos (hechizos futuros).
 	// ASIGNAR en cada ability Blueprint → Class Defaults → "Ability Tags":
-	//   GA_Firebolt → Abilities.Spell.Fire.Firebolt
+	//   GA_Firebolt  → Abilities.Spell.Fire.Firebolt
+	//   GA_FireVolley → Abilities.Spell.Fire.FireVolley
 	// Al tener padres, GetAbilityTagFromSpec lo detecta (filtra hijos de "Abilities")
 	// y las queries contra Abilities.Spell o Abilities.Spell.Fire también lo encuentran.
 	FGameplayTag Abilities_Spell;                        // padre global de hechizos del jugador
 	FGameplayTag Abilities_Spell_Fire;                   // hechizos de fuego
-	FGameplayTag Abilities_Spell_Fire_Firebolt;          // Firebolt (único hechizo de fuego por ahora)
+	FGameplayTag Abilities_Spell_Fire_Firebolt;          // Firebolt de un solo proyectil
+	FGameplayTag Abilities_Spell_Fire_FireVolley;        // Fire Volley de múltiples proyectiles
 	FGameplayTag Abilities_Spell_Water;                  // hechizos de agua (futuro — Corazón de Agua)
 	FGameplayTag Abilities_Spell_Storm;                  // hechizos de tormenta (futuro — Corazón de Tormenta)
 	FGameplayTag Abilities_Spell_Nature;                 // hechizos de naturaleza (futuro — Corazón de Naturaleza)
@@ -571,7 +574,8 @@ public:
 	//   Cooldown                      -> raiz: TODOS los cooldowns del juego.
 	//   Cooldown.Spell                -> todos los cooldowns de hechizos.
 	//   Cooldown.Spell.Fire           -> hechizos del elemento Fuego.
-	//   Cooldown.Spell.Fire.Firebolt  -> el hechizo concreto.
+	//   Cooldown.Spell.Fire.Firebolt   -> Firebolt.
+	//   Cooldown.Spell.Fire.FireVolley -> Fire Volley.
 	// La jerarquia permite queries por padre: "cualquier hechizo en cooldown?" se
 	// pregunta contra Cooldown.Spell; "algun hechizo de fuego?" contra Cooldown.Spell.Fire.
 	// Un nodo del arbol que reduzca cooldowns de fuego apuntaria a Cooldown.Spell.Fire.
@@ -580,10 +584,11 @@ public:
 	//
 	// Los padres (Cooldown, Cooldown.Spell, Cooldown.Spell.Fire) se registran como tags
 	// nativos vacios para que existan en la jerarquia aunque nunca se concedan directamente.
-	FGameplayTag Cooldown;                       // raiz
-	FGameplayTag Cooldown_Spell;                 // todos los hechizos
-	FGameplayTag Cooldown_Spell_Fire;            // hechizos de fuego
-	FGameplayTag Cooldown_Spell_Fire_Firebolt;   // Firebolt concreto
+	FGameplayTag Cooldown;                        // raiz
+	FGameplayTag Cooldown_Spell;                  // todos los hechizos
+	FGameplayTag Cooldown_Spell_Fire;             // hechizos de fuego
+	FGameplayTag Cooldown_Spell_Fire_Firebolt;    // Firebolt concreto
+	FGameplayTag Cooldown_Spell_Fire_FireVolley;  // Fire Volley concreto
 	// Padres de los demás elementos (las hojas se añadirán con cada nuevo hechizo).
 	FGameplayTag Cooldown_Spell_Water;           // hechizos de agua (futuro)
 	FGameplayTag Cooldown_Spell_Storm;           // hechizos de tormenta (futuro)
