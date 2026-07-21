@@ -27,6 +27,12 @@ class USoundBase;
 class UPantheliaDebuffNiagaraComponent;
 class UWeaponTraceComponent;
 class UPrimitiveComponent;
+class UPantheliaDeathPresentationComponent;
+
+DECLARE_DYNAMIC_MULTICAST_DELEGATE_OneParam(
+	FOnDeathPresentationFinished,
+	AActor*,
+	DeadActor);
 
 UCLASS(ABSTRACT)
 class PANTHELIAPROJECT_API APantheliaCharacterBase : public ACharacter, public IAbilitySystemInterface, public ICombatInterface
@@ -54,7 +60,7 @@ public:
 	virtual FVector GetCombatSocketLocation_Implementation(const FGameplayTag& MontageTag) override;
 
 	// IsDead_Implementation: devuelve bDead.
-	// bDead se pone a true en MulticastHandleDeath().
+	// bDead se pone a true al principio de Die(), antes del shutdown y la presentación.
 	virtual bool IsDead_Implementation() const override;
 
 	// GetAvatar_Implementation: devuelve 'this'.
@@ -75,6 +81,19 @@ public:
 	// GetBloodEffect_Implementation: devuelve BloodEffect (gancho de impacto, vacío por ahora).
 	virtual UNiagaraSystem* GetBloodEffect_Implementation() override;
 	virtual void Die(const FVector& DeathImpulse) override;
+
+	// El ASC del jugador vive en PlayerState. El futuro spawn de un Avatar nuevo debe
+	// llamar este helper DESPUES de InitAbilityActorInfo para retirar State.Dead y el
+	// bloqueo de activacion sin eliminar Gameplay Effects ni abilities persistentes.
+	static void ClearDeathStateForNewAvatar(UAbilitySystemComponent* InAbilitySystemComponent);
+
+	UPantheliaDeathPresentationComponent* GetDeathPresentationComponent() const
+	{
+		return DeathPresentationComponent;
+	}
+
+	UPROPERTY(BlueprintAssignable, Category = "Panthelia|Death Presentation")
+	FOnDeathPresentationFinished OnDeathPresentationFinished;
 
 	// Overrides de los getters puros virtuales de ICombatInterface (clase 311).
 	// Devuelven una referencia a los miembros protegidos declarados más abajo
@@ -99,6 +118,7 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
 
 	// Override de ACharacter::Landed (post-315, Nivel 3 de knockback) — se dispara
 	// automáticamente cuando el CharacterMovementComponent detecta que el personaje
@@ -112,35 +132,38 @@ protected:
 
 	// Reaplica ÚNICAMENTE el GameplayEffect de atributos secundarios (DefaultSecondaryAttributes).
 	//
-	// POR QUÉ EXISTE ESTA FUNCIÓN (explicación extendida para quien no conozca este detalle de GAS):
-	// Los MMC (Modifier Magnitude Calculation) de MaxHealth/MaxMana/MaxStamina leen el nivel del
-	// personaje mediante ICombatInterface::Execute_GetPlayerLevel() DENTRO de su función de cálculo
-	// C++ (CalculateBaseMagnitude_Implementation). Esa lectura NO pasa por el sistema de "capturas"
-	// de GAS (RelevantAttributesToCapture) — GAS solo sabe recalcular automáticamente un GameplayEffect
-	// cuando cambia un ATRIBUTO que él mismo está vigilando (p. ej. Resilience para MaxHealth). El nivel
-	// del personaje es, para GAS, una variable "invisible": puede cambiar sin que GAS se entere, y el
-	// GameplayEffect de atributos secundarios se queda con un valor de nivel "congelado" (el que tenía
-	// en el momento en que se aplicó) hasta que algo fuerza una reevaluación.
+	// El nivel no es una captura observable de GAS: los MMC (Modifier Magnitude Calculation)
+	// leen ICombatInterface::Execute_GetPlayerLevel() al calcular, pero GAS no observa esa
+	// variable para reevaluar automáticamente el GameplayEffect. Por eso se necesita una
+	// instancia nueva para volver a calcular los MMC con el nivel actual.
 	//
-	// CÓMO LO RESOLVEMOS (enfoque QUITAR + REAPLICAR, no "refrescar"): un primer intento usó
-	// Stacking (Aggregate By Target + Refresh On Successful Application) esperando que reaplicar
-	// el mismo GameplayEffect forzara el recálculo. Las pruebas confirmaron que NO es así: ese
-	// Stacking solo refresca el temporizador de duración, no vuelve a ejecutar CalculateBaseMagnitude.
-	// La única forma 100% determinista de forzar un recálculo real es DESTRUIR la instancia activa
-	// existente (RemoveActiveGameplayEffect) y crear una completamente NUEVA (ApplyEffectToSelf),
-	// lo cual sí re-ejecuta CalculateBaseMagnitude_Implementation desde cero con el nivel actual.
-	// Por eso guardamos el handle de la instancia activa en SecondaryAttributesEffectHandle —
-	// que desde la Etapa 4 vive en UPantheliaAbilitySystemComponent, no aquí, para que
-	// sobreviva al respawn del Pawn del jugador (el ASC del jugador vive en el PlayerState).
+	// GE_SecondaryAttributes debe usar Stacking Type=None para que la aplicación nueva
+	// produzca un handle independiente. El orden transaccional es aplicar nueva, verificar
+	// que está activa y retirar la anterior; si la anterior no puede retirarse, se hace
+	// rollback de la nueva y se conserva el handle anterior.
+	// Aplicar primero evita el valle transitorio de máximos que podría clampear los vitales
+	// cuando existan fuentes externas, como armaduras, árbol o buffs.
+	// El handle se guarda en UPantheliaAbilitySystemComponent, no aquí, para sobrevivir al
+	// respawn del Pawn del jugador (el ASC del jugador vive en el PlayerState).
 	//
 	// CUÁNDO SE LLAMA: cada vez que el nivel del personaje cambia (en AMainCharacter, enganchada al
 	// delegate OnLevelChangedDelegate del PlayerState). Así MaxHealth/MaxMana/MaxStamina se actualizan
 	// de inmediato al subir de nivel.
 	virtual void RefreshSecondaryAttributes() const;
 
+	// Shutdown central, explicito e idempotente. Las subclases agregan solo sus
+	// responsabilidades propias mediante OnDeathGameplayShutdown.
+	void ShutdownGameplayForDeath();
+	virtual void OnDeathGameplayShutdown();
+
+	// Hook posterior a la presentacion visual. La clase base solo notifica a sus
+	// listeners; no destruye el actor ni altera el ASC persistente del jugador.
+	UFUNCTION()
+	virtual void HandleDeathPresentationFinished(AActor* DeadActor);
+
 	// Controla si el personaje ha muerto.
-	// Se pone a true en MulticastHandleDeath() para que IsDead_Implementation lo devuelva.
-	// No necesita replicación: MulticastHandleDeath() se llama en todos los contextos.
+	// Se pone a true al principio de Die() para que toda limpieza posterior observe muerte.
+	// No necesita replicación: Panthelia es single-player y Die() corre localmente.
 	bool bDead = false;
 
 	// --- Delegates de ICombatInterface (clase 311) ---
@@ -158,7 +181,7 @@ protected:
 	FOnASCRegistered OnASCRegistered;
 
 	// OnDeath se broadcastea en MulticastHandleDeath() (ver .cpp) — al final, después de
-	// que bDead ya es true y toda la lógica de muerte (ragdoll, dissolve, sonido) corrió.
+	// que bDead ya es true y la lógica de muerte visual, sonido incluido, ya corrió.
 	FOnDeath OnDeath;
 
 	// Aplica el GameplayEffect indicado sobre este mismo personaje (self-application).
@@ -258,6 +281,10 @@ protected:
 	EPantheliaCharacterClass CharacterClass = EPantheliaCharacterClass::Warrior;
 
 private:
+	friend class UPantheliaDeathPresentationComponent;
+
+	bool bGameplayShutdownForDeath = false;
+	TWeakObjectPtr<UPrimitiveComponent> PreparedDeathWeaponMesh;
 
 	// Timer usado para la regeneración de postura.
 	// ResetPoiseRegenTimer() lo reinicia con cada golpe.
@@ -391,6 +418,12 @@ protected:
 
 	UPROPERTY()
 	TObjectPtr<UAttributeSet> AttributeSet;
+
+	// Componente opcional/reutilizable. Se crea como Default Subobject para que los
+	// enemigos monomesh funcionen sin configuracion editorial adicional.
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Panthelia|Death Presentation",
+		meta = (AllowPrivateAccess = "true"))
+	TObjectPtr<UPantheliaDeathPresentationComponent> DeathPresentationComponent;
 
 	// NOTA (Etapa 4): el handle SecondaryAttributesEffectHandle ya no vive aquí.
 	// Se mudó a UPantheliaAbilitySystemComponent para que su vida coincida con la del

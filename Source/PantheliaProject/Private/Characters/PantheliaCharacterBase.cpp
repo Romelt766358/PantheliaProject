@@ -9,6 +9,7 @@
 #include "AbilitySystem/PantheliaAttributeSet.h"
 #include "PantheliaGameplayTags.h"
 #include "PantheliaProject.h"
+#include "PantheliaLogChannels.h"
 #include "NiagaraSystem.h"
 #include "Kismet/GameplayStatics.h"
 // Necesario para crear BurnDebuffComponent en el constructor (clase 311).
@@ -16,10 +17,20 @@
 // Necesario para ResolveDeathWeaponMesh (corrección post-314): encontrar el arma real
 // de un enemigo, que vive en un componente separado de FinalWeaponMesh.
 #include "Combat/WeaponTraceComponent.h"
+#include "Combat/PantheliaEquipmentComponent.h"
+#include "Combat/LockonComponent.h"
+#include "Characters/Components/PantheliaDeathPresentationComponent.h"
+#include "Characters/Components/PantheliaDeathPresentationTypes.h"
+#include "Animation/AnimInstance.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "GameFramework/Controller.h"
 
 APantheliaCharacterBase::APantheliaCharacterBase()
 {
 	PrimaryActorTick.bCanEverTick = false;
+
+	DeathPresentationComponent =
+		CreateDefaultSubobject<UPantheliaDeathPresentationComponent>(TEXT("DeathPresentationComponent"));
 
 	// BurnDebuffComponent (clase 311): un UPantheliaDebuffNiagaraComponent dedicado a la
 	// Quemadura, compartido por TODOS los personajes (jugador y enemigos) al vivir aquí,
@@ -185,23 +196,74 @@ EPantheliaCharacterClass APantheliaCharacterBase::GetCharacterClass_Implementati
 
 void APantheliaCharacterBase::Die(const FVector& DeathImpulse)
 {
-	// Al morir cancelamos el timer de regen de postura y el de decay de buildup —
-	// un cadáver no regenera postura ni "se enfría" de sus barras de estado (y el
-	// bloqueo global de muertos en PostGameplayEffectExecute ya impide que entre
-	// buildup nuevo; esto solo apaga el tick que quedaría girando en vacío).
+	const bool bLifecycleAlive = !DeathPresentationComponent ||
+		DeathPresentationComponent->GetPresentationState() ==
+			EPantheliaDeathPresentationState::Alive;
+	if (bDead || !bLifecycleAlive)
+	{
+		UE_LOG(LogPanthelia, Log,
+			TEXT("[DEATH] Segunda llamada Die ignorada para %s."),
+			*GetNameSafe(this));
+		return;
+	}
+
+	if (DeathPresentationComponent &&
+		!DeathPresentationComponent->RequestDeathPresentation())
+	{
+		UE_LOG(LogPanthelia, Log,
+			TEXT("[DEATH] Die ignorada para %s: lifecycle no disponible."),
+			*GetNameSafe(this));
+		return;
+	}
+
+	// El estado de muerte se establece antes de cualquier shutdown o trabajo visual.
+	bDead = true;
+	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
+	{
+		ASC->SetLooseGameplayTagCount(FPantheliaGameplayTags::Get().State_Dead, 1);
+	}
+
+	UE_LOG(LogPanthelia, Log, TEXT("[DEATH] Muerte iniciada para %s."), *GetNameSafe(this));
+	ShutdownGameplayForDeath();
+
+	if (DeathPresentationComponent)
+	{
+		DeathPresentationComponent->NotifyGameplayShutdownComplete();
+		if (!DeathPresentationComponent->BeginDeathPresentation(DeathImpulse))
+		{
+			// Fallback seguro si el componente no pudo completar su validación runtime.
+			MulticastHandleDeath(DeathImpulse);
+		}
+	}
+	else
+	{
+		// Compatibilidad defensiva para clases construidas sin el Default Subobject.
+		MulticastHandleDeath(DeathImpulse);
+		HandleDeathPresentationFinished(this);
+	}
+}
+
+void APantheliaCharacterBase::ShutdownGameplayForDeath()
+{
+	if (bGameplayShutdownForDeath)
+	{
+		return;
+	}
+	bGameplayShutdownForDeath = true;
+
 	GetWorldTimerManager().ClearTimer(PoiseRegenTimerHandle);
 	GetWorldTimerManager().ClearTimer(BuildupDecayTimerHandle);
 
-	// Limpieza de estado de combate. Es especialmente importante para el jugador:
-	// su ASC vive en PlayerState y sobrevive al Pawn, así que sin esta limpieza una
-	// barra parcial, una Quemadura activa o State.Airborne podrían reaparecer tras
-	// el futuro respawn. En enemigos también es correcto y evita ticks innecesarios.
+	const FPantheliaGameplayTags& GameplayTags = FPantheliaGameplayTags::Get();
 	if (UAbilitySystemComponent* ASC = GetAbilitySystemComponent())
 	{
-		// Una muerte invalida cualquier acción activa. Cancelar todas las abilities
-		// detiene montages, tasks y trazas gobernadas por GAS antes de activar el ragdoll.
-		// Las abilities concedidas NO se eliminan: solo se finalizan sus instancias activas.
+		// Finaliza instancias, tasks y montages sin retirar specs concedidas.
 		ASC->CancelAllAbilities();
+		ASC->CurrentMontageStop(0.f);
+
+		FGameplayTagContainer BlockedAbilityTags;
+		BlockedAbilityTags.AddTag(GameplayTags.Abilities);
+		ASC->BlockAbilitiesWithTags(BlockedAbilityTags);
 
 		ASC->SetNumericAttributeBase(UPantheliaAttributeSet::GetFireBuildupAttribute(), 0.f);
 		ASC->SetNumericAttributeBase(UPantheliaAttributeSet::GetStormBuildupAttribute(), 0.f);
@@ -211,7 +273,6 @@ void APantheliaCharacterBase::Die(const FVector& DeathImpulse)
 		ASC->SetNumericAttributeBase(UPantheliaAttributeSet::GetGrievousWoundsAttribute(), 0.f);
 
 		FGameplayTagContainer ElementalStatusTags;
-		const FPantheliaGameplayTags& GameplayTags = FPantheliaGameplayTags::Get();
 		ElementalStatusTags.AddTag(GameplayTags.Debuff_Burn);
 		ElementalStatusTags.AddTag(GameplayTags.Debuff_Shock);
 		ElementalStatusTags.AddTag(GameplayTags.Debuff_Saturation);
@@ -219,36 +280,130 @@ void APantheliaCharacterBase::Die(const FVector& DeathImpulse)
 		ElementalStatusTags.AddTag(GameplayTags.Effects_GrievousWounds);
 		ElementalStatusTags.AddTag(GameplayTags.Effects_DefenseShred);
 		ASC->RemoveActiveEffectsWithGrantedTags(ElementalStatusTags);
-
-		// Si murió durante un launch, Landed() ya no tiene por qué ejecutarse.
 		ASC->SetLooseGameplayTagCount(GameplayTags.State_Airborne, 0);
 	}
 
-	// Corrección post-314: antes esto era siempre FinalWeaponMesh->DetachFromComponent(...).
-	// Ahora se desprende el arma REAL de este personaje (ver ResolveDeathWeaponMesh en el
-	// header para la explicación completa de por qué hace falta esta indirección).
-	if (UPrimitiveComponent* WeaponMesh = ResolveDeathWeaponMesh())
+	if (USkeletalMeshComponent* BodyMesh = GetMesh())
 	{
-		WeaponMesh->DetachFromComponent(
-			FDetachmentTransformRules(EDetachmentRule::KeepWorld, true)
-		);
+		if (UAnimInstance* AnimInstance = BodyMesh->GetAnimInstance())
+		{
+			AnimInstance->StopAllMontages(0.f);
+		}
 	}
 
-	MulticastHandleDeath(DeathImpulse);
+	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
+	{
+		MovementComponent->StopMovementImmediately();
+		MovementComponent->DisableMovement();
+	}
+	if (Controller)
+	{
+		Controller->StopMovement();
+	}
+
+	if (ULockonComponent* LockonComponent = FindComponentByClass<ULockonComponent>())
+	{
+		if (IsValid(LockonComponent->CurrentTargetActor))
+		{
+			LockonComponent->EndLockon();
+		}
+	}
+
+	PreparedDeathWeaponMesh = ResolveDeathWeaponMesh();
+	bool bWeaponHandledByEquipment = false;
+	if (UPantheliaEquipmentComponent* EquipmentComponent =
+		FindComponentByClass<UPantheliaEquipmentComponent>())
+	{
+		const FPantheliaEquippedWeaponDeathHandoff Handoff =
+			EquipmentComponent->PrepareEquippedWeaponForDeath();
+		bWeaponHandledByEquipment = Handoff.HasValidWeapon();
+		if (bWeaponHandledByEquipment && Handoff.VisualParts.Num() > 0)
+		{
+			PreparedDeathWeaponMesh.Reset();
+		}
+
+		for (const TWeakObjectPtr<UPrimitiveComponent>& VisualPart : Handoff.VisualParts)
+		{
+			if (!VisualPart.IsValid()) continue;
+
+			if (!PreparedDeathWeaponMesh.IsValid())
+			{
+				PreparedDeathWeaponMesh = VisualPart;
+			}
+
+			if (DeathPresentationComponent)
+			{
+				FPantheliaDeathVisualPart RegisteredWeaponPart;
+				RegisteredWeaponPart.Component = VisualPart.Get();
+				RegisteredWeaponPart.Role = EPantheliaDeathVisualPartRole::WeaponPart;
+				RegisteredWeaponPart.RagdollPolicy = EPantheliaDeathRagdollPolicy::None;
+				RegisteredWeaponPart.DissolvePolicy = EPantheliaDeathDissolvePolicy::None;
+				RegisteredWeaponPart.bRequired = false;
+				DeathPresentationComponent->RegisterVisualPart(RegisteredWeaponPart);
+			}
+		}
+	}
+
+	if (UWeaponTraceComponent* WeaponTrace = FindComponentByClass<UWeaponTraceComponent>())
+	{
+		WeaponTrace->ShutdownForDeath();
+	}
+
+	// Enemigos legacy no usan Equipment: su arma es un componente del Character.
+	if (!bWeaponHandledByEquipment && PreparedDeathWeaponMesh.IsValid())
+	{
+		PreparedDeathWeaponMesh->DetachFromComponent(
+			FDetachmentTransformRules(EDetachmentRule::KeepWorld, true));
+	}
+
+	OnDeathGameplayShutdown();
+	UE_LOG(LogPanthelia, Log, TEXT("[DEATH] Shutdown de gameplay completado para %s."),
+		*GetNameSafe(this));
+}
+
+void APantheliaCharacterBase::OnDeathGameplayShutdown()
+{
+}
+
+void APantheliaCharacterBase::ClearDeathStateForNewAvatar(
+	UAbilitySystemComponent* InAbilitySystemComponent)
+{
+	if (!IsValid(InAbilitySystemComponent))
+	{
+		return;
+	}
+
+	const FPantheliaGameplayTags& GameplayTags = FPantheliaGameplayTags::Get();
+	const bool bWasDead =
+		InAbilitySystemComponent->HasMatchingGameplayTag(GameplayTags.State_Dead);
+	InAbilitySystemComponent->SetLooseGameplayTagCount(GameplayTags.State_Dead, 0);
+
+	if (bWasDead)
+	{
+		FGameplayTagContainer BlockedAbilityTags;
+		BlockedAbilityTags.AddTag(GameplayTags.Abilities);
+		InAbilitySystemComponent->UnBlockAbilitiesWithTags(BlockedAbilityTags);
+	}
 }
 
 void APantheliaCharacterBase::MulticastHandleDeath(const FVector& DeathImpulse)
 {
-	// Marcamos el personaje como muerto para que IsDead_Implementation devuelva true.
-	// Esto permite a GetLivePlayersWithinRadius filtrar cadáveres correctamente.
-	bDead = true;
+	// bDead y State.Dead ya fueron establecidos al principio de Die(), antes del
+	// shutdown. Fase 3C deja la presentacion visual al componente modular; este bloque
+	// legacy solo conserva un fallback defensivo si el componente no pudo iniciarse.
 
 	// Reproducir el sonido de muerte si está asignado en el BP del personaje.
-	// Se reproduce antes del dissolve para que suene junto al momento del "colapso".
+	// Se reproduce junto al momento del "colapso".
 	if (DeathSound)
 	{
 		UGameplayStatics::PlaySoundAtLocation(this, DeathSound, GetActorLocation(), GetActorRotation());
 	}
+
+	const bool bDeathPresentationComponentOwnsVisuals = DeathPresentationComponent &&
+		DeathPresentationComponent->IsPresentationActive();
+	if (!bDeathPresentationComponentOwnsVisuals)
+	{
+		GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
 	// Corrección post-314: ANTES estos 3 bloques (física del arma, física del mesh,
 	// impulsos) usaban siempre FinalWeaponMesh directamente. Ahora se resuelve UNA vez
@@ -256,7 +411,9 @@ void APantheliaCharacterBase::MulticastHandleDeath(const FVector& DeathImpulse)
 	// se reutiliza — así funciona igual para un personaje con FinalWeaponMesh real (el
 	// modelo original) y para un enemigo cuya arma vive en un componente separado que
 	// UWeaponTraceComponent ya encontró en su propio BeginPlay.
-	UPrimitiveComponent* WeaponMesh = ResolveDeathWeaponMesh();
+	UPrimitiveComponent* WeaponMesh = PreparedDeathWeaponMesh.IsValid()
+		? PreparedDeathWeaponMesh.Get()
+		: ResolveDeathWeaponMesh();
 	if (WeaponMesh)
 	{
 		WeaponMesh->SetSimulatePhysics(true);
@@ -291,12 +448,11 @@ void APantheliaCharacterBase::MulticastHandleDeath(const FVector& DeathImpulse)
 		WeaponMesh->AddImpulse(DeathImpulse * WeaponDeathImpulseScale, NAME_None, true);
 	}
 
-	GetCapsuleComponent()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-
-	Dissolve();
+		Dissolve();
+	}
 
 	// Broadcast del delegate de muerte (clase 311) — AL FINAL, después de que bDead ya
-	// es true y toda la lógica de muerte (ragdoll, sonido, dissolve) ya corrió. Cualquier
+	// es true y toda la lógica de muerte visual ya corrió. Cualquier
 	// listener (como UPantheliaDebuffNiagaraComponent, que se desactiva al recibir esto)
 	// reacciona sobre un personaje ya completamente en su estado "muerto" final.
 	OnDeath.Broadcast(this);
@@ -318,7 +474,10 @@ void APantheliaCharacterBase::Dissolve()
 		// de verdad se ve en pantalla (para un enemigo normal, un componente distinto de
 		// FinalWeaponMesh) nunca recibía el material de disolución y se quedaba visible,
 		// sólida, después de que el resto del cuerpo desapareciera.
-		if (UPrimitiveComponent* WeaponMesh = ResolveDeathWeaponMesh())
+		UPrimitiveComponent* WeaponMesh = PreparedDeathWeaponMesh.IsValid()
+			? PreparedDeathWeaponMesh.Get()
+			: ResolveDeathWeaponMesh();
+		if (WeaponMesh)
 		{
 			UMaterialInstanceDynamic* DynamicMatInst = UMaterialInstanceDynamic::Create(WeaponDissolveMaterialInstance, this);
 			WeaponMesh->SetMaterial(0, DynamicMatInst);
@@ -353,6 +512,36 @@ UPrimitiveComponent* APantheliaCharacterBase::ResolveDeathWeaponMesh() const
 void APantheliaCharacterBase::BeginPlay()
 {
 	Super::BeginPlay();
+
+	if (DeathPresentationComponent)
+	{
+		DeathPresentationComponent->OnPresentationFinished.AddUniqueDynamic(
+			this, &APantheliaCharacterBase::HandleDeathPresentationFinished);
+	}
+}
+
+void APantheliaCharacterBase::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+	GetWorldTimerManager().ClearTimer(PoiseRegenTimerHandle);
+	GetWorldTimerManager().ClearTimer(BuildupDecayTimerHandle);
+
+	if (DeathPresentationComponent)
+	{
+		DeathPresentationComponent->OnPresentationFinished.RemoveDynamic(
+			this, &APantheliaCharacterBase::HandleDeathPresentationFinished);
+		DeathPresentationComponent->AbortDeathPresentation();
+	}
+
+	PreparedDeathWeaponMesh.Reset();
+	Super::EndPlay(EndPlayReason);
+}
+
+void APantheliaCharacterBase::HandleDeathPresentationFinished(AActor* DeadActor)
+{
+	if (DeadActor == this)
+	{
+		OnDeathPresentationFinished.Broadcast(this);
+	}
 }
 
 // ============================================================
@@ -370,6 +559,7 @@ void APantheliaCharacterBase::BeginPlay()
 void APantheliaCharacterBase::Landed(const FHitResult& Hit)
 {
 	Super::Landed(Hit);
+	if (bDead) return;
 
 	UAbilitySystemComponent* ASC = GetAbilitySystemComponent();
 	if (!ASC) return;
@@ -455,32 +645,82 @@ void APantheliaCharacterBase::InitializeDefaultAttributes() const
 
 void APantheliaCharacterBase::RefreshSecondaryAttributes() const
 {
-	// El handle vive en el ASC desde la Etapa 4 (ver InitializeDefaultAttributes arriba
-	// y la explicación extendida en PantheliaAbilitySystemComponent.h).
 	UPantheliaAbilitySystemComponent* PantheliaASC =
 		CastChecked<UPantheliaAbilitySystemComponent>(GetAbilitySystemComponent());
 
-	// === ENFOQUE: QUITAR + REAPLICAR (no "refrescar") ===
-	//
-	// Un primer intento configuró Stacking en el asset (Aggregate By Target + Refresh On
-	// Successful Application) esperando que reaplicar el mismo GameplayEffect bastara para
-	// forzar el recálculo de MaxHealth/MaxMana/MaxStamina. Las pruebas en juego confirmaron
-	// que NO es así: ese Stacking solo refresca el temporizador de duración del efecto, pero
-	// no vuelve a ejecutar CalculateBaseMagnitude_Implementation de los MMC con el nivel nuevo.
-	//
-	// La única forma determinista de forzar ese recálculo es destruir la instancia activa
-	// existente y crear una completamente nueva desde cero — una instancia nueva SIEMPRE
-	// re-ejecuta el cálculo completo de sus modificadores con los valores actuales.
-	if (PantheliaASC->SecondaryAttributesEffectHandle.IsValid())
+	auto IsEffectReallyActive =
+		[PantheliaASC](const FActiveGameplayEffectHandle& Handle)
 	{
-		// -1 en StacksToRemove elimina TODOS los stacks de esta instancia (aunque aquí,
-		// con Stack Limit = 1, como mucho hay uno).
-		PantheliaASC->RemoveActiveGameplayEffect(PantheliaASC->SecondaryAttributesEffectHandle, -1);
+		return Handle.IsValid()
+			&& PantheliaASC->GetActiveGameplayEffect(Handle) != nullptr;
+	};
+
+	const FActiveGameplayEffectHandle OldHandle =
+		PantheliaASC->SecondaryAttributesEffectHandle;
+	const bool bOldWasActive = IsEffectReallyActive(OldHandle);
+
+	// Aplicamos primero la instancia nueva. Con Stacking Type=None debe obtener un
+	// handle independiente. Este orden evita que MaxHealth/MaxMana/MaxStamina/
+	// MaxPoise pasen por un valor transitoriamente bajo mientras existan fuentes
+	// externas de Max*, como armaduras, árbol o buffs.
+	const FActiveGameplayEffectHandle NewHandle =
+		ApplyEffectToSelf(DefaultSecondaryAttributes, 1.f);
+
+	if (!IsEffectReallyActive(NewHandle))
+	{
+		UE_LOG(LogPanthelia, Error,
+			TEXT("[Attributes] RefreshSecondaryAttributes no pudo aplicar una "
+				"instancia nueva. Se conserva la instancia anterior."));
+		return;
 	}
 
-	// Creamos una instancia nueva y guardamos su handle para la SIGUIENTE vez que
-	// se llame a esta función (por ejemplo, al subir otro nivel más adelante).
-	PantheliaASC->SecondaryAttributesEffectHandle = ApplyEffectToSelf(DefaultSecondaryAttributes, 1.f);
+	// Con AggregateByTarget + StackLimit 1, GAS reutiliza el mismo handle. Retirarlo
+	// aquí eliminaría también la supuesta instancia nueva. Fallamos cerrado hasta
+	// que GE_SecondaryAttributes use Stacking Type=None.
+	if (bOldWasActive && NewHandle == OldHandle)
+	{
+		UE_LOG(LogPanthelia, Error,
+			TEXT("[Attributes] RefreshSecondaryAttributes recibió el mismo handle "
+				"para la instancia nueva. GE_SecondaryAttributes conserva stacking "
+				"incompatible; no se retira el efecto activo."));
+		return;
+	}
+
+	if (bOldWasActive)
+	{
+		const bool bRemoveRequestAccepted =
+			PantheliaASC->RemoveActiveGameplayEffect(OldHandle, -1);
+		const bool bOldStillActive = IsEffectReallyActive(OldHandle);
+
+		if (bOldStillActive)
+		{
+			const bool bRollbackRequestAccepted =
+				PantheliaASC->RemoveActiveGameplayEffect(NewHandle, -1);
+			const bool bNewStillActive = IsEffectReallyActive(NewHandle);
+
+			ensureMsgf(!bNewStillActive,
+				TEXT("RefreshSecondaryAttributes: rollback falló y la instancia "
+					"nueva continúa activa junto a la anterior."));
+
+			UE_LOG(LogPanthelia, Error,
+				TEXT("[Attributes] No se pudo retirar la instancia anterior de "
+					"secundarios. Rollback nuevo: request=%s, sigue activo=%s. "
+					"Se conserva el handle anterior."),
+				bRollbackRequestAccepted ? TEXT("true") : TEXT("false"),
+				bNewStillActive ? TEXT("true") : TEXT("false"));
+			return;
+		}
+
+		if (!bRemoveRequestAccepted)
+		{
+			UE_LOG(LogPanthelia, Warning,
+				TEXT("[Attributes] RemoveActiveGameplayEffect devolvió false, "
+					"pero la instancia anterior ya no está activa. Se acepta "
+					"la instancia nueva."));
+		}
+	}
+
+	PantheliaASC->SecondaryAttributesEffectHandle = NewHandle;
 }
 
 void APantheliaCharacterBase::AddCharacterAbilities()
@@ -497,6 +737,8 @@ void APantheliaCharacterBase::AddCharacterAbilities()
 
 void APantheliaCharacterBase::ResetPoiseRegenTimer()
 {
+	if (bDead) return;
+
 	// Cancelamos cualquier timer activo (delay pendiente o tick de regen en curso).
 	GetWorldTimerManager().ClearTimer(PoiseRegenTimerHandle);
 
@@ -512,6 +754,12 @@ void APantheliaCharacterBase::ResetPoiseRegenTimer()
 
 void APantheliaCharacterBase::StartPoiseRegen()
 {
+	if (bDead)
+	{
+		GetWorldTimerManager().ClearTimer(PoiseRegenTimerHandle);
+		return;
+	}
+
 	// El delay terminó. Iniciamos el tick de regeneración cada 0.1s.
 	GetWorldTimerManager().SetTimer(
 		PoiseRegenTimerHandle,
@@ -524,6 +772,12 @@ void APantheliaCharacterBase::StartPoiseRegen()
 
 void APantheliaCharacterBase::TickPoiseRegen()
 {
+	if (bDead)
+	{
+		GetWorldTimerManager().ClearTimer(PoiseRegenTimerHandle);
+		return;
+	}
+
 	// Usamos el AttributeSet directamente para leer y escribir Poise.
 	// SetPoise() del macro ATTRIBUTE_ACCESSORS llama internamente a
 	// SetNumericAttributeBase() en el ASC — la forma correcta en UE 5.7.
@@ -560,6 +814,8 @@ void APantheliaCharacterBase::TickPoiseRegen()
 
 void APantheliaCharacterBase::NotifyElementalBuildupReceived()
 {
+	if (bDead) return;
+
 	// Si el timer ya está girando (recibimos buildup con barras aún cargadas), no
 	// hay nada que hacer: el tick ya se encarga. Solo lo arrancamos si estaba
 	// detenido — a diferencia de ResetPoiseRegenTimer, aquí NO reiniciamos nada
@@ -580,6 +836,12 @@ void APantheliaCharacterBase::NotifyElementalBuildupReceived()
 
 void APantheliaCharacterBase::TickBuildupDecay()
 {
+	if (bDead)
+	{
+		GetWorldTimerManager().ClearTimer(BuildupDecayTimerHandle);
+		return;
+	}
+
 	// Mismo acceso directo al AttributeSet que TickPoiseRegen (y por el mismo motivo:
 	// SetXBuildup → SetNumericAttributeBase, la vía correcta en UE 5.x para escribir
 	// la base sin pasar por un GE). Escribir la base directamente NO dispara

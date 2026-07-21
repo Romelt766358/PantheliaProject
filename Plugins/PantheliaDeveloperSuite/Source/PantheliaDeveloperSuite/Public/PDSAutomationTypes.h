@@ -138,6 +138,15 @@ struct PANTHELIADEVELOPERSUITE_API FPDSAutomationSnapshotMetadata
     UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
     int32 MontageCount = 0;
 
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    int32 SemanticDomainCount = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    int32 SemanticRecordCount = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    int32 SpellCount = 0;
+
     /** True cuando esta metadata procede de un snapshot parseado correctamente. */
     UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
     bool bValid = false;
@@ -493,6 +502,37 @@ struct PANTHELIADEVELOPERSUITE_API FPDSAutomationAssetChange
     bool bExistsInCurrentSnapshot = false;
 };
 
+/** Cambio semántico serializable y limitado para una respuesta MCP. */
+USTRUCT(BlueprintType)
+struct PANTHELIADEVELOPERSUITE_API FPDSAutomationSemanticChange
+{
+    GENERATED_BODY()
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    FString DomainId;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    FString RecordId;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    FString DisplayName;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    FString SourceAssetPath;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    FString ChangeKind;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    FString FieldName;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    FString PreviousValue;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    FString CurrentValue;
+};
+
 /** Diff estructurado y acotado para consumo directo por agentes MCP. */
 USTRUCT(BlueprintType)
 struct PANTHELIADEVELOPERSUITE_API FPDSAutomationDiffResult
@@ -610,6 +650,40 @@ struct PANTHELIADEVELOPERSUITE_API FPDSAutomationDiffResult
 
     UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
     int32 OriginNotComparableAssetCount = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    int32 PreviousSemanticRecordCount = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    int32 CurrentSemanticRecordCount = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    int32 AddedSemanticRecordCount = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    int32 RemovedSemanticRecordCount = 0;
+
+    /** Número de records únicos con al menos un field modificado. */
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    int32 ModifiedSemanticRecordCount = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    int32 ChangedSemanticFieldCount = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    int32 SemanticDomainNotComparableCount = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    int32 TotalSemanticChangeCount = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    int32 ReturnedSemanticChangeCount = 0;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    bool bSemanticChangesTruncated = false;
+
+    UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
+    TArray<FPDSAutomationSemanticChange> SemanticChanges;
 
     UPROPERTY(BlueprintReadOnly, Category = "PDS Automation")
     bool bEntriesTruncated = false;

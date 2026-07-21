@@ -302,6 +302,10 @@ void AMainCharacter::InitAbilityActorInfo()
     // broadcastea una vez por Pawn, nunca en una re-ejecución.
     OnASCRegistered.Broadcast(AbilitySystemComponent);
 
+    // Inicializamos los atributos antes del Overlay: InitOverlay emite los valores
+    // iniciales inmediatamente y no debe observar máximos derivados todavía en 0.
+    InitializeDefaultAttributes();
+
     if (APlayerController* PC = Cast<APlayerController>(GetController()))
     {
         if (APantheliaHUD* HUD = Cast<APantheliaHUD>(PC->GetHUD()))
@@ -309,8 +313,6 @@ void AMainCharacter::InitAbilityActorInfo()
             HUD->InitOverlay(PC, GetPlayerState(), AbilitySystemComponent, AttributeSet);
         }
     }
-
-    InitializeDefaultAttributes();
 
     // Nos suscribimos al delegate de cambio de nivel del PlayerState para poder refrescar
     // los atributos secundarios cada vez que el jugador sube de nivel (ver explicación

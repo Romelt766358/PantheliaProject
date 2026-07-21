@@ -553,6 +553,9 @@ void FPantheliaGameplayTags::InitializeNativeGameplayTags()
 	GameplayTags.State_Airborne = Manager.AddNativeGameplayTag(
 		FName("State.Airborne"),
 		FString("Personaje en el aire por un lanzamiento. Bloquea GA_HitReact; su remocion en Landed() dispara GA_GetUp."));
+	GameplayTags.State_Dead = Manager.AddNativeGameplayTag(
+		FName("State.Dead"),
+		FString("El Avatar actual esta muerto. Bloquea nuevas acciones hasta inicializar un Avatar nuevo."));
 
 	// --- Nivel 2 de knockback ("empujón fuerte", a petición) ---
 	GameplayTags.State_HeavyKnockback = Manager.AddNativeGameplayTag(

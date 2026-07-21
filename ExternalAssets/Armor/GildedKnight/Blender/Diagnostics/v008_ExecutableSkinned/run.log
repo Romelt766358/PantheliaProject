@@ -1,0 +1,69 @@
+[2026-07-20 13:35:39] Stage A/C: Blender 5.2.0 LTS; safe source opened
+[2026-07-20 13:35:40] Checkpoint saved: C:\Panthelia Project\PantheliaProject\ExternalAssets\Armor\GildedKnight\Blender\Panthelia_GildedKnight_Fit_v008_ExecutableSkinned.blend
+[2026-07-20 13:35:40] Stage D: creating backups
+[2026-07-20 13:35:40] Created independent hidden backup: BACKUP_V008_Armor002
+[2026-07-20 13:35:40] Created independent hidden backup: BACKUP_V008_Cuirass
+[2026-07-20 13:35:40] Created independent hidden backup: BACKUP_V008_ArmArmor
+[2026-07-20 13:35:40] Created independent hidden backup: BACKUP_V008_LegArmor
+[2026-07-20 13:35:40] Created independent hidden backup: BACKUP_V008_Sock
+[2026-07-20 13:35:40] Checkpoint saved: C:\Panthelia Project\PantheliaProject\ExternalAssets\Armor\GildedKnight\Blender\Panthelia_GildedKnight_Fit_v008_ExecutableSkinned.blend
+[2026-07-20 13:35:40] Stage E: neutralizing GlobalFit
+[2026-07-20 13:35:40] GlobalFit neutralized: WORK_Armor002, maximum error 0.0000153775 cm
+[2026-07-20 13:35:40] GlobalFit neutralized: WORK_Cuirass, maximum error 0.0000153775 cm
+[2026-07-20 13:35:40] GlobalFit neutralized: WORK_ArmArmor, maximum error 0.0000152886 cm
+[2026-07-20 13:35:40] GlobalFit neutralized: WORK_LegArmor, maximum error 0.0000039321 cm
+[2026-07-20 13:35:40] GlobalFit neutralized: WORK_Sock, maximum error 0.0000076888 cm
+[2026-07-20 13:35:40] Checkpoint saved: C:\Panthelia Project\PantheliaProject\ExternalAssets\Armor\GildedKnight\Blender\Panthelia_GildedKnight_Fit_v008_ExecutableSkinned.blend
+[2026-07-20 13:35:40] Stage F: raising WORK_LegArmor before skinning
+[2026-07-20 13:35:40] LegArmor disconnected components: 2; classification=[(1304, 'r'), (1304, 'l')]
+[2026-07-20 13:35:40] LegArmor l shift: 15.5864 cm; vector BU=(-0.686797, -0.599579, 15.559677)
+[2026-07-20 13:35:40] LegArmor l bounds before (knee-axis BU): top=18.333846 bottom=57.821102
+[2026-07-20 13:35:40] LegArmor l bounds after  (knee-axis BU): top=2.999996 bottom=41.982219
+[2026-07-20 13:35:40] LegArmor l final distance: knee=3.0000 cm ankle=3.0000 cm scale=0.987210
+[2026-07-20 13:35:40] LegArmor r shift: 15.5864 cm; vector BU=(0.686797, -0.599581, 15.559668)
+[2026-07-20 13:35:40] LegArmor r bounds before (knee-axis BU): top=18.333831 bottom=57.821094
+[2026-07-20 13:35:40] LegArmor r bounds after  (knee-axis BU): top=2.999997 bottom=41.982219
+[2026-07-20 13:35:40] LegArmor r final distance: knee=3.0000 cm ankle=3.0000 cm scale=0.987210
+[2026-07-20 13:35:40] LegArmor final average shift: 15.5864 cm; average vector BU=(-0.0, -0.59958, 15.559672)
+[2026-07-20 13:35:40] Checkpoint saved: C:\Panthelia Project\PantheliaProject\ExternalAssets\Armor\GildedKnight\Blender\Panthelia_GildedKnight_Fit_v008_ExecutableSkinned.blend
+[2026-07-20 13:35:40] Stage G/H: building evaluated body surface and transferring weights
+[2026-07-20 13:35:40] Body transfer surface: 32334 vertices, 60816 triangles, 273 real bone groups
+[2026-07-20 13:35:40] Nearest-face barycentric transfer complete: WORK_Armor002 (4156 vertices)
+[2026-07-20 13:35:40] Functional cleanup complete: WORK_Armor002; groups=15
+[2026-07-20 13:35:40] Checkpoint saved: C:\Panthelia Project\PantheliaProject\ExternalAssets\Armor\GildedKnight\Blender\Panthelia_GildedKnight_Fit_v008_ExecutableSkinned.blend
+[2026-07-20 13:35:40] Nearest-face barycentric transfer complete: WORK_Cuirass (1656 vertices)
+[2026-07-20 13:35:40] Functional cleanup complete: WORK_Cuirass; groups=5
+[2026-07-20 13:35:40] Checkpoint saved: C:\Panthelia Project\PantheliaProject\ExternalAssets\Armor\GildedKnight\Blender\Panthelia_GildedKnight_Fit_v008_ExecutableSkinned.blend
+[2026-07-20 13:35:40] Nearest-face barycentric transfer complete: WORK_ArmArmor (4072 vertices)
+[2026-07-20 13:35:40] Functional cleanup complete: WORK_ArmArmor; groups=34
+[2026-07-20 13:35:40] Checkpoint saved: C:\Panthelia Project\PantheliaProject\ExternalAssets\Armor\GildedKnight\Blender\Panthelia_GildedKnight_Fit_v008_ExecutableSkinned.blend
+[2026-07-20 13:35:40] Nearest-face barycentric transfer complete: WORK_LegArmor (2608 vertices)
+[2026-07-20 13:35:40] Functional cleanup complete: WORK_LegArmor; groups=4
+[2026-07-20 13:35:40] Checkpoint saved: C:\Panthelia Project\PantheliaProject\ExternalAssets\Armor\GildedKnight\Blender\Panthelia_GildedKnight_Fit_v008_ExecutableSkinned.blend
+[2026-07-20 13:35:40] Nearest-face barycentric transfer complete: WORK_Sock (756 vertices)
+[2026-07-20 13:35:40] Functional cleanup complete: WORK_Sock; groups=16
+[2026-07-20 13:35:40] Checkpoint saved: C:\Panthelia Project\PantheliaProject\ExternalAssets\Armor\GildedKnight\Blender\Panthelia_GildedKnight_Fit_v008_ExecutableSkinned.blend
+[2026-07-20 13:35:40] Stage J: bounded validation and at most two corrective passes
+[2026-07-20 13:35:40] Validation WORK_Armor002: {'topology_ok': True, 'armature_modifier_ok': True, 'unweighted': 0, 'bad_weight_sums': 0, 'maximum_influences': 2, 'temporary_groups': [], 'crossed': 0, 'nan_values': 0}
+[2026-07-20 13:35:40] Validation WORK_Cuirass: {'topology_ok': True, 'armature_modifier_ok': True, 'unweighted': 0, 'bad_weight_sums': 0, 'maximum_influences': 2, 'temporary_groups': [], 'crossed': 0, 'nan_values': 0}
+[2026-07-20 13:35:40] Validation WORK_ArmArmor: {'topology_ok': True, 'armature_modifier_ok': True, 'unweighted': 0, 'bad_weight_sums': 0, 'maximum_influences': 2, 'temporary_groups': [], 'crossed': 0, 'nan_values': 0}
+[2026-07-20 13:35:40] Validation WORK_LegArmor: {'topology_ok': True, 'armature_modifier_ok': True, 'unweighted': 0, 'bad_weight_sums': 0, 'maximum_influences': 2, 'temporary_groups': [], 'crossed': 0, 'nan_values': 0}
+[2026-07-20 13:35:40] Validation WORK_Sock: {'topology_ok': True, 'armature_modifier_ok': True, 'unweighted': 0, 'bad_weight_sums': 0, 'maximum_influences': 4, 'temporary_groups': [], 'crossed': 0, 'nan_values': 0}
+[2026-07-20 13:35:40] Stage K: temporary pose tests
+[2026-07-20 13:35:40] Pose test arms_down movement_cm={'WORK_Armor002': 12.995197292383725, 'WORK_Cuirass': 0.0, 'WORK_ArmArmor': 62.53348426085928, 'WORK_LegArmor': 0.0, 'WORK_Sock': 0.0} bones_found=[True, True]
+[2026-07-20 13:35:40] Pose test elbows_flexed movement_cm={'WORK_Armor002': 10.663306248494406, 'WORK_Cuirass': 0.0, 'WORK_ArmArmor': 84.63028717579537, 'WORK_LegArmor': 0.0, 'WORK_Sock': 0.0} bones_found=[True, True, True, True]
+[2026-07-20 13:35:40] Pose test wide_step movement_cm={'WORK_Armor002': 1.7042555120780853, 'WORK_Cuirass': 0.0, 'WORK_ArmArmor': 0.0, 'WORK_LegArmor': 27.039250855294533, 'WORK_Sock': 24.06259087600364} bones_found=[True, True, True, True]
+[2026-07-20 13:35:40] Pose test knee_left_raised movement_cm={'WORK_Armor002': 4.118213980041244, 'WORK_Cuirass': 0.0, 'WORK_ArmArmor': 0.0, 'WORK_LegArmor': 50.473928752303166, 'WORK_Sock': 49.785210267565304} bones_found=[True, True]
+[2026-07-20 13:35:40] Pose test knee_left_raised greave ankle clearance: 3.0000 cm
+[2026-07-20 13:35:40] Pose test knee_right_raised movement_cm={'WORK_Armor002': 4.2217712507657135, 'WORK_Cuirass': 0.0, 'WORK_ArmArmor': 0.0, 'WORK_LegArmor': 50.72040645328262, 'WORK_Sock': 49.785444925252975} bones_found=[True, True]
+[2026-07-20 13:35:40] Pose test knee_right_raised greave ankle clearance: 3.0000 cm
+[2026-07-20 13:35:40] Pose test torso_flexed movement_cm={'WORK_Armor002': 9.360143845780636, 'WORK_Cuirass': 7.8375009629246035, 'WORK_ArmArmor': 22.98213636110068, 'WORK_LegArmor': 0.0, 'WORK_Sock': 0.0} bones_found=[True, True, True]
+[2026-07-20 13:35:40] Stage L: restoring rest pose and cleaning temporary state
+[2026-07-20 13:35:40] Validation WORK_Armor002: {'topology_ok': True, 'armature_modifier_ok': True, 'unweighted': 0, 'bad_weight_sums': 0, 'maximum_influences': 2, 'temporary_groups': [], 'crossed': 0, 'nan_values': 0}
+[2026-07-20 13:35:40] Validation WORK_Cuirass: {'topology_ok': True, 'armature_modifier_ok': True, 'unweighted': 0, 'bad_weight_sums': 0, 'maximum_influences': 2, 'temporary_groups': [], 'crossed': 0, 'nan_values': 0}
+[2026-07-20 13:35:40] Validation WORK_ArmArmor: {'topology_ok': True, 'armature_modifier_ok': True, 'unweighted': 0, 'bad_weight_sums': 0, 'maximum_influences': 2, 'temporary_groups': [], 'crossed': 0, 'nan_values': 0}
+[2026-07-20 13:35:40] Validation WORK_LegArmor: {'topology_ok': True, 'armature_modifier_ok': True, 'unweighted': 0, 'bad_weight_sums': 0, 'maximum_influences': 2, 'temporary_groups': [], 'crossed': 0, 'nan_values': 0}
+[2026-07-20 13:35:40] Validation WORK_Sock: {'topology_ok': True, 'armature_modifier_ok': True, 'unweighted': 0, 'bad_weight_sums': 0, 'maximum_influences': 4, 'temporary_groups': [], 'crossed': 0, 'nan_values': 0}
+[2026-07-20 13:35:41] Checkpoint saved: C:\Panthelia Project\PantheliaProject\ExternalAssets\Armor\GildedKnight\Blender\Panthelia_GildedKnight_Fit_v008_ExecutableSkinned.blend
+[2026-07-20 13:35:41] Checkpoint saved: C:\Panthelia Project\PantheliaProject\ExternalAssets\Armor\GildedKnight\Blender\Panthelia_GildedKnight_Fit_v008_ExecutableSkinned.blend
+[2026-07-20 13:35:41] COMPLETE: {'stage': 'complete', 'success': True, 'legarmor_raised': True, 'legarmor_shift_cm': 15.586357617533565, 'globalfit_neutralized': True, 'skinned_meshes': 5, 'unweighted_vertices': 0, 'rest_pose_restored': True, 'ready_for_manual_touchup': True}

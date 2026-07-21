@@ -533,6 +533,11 @@ public:
 	// aterrizar, no tras un tiempo prefijado.
 	FGameplayTag State_Airborne;
 
+	// Estado runtime del Avatar actual. En el jugador se concede como loose tag sobre
+	// el ASC persistente del PlayerState, por lo que el nuevo Avatar futuro debe llamar
+	// APantheliaCharacterBase::ClearDeathStateForNewAvatar tras InitAbilityActorInfo.
+	FGameplayTag State_Dead;
+
 	// Nivel 2 de knockback ("empujón fuerte", a petición). Concedido brevemente (GE
 	// dinámico con duración, vía GrantTemporaryGameplayTag) cuando un knockback marcado
 	// como "pesado" se activa. Dos usos, igual que State.Airborne: (1) tag de bloqueo

@@ -88,6 +88,17 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "WeaponTrace")
 	void DeactivateTrace();
 
+	// Cierre irreversible para la vida de este componente/Pawn. Es idempotente y
+	// elimina todo payload capaz de aplicar dano aunque llegue un notify tardio.
+	UFUNCTION(BlueprintCallable, Category = "WeaponTrace")
+	void ShutdownForDeath();
+
+	UFUNCTION(BlueprintPure, Category = "WeaponTrace")
+	bool IsShutdownForDeath() const { return bShutdownForDeath; }
+
+	UFUNCTION(BlueprintPure, Category = "WeaponTrace")
+	bool HasValidDamageSpec() const { return DamageSpecHandle.IsValid(); }
+
 	// Asigna externamente el mesh del arma y, opcionalmente, los nombres de socket.
 	// Pensado para el JUGADOR: su arma es un Actor separado (APantheliaWeapon), no un
 	// componente del personaje, así que ResolveWeaponMesh() no la encontraría. La
@@ -155,6 +166,9 @@ private:
 
 	// True mientras la ventana de daño está abierta (entre NotifyBegin y NotifyEnd).
 	bool bIsTracing = false;
+
+	// Una vez muerto el owner, ningun setter/notify puede rearmar el trace.
+	bool bShutdownForDeath = false;
 
 	// Radio efectivo del swing actual. Por defecto copia TraceRadius al abrir la ventana.
 	float ActiveTraceRadius = 15.f;

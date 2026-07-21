@@ -9,6 +9,8 @@
 #include "EnhancedInputSubsystems.h"
 #include "Input/PantheliaInputComponent.h"
 #include "Interfaces/Enemy.h"
+#include "Interfaces/CombatInterface.h"
+#include "PantheliaGameplayTags.h"
 #include "UI/Widgets/PantheliaUserWidget.h"
 
 APantheliaPlayerController::APantheliaPlayerController()
@@ -98,10 +100,28 @@ UPantheliaAbilitySystemComponent* APantheliaPlayerController::GetASC()
 	return PantheliaASC;
 }
 
+bool APantheliaPlayerController::IsGameplayInputBlockedByDeath()
+{
+	APawn* ControlledPawn = GetPawn();
+	if (!IsValid(ControlledPawn))
+	{
+		return true;
+	}
+
+	if (ControlledPawn->Implements<UCombatInterface>() &&
+		ICombatInterface::Execute_IsDead(ControlledPawn))
+	{
+		return true;
+	}
+
+	const UPantheliaAbilitySystemComponent* ASC = GetASC();
+	return ASC && ASC->HasMatchingGameplayTag(FPantheliaGameplayTags::Get().State_Dead);
+}
+
 void APantheliaPlayerController::AbilityInputTagPressed(FGameplayTag InputTag)
 {
 	// Edge-triggered: se llama UNA vez por pulsación real (no cada frame como Held).
-	if (GetASC() == nullptr) return;
+	if (GetASC() == nullptr || IsGameplayInputBlockedByDeath()) return;
 
 	// El buffer se procesa ANTES del intento de activación. Este orden es crítico:
 	// si activáramos primero el ataque inicial, NotifyComboInputPressed lo encontraría
@@ -131,7 +151,10 @@ void APantheliaPlayerController::AbilityInputTagReleased(FGameplayTag InputTag)
 	// Si el ASC aún no está disponible (muy temprano en el juego), salimos sin hacer nada.
 	if (GetASC() == nullptr) return;
 
+	// Release nunca activa una ability: se permite para limpiar el estado InputPressed
+	// de specs persistentes incluso si el botón se suelta después de morir.
 	GetASC()->AbilityInputTagReleased(InputTag);
+	if (IsGameplayInputBlockedByDeath()) return;
 
 	// Ademas, notificar a la ability de ataque pesado para la deteccion tap-vs-hold.
 	// El cargado decide segun cuanto se mantuvo el boton antes de soltar.
@@ -145,13 +168,15 @@ void APantheliaPlayerController::AbilityInputTagHeld(FGameplayTag InputTag)
 {
 	// Si el ASC aún no está disponible (muy temprano en el juego), salimos sin hacer nada.
 	// No usamos check() porque es normal que al primer frame aún no esté listo.
-	if (GetASC() == nullptr) return;
+	if (GetASC() == nullptr || IsGameplayInputBlockedByDeath()) return;
 
 	GetASC()->AbilityInputTagHeld(InputTag);
 }
 
 void APantheliaPlayerController::Move(const FInputActionValue& InputActionValue)
 {
+	if (IsGameplayInputBlockedByDeath()) return;
+
 	const FVector2D InputAxisVector = InputActionValue.Get<FVector2D>();
 
 	const FRotator Rotation = GetControlRotation();
@@ -192,6 +217,8 @@ void APantheliaPlayerController::ToggleAttributeMenu()
 
 void APantheliaPlayerController::ToggleLockonInput()
 {
+	if (IsGameplayInputBlockedByDeath()) return;
+
 	APawn* ControlledPawn = GetPawn();
 	if (!ControlledPawn)
 	{
@@ -209,6 +236,8 @@ void APantheliaPlayerController::ToggleLockonInput()
 
 void APantheliaPlayerController::SwitchLockonTargetInput(const FInputActionValue& InputActionValue)
 {
+	if (IsGameplayInputBlockedByDeath()) return;
+
 	const float Direction = InputActionValue.Get<float>();
 	if (FMath::IsNearlyZero(Direction))
 	{

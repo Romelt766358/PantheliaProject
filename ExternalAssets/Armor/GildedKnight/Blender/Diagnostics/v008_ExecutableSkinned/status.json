@@ -1,0 +1,11 @@
+{
+  "stage": "complete",
+  "success": true,
+  "legarmor_raised": true,
+  "legarmor_shift_cm": 15.586357617533565,
+  "globalfit_neutralized": true,
+  "skinned_meshes": 5,
+  "unweighted_vertices": 0,
+  "rest_pose_restored": true,
+  "ready_for_manual_touchup": true
+}

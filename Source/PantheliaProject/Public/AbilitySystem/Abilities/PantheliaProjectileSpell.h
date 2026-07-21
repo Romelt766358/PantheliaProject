@@ -4,6 +4,11 @@
 
 #include "CoreMinimal.h"
 #include "AbilitySystem/Abilities/PantheliaDamageGameplayAbility.h"
+
+#if WITH_EDITOR
+#include "Misc/DataValidation.h"
+#endif
+
 #include "PantheliaProjectileSpell.generated.h"
 
 class APantheliaProjectile;
@@ -48,6 +53,27 @@ class PANTHELIAPROJECT_API UPantheliaProjectileSpell : public UPantheliaDamageGa
 
 public:
 	UPantheliaProjectileSpell();
+
+#if WITH_EDITOR
+	virtual EDataValidationResult IsDataValid(
+		FDataValidationContext& Context) const override;
+
+	UAnimMontage* GetCastMontageForEditor() const
+	{
+		return CastMontage;
+	}
+
+	FGameplayTag GetSocketTagForEditor() const
+	{
+		return SocketTag;
+	}
+
+	TSubclassOf<APantheliaProjectile>
+	GetProjectileClassForEditor() const
+	{
+		return ProjectileClass;
+	}
+#endif
 
 	virtual void ActivateAbility(
 		const FGameplayAbilitySpecHandle Handle,

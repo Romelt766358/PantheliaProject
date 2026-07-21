@@ -47,6 +47,202 @@ namespace
         return JsonValues;
     }
 
+    int32 CountModifiedSemanticRecords(const FPDSSemanticDiff& SemanticDiff)
+    {
+        TSet<FString> ModifiedRecordKeys;
+        for (const FPDSSemanticFieldChange& Change : SemanticDiff.ChangedFields)
+        {
+            ModifiedRecordKeys.Add(
+                Change.DomainId + TEXT("\n") + Change.RecordId);
+        }
+        return ModifiedRecordKeys.Num();
+    }
+
+    void AppendSemanticMarkdown(
+        FString& Markdown,
+        const FPDSSemanticDiff& SemanticDiff)
+    {
+        const int32 ModifiedRecordCount =
+            CountModifiedSemanticRecords(SemanticDiff);
+
+        Markdown += TEXT("\n## Semantic summary\n\n");
+        Markdown += TEXT("| Metric | Previous | Current | Delta |\n");
+        Markdown += TEXT("|---|---:|---:|---:|\n");
+        Markdown += FString::Printf(
+            TEXT("| Semantic records | %d | %d | %+d |\n"),
+            SemanticDiff.PreviousRecordCount,
+            SemanticDiff.CurrentRecordCount,
+            SemanticDiff.CurrentRecordCount - SemanticDiff.PreviousRecordCount);
+        Markdown += FString::Printf(
+            TEXT("| Added records | 0 | %d | %+d |\n"),
+            SemanticDiff.AddedRecords.Num(),
+            SemanticDiff.AddedRecords.Num());
+        Markdown += FString::Printf(
+            TEXT("| Removed records | %d | 0 | %d |\n"),
+            SemanticDiff.RemovedRecords.Num(),
+            -SemanticDiff.RemovedRecords.Num());
+        Markdown += FString::Printf(
+            TEXT("| Modified records | 0 | %d | %+d |\n"),
+            ModifiedRecordCount,
+            ModifiedRecordCount);
+        Markdown += FString::Printf(
+            TEXT("| Changed fields | 0 | %d | %+d |\n"),
+            SemanticDiff.ChangedFields.Num(),
+            SemanticDiff.ChangedFields.Num());
+        Markdown += FString::Printf(
+            TEXT("| Non-comparable domains | 0 | %d | %+d |\n\n"),
+            SemanticDiff.NonComparableDomains.Num(),
+            SemanticDiff.NonComparableDomains.Num());
+
+        Markdown += FString::Printf(
+            TEXT("## Semantic records added (%d)\n\n"),
+            SemanticDiff.AddedRecords.Num());
+        Markdown += TEXT("| Domain | Record | Display name | Kind | Source asset |\n");
+        Markdown += TEXT("|---|---|---|---|---|\n");
+        for (const FPDSSemanticRecordChange& Change : SemanticDiff.AddedRecords)
+        {
+            Markdown += FString::Printf(
+                TEXT("| `%s` | `%s` | %s | %s | `%s` |\n"),
+                *EscapeMarkdownCell(Change.DomainId),
+                *EscapeMarkdownCell(Change.RecordId),
+                *EscapeMarkdownCell(Change.DisplayName),
+                *EscapeMarkdownCell(Change.Kind),
+                *EscapeMarkdownCell(Change.SourceAssetPath));
+        }
+
+        Markdown += FString::Printf(
+            TEXT("\n## Semantic records removed (%d)\n\n"),
+            SemanticDiff.RemovedRecords.Num());
+        Markdown += TEXT("| Domain | Record | Display name | Kind | Source asset |\n");
+        Markdown += TEXT("|---|---|---|---|---|\n");
+        for (const FPDSSemanticRecordChange& Change : SemanticDiff.RemovedRecords)
+        {
+            Markdown += FString::Printf(
+                TEXT("| `%s` | `%s` | %s | %s | `%s` |\n"),
+                *EscapeMarkdownCell(Change.DomainId),
+                *EscapeMarkdownCell(Change.RecordId),
+                *EscapeMarkdownCell(Change.DisplayName),
+                *EscapeMarkdownCell(Change.Kind),
+                *EscapeMarkdownCell(Change.SourceAssetPath));
+        }
+
+        Markdown += FString::Printf(
+            TEXT("\n## Semantic fields changed (%d)\n\n"),
+            SemanticDiff.ChangedFields.Num());
+        Markdown += TEXT("| Domain | Record | Field | Previous | Current | Source asset |\n");
+        Markdown += TEXT("|---|---|---|---|---|---|\n");
+        for (const FPDSSemanticFieldChange& Change : SemanticDiff.ChangedFields)
+        {
+            Markdown += FString::Printf(
+                TEXT("| `%s` | `%s` | `%s` | `%s` | `%s` | `%s` |\n"),
+                *EscapeMarkdownCell(Change.DomainId),
+                *EscapeMarkdownCell(Change.RecordId),
+                *EscapeMarkdownCell(Change.FieldName),
+                *EscapeMarkdownCell(Change.PreviousValue),
+                *EscapeMarkdownCell(Change.CurrentValue),
+                *EscapeMarkdownCell(Change.SourceAssetPath));
+        }
+
+        Markdown += FString::Printf(
+            TEXT("\n## Semantic domains not comparable (%d)\n\n"),
+            SemanticDiff.NonComparableDomains.Num());
+        for (const FString& DomainId : SemanticDiff.NonComparableDomains)
+        {
+            Markdown += TEXT("- `")
+                + EscapeMarkdownCell(DomainId)
+                + TEXT("`\n");
+        }
+    }
+
+    TSharedRef<FJsonObject> SemanticRecordChangeToJson(
+        const FPDSSemanticRecordChange& Change)
+    {
+        TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
+        Json->SetStringField(TEXT("domainId"), Change.DomainId);
+        Json->SetStringField(TEXT("recordId"), Change.RecordId);
+        Json->SetStringField(TEXT("displayName"), Change.DisplayName);
+        Json->SetStringField(TEXT("kind"), Change.Kind);
+        Json->SetStringField(TEXT("sourceAssetPath"), Change.SourceAssetPath);
+        return Json;
+    }
+
+    TSharedRef<FJsonObject> SemanticFieldChangeToJson(
+        const FPDSSemanticFieldChange& Change)
+    {
+        TSharedRef<FJsonObject> Json = MakeShared<FJsonObject>();
+        Json->SetStringField(TEXT("domainId"), Change.DomainId);
+        Json->SetStringField(TEXT("recordId"), Change.RecordId);
+        Json->SetStringField(TEXT("displayName"), Change.DisplayName);
+        Json->SetStringField(TEXT("sourceAssetPath"), Change.SourceAssetPath);
+        Json->SetStringField(TEXT("fieldName"), Change.FieldName);
+        Json->SetStringField(TEXT("previousValue"), Change.PreviousValue);
+        Json->SetStringField(TEXT("currentValue"), Change.CurrentValue);
+        return Json;
+    }
+
+    TSharedRef<FJsonObject> BuildSemanticDiffJson(
+        const FPDSSemanticDiff& SemanticDiff)
+    {
+        TSharedRef<FJsonObject> Semantic = MakeShared<FJsonObject>();
+        TSharedRef<FJsonObject> Summary = MakeShared<FJsonObject>();
+        Summary->SetNumberField(
+            TEXT("previousRecordCount"),
+            SemanticDiff.PreviousRecordCount);
+        Summary->SetNumberField(
+            TEXT("currentRecordCount"),
+            SemanticDiff.CurrentRecordCount);
+        Summary->SetNumberField(
+            TEXT("addedRecordCount"),
+            SemanticDiff.AddedRecords.Num());
+        Summary->SetNumberField(
+            TEXT("removedRecordCount"),
+            SemanticDiff.RemovedRecords.Num());
+        Summary->SetNumberField(
+            TEXT("modifiedRecordCount"),
+            CountModifiedSemanticRecords(SemanticDiff));
+        Summary->SetNumberField(
+            TEXT("changedFieldCount"),
+            SemanticDiff.ChangedFields.Num());
+        Summary->SetNumberField(
+            TEXT("nonComparableDomainCount"),
+            SemanticDiff.NonComparableDomains.Num());
+        Semantic->SetObjectField(TEXT("summary"), Summary);
+
+        TArray<TSharedPtr<FJsonValue>> Added;
+        for (const FPDSSemanticRecordChange& Change : SemanticDiff.AddedRecords)
+        {
+            Added.Add(MakeShared<FJsonValueObject>(
+                SemanticRecordChangeToJson(Change)));
+        }
+        Semantic->SetArrayField(TEXT("addedRecords"), Added);
+
+        TArray<TSharedPtr<FJsonValue>> Removed;
+        for (const FPDSSemanticRecordChange& Change : SemanticDiff.RemovedRecords)
+        {
+            Removed.Add(MakeShared<FJsonValueObject>(
+                SemanticRecordChangeToJson(Change)));
+        }
+        Semantic->SetArrayField(TEXT("removedRecords"), Removed);
+
+        TArray<TSharedPtr<FJsonValue>> Fields;
+        for (const FPDSSemanticFieldChange& Change : SemanticDiff.ChangedFields)
+        {
+            Fields.Add(MakeShared<FJsonValueObject>(
+                SemanticFieldChangeToJson(Change)));
+        }
+        Semantic->SetArrayField(TEXT("changedFields"), Fields);
+
+        TArray<TSharedPtr<FJsonValue>> NonComparable;
+        for (const FString& DomainId : SemanticDiff.NonComparableDomains)
+        {
+            NonComparable.Add(MakeShared<FJsonValueString>(DomainId));
+        }
+        Semantic->SetArrayField(
+            TEXT("nonComparableDomains"),
+            NonComparable);
+        return Semantic;
+    }
+
     FString BuildMarkdown(const FPDSSnapshotDiff& Diff)
     {
         FString Markdown = TEXT("# Panthelia Developer Suite — Snapshot Diff\n\n");
@@ -153,6 +349,8 @@ namespace
         AppendList(TEXT("Montages removed"), Diff.RemovedMontages);
         AppendList(TEXT("Montages changed"), Diff.ChangedMontages);
 
+        AppendSemanticMarkdown(Markdown, Diff.SemanticDiff);
+
         Markdown += FString::Printf(
             TEXT("\n## Issues (%d)\n\n"),
             Diff.Issues.Num());
@@ -167,7 +365,7 @@ namespace
     FString BuildJson(const FPDSSnapshotDiff& Diff)
     {
         TSharedRef<FJsonObject> Root = MakeShared<FJsonObject>();
-        Root->SetStringField(TEXT("schemaVersion"), TEXT("0.3.0-alpha2-diff"));
+        Root->SetStringField(TEXT("schemaVersion"), TEXT("0.4.0-alpha1-diff"));
         Root->SetStringField(TEXT("generatedAtUtc"), FDateTime::UtcNow().ToIso8601());
         Root->SetStringField(TEXT("projectName"), Diff.ProjectName);
 
@@ -233,6 +431,9 @@ namespace
         Montages->SetArrayField(TEXT("removed"), StringsToJson(Diff.RemovedMontages));
         Montages->SetArrayField(TEXT("changed"), StringsToJson(Diff.ChangedMontages));
         Root->SetObjectField(TEXT("montages"), Montages);
+        Root->SetObjectField(
+            TEXT("semantic"),
+            BuildSemanticDiffJson(Diff.SemanticDiff));
 
         TSharedRef<FJsonObject> Validation = MakeShared<FJsonObject>();
         Validation->SetBoolField(TEXT("previousIncluded"), Diff.bPreviousValidationIncluded);

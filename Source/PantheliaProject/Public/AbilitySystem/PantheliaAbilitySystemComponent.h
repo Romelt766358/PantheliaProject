@@ -77,9 +77,11 @@ public:
 	// sobre este ASC. La comprueba y la escribe APantheliaCharacterBase::InitializeDefaultAttributes.
 	bool bAttributesInitialized = false;
 
-	// Handle de la instancia activa de DefaultSecondaryAttributes, guardado para poder
-	// quitarla explícitamente antes de reaplicarla en RefreshSecondaryAttributes()
-	// (patrón QUITAR + REAPLICAR — explicación extendida en PantheliaCharacterBase.h).
+	// Handle de la instancia activa de DefaultSecondaryAttributes. Permite que
+	// RefreshSecondaryAttributes() use la transacción apply-new/verify/remove-old/rollback
+	// en lugar de retirar siempre antes de reaplicar.
+	// Vive en este ASC para conservar la instancia junto con el ASC del jugador durante
+	// el respawn del Pawn (el ASC vive en el PlayerState).
 	// El tipo FActiveGameplayEffectHandle por valor exige conocer el struct completo;
 	// aquí llega a través de AbilitySystemComponent.h (incluido arriba), así que no
 	// hace falta un include adicional de GameplayEffectTypes.h en este header.

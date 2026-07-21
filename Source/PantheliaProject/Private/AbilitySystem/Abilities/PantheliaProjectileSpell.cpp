@@ -7,6 +7,31 @@
 #include "Interfaces/CombatInterface.h"
 #include "PantheliaGameplayTags.h"
 
+#if WITH_EDITOR
+#include "AbilitySystem/Abilities/PantheliaSpellValidation.h"
+#include "Misc/DataValidation.h"
+#endif
+
+#if WITH_EDITOR
+EDataValidationResult UPantheliaProjectileSpell::IsDataValid(
+	FDataValidationContext& Context) const
+{
+	if (GetClass()->HasAnyClassFlags(CLASS_Abstract))
+	{
+		return EDataValidationResult::NotValidated;
+	}
+
+	const EDataValidationResult SuperResult = Super::IsDataValid(Context);
+	const EDataValidationResult SpellResult =
+		PantheliaSpellValidation::ValidateProjectileSpell(*this, Context);
+
+	return SuperResult == EDataValidationResult::Invalid
+		|| SpellResult == EDataValidationResult::Invalid
+		? EDataValidationResult::Invalid
+		: EDataValidationResult::Valid;
+}
+#endif
+
 UPantheliaProjectileSpell::UPantheliaProjectileSpell()
 {
 	// Los hechizos del jugador pueden activar el pipeline común desde sus Class Defaults.

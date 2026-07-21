@@ -35,6 +35,12 @@ class PANTHELIAPROJECT_API UPantheliaDamageGameplayAbility : public UPantheliaGa
 	GENERATED_BODY()
 
 public:
+#if WITH_EDITOR
+	TSubclassOf<UGameplayEffect> GetDamageEffectClassForEditor() const
+	{
+		return DamageEffectClass;
+	}
+#endif
 
 	// Mapa de tipo de daño → curva de daño base por nivel.
 	// Nota: En la spec se llama "Damages" — aquí "DamageTypes" por compatibilidad

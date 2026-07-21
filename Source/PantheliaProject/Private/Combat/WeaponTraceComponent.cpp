@@ -152,6 +152,12 @@ bool UWeaponTraceComponent::ResolveAndValidateTraceSource(bool bLogFailure)
 
 void UWeaponTraceComponent::SetDamageSpec(const FGameplayEffectSpecHandle& InDamageSpecHandle)
 {
+	if (bShutdownForDeath)
+	{
+		DamageSpecHandle = FGameplayEffectSpecHandle();
+		return;
+	}
+
 	DamageSpecHandle = InDamageSpecHandle;
 
 	if (bLogTraceDebug || bDebugMode)
@@ -167,6 +173,8 @@ void UWeaponTraceComponent::SetDamageSpec(const FGameplayEffectSpecHandle& InDam
 
 void UWeaponTraceComponent::SetActiveMontageTag(const FGameplayTag& InMontageTag)
 {
+	if (bShutdownForDeath) return;
+
 	// Registra qué montage está activo (ej. Montage.Attack.Weapon). El WeaponTraceNotifyState
 	// lo llama en NotifyBegin junto a ActivateTrace(). PerformTrace lo incluye en los
 	// AggregatedSourceTags del GameplayCue.Melee.Impact para que GC_MeleeImpact sepa qué
@@ -176,6 +184,8 @@ void UWeaponTraceComponent::SetActiveMontageTag(const FGameplayTag& InMontageTag
 
 void UWeaponTraceComponent::SetActiveImpactSound(USoundBase* InImpactSound)
 {
+	if (bShutdownForDeath) return;
+
 	// Registra el sonido de impacto del ataque en curso. La ability lo lee del montage del
 	// arma equipada y lo pasa antes de la ventana de daño. PerformTrace lo reproduce en el
 	// punto de hit. Puede ser null (ataque sin sonido asignado).
@@ -184,12 +194,15 @@ void UWeaponTraceComponent::SetActiveImpactSound(USoundBase* InImpactSound)
 
 void UWeaponTraceComponent::SetAutoLockOnFromBasicAttackHitAllowed(bool bInAllowed)
 {
+	if (bShutdownForDeath) return;
 	bAutoLockOnFromBasicAttackHitAllowed = bInAllowed;
 }
 
 void UWeaponTraceComponent::SetWeaponMeshComponent(UPrimitiveComponent* InWeaponMesh,
 	FName InBaseSocketName, FName InTipSocketName)
 {
+	if (bShutdownForDeath) return;
+
 	// Asignar el mesh externo (el del arma equipada del jugador). A partir de aquí
 	// el sweep lee los sockets de este mesh y el modo externo prohíbe por contrato
 	// cualquier intento posterior de ResolveWeaponMesh.
@@ -218,6 +231,8 @@ void UWeaponTraceComponent::SetWeaponMeshComponent(UPrimitiveComponent* InWeapon
 
 void UWeaponTraceComponent::SetUseExternalWeaponSource(bool bInUseExternalWeaponSource)
 {
+	if (bShutdownForDeath) return;
+
 	bUseExternalWeaponSource = bInUseExternalWeaponSource;
 
 	if (bUseExternalWeaponSource)
@@ -262,6 +277,11 @@ void UWeaponTraceComponent::StartTrace(float InTraceRadius)
 	bIsTracing = false;
 	SetComponentTickEnabled(false);
 	IgnoredActors.Empty();
+
+	if (bShutdownForDeath)
+	{
+		return;
+	}
 
 	if (!FMath::IsFinite(InTraceRadius) || InTraceRadius <= 0.0f)
 	{
@@ -347,19 +367,46 @@ void UWeaponTraceComponent::DeactivateTrace()
 	bAutoLockOnFromBasicAttackHitAllowed = false;
 }
 
+void UWeaponTraceComponent::ShutdownForDeath()
+{
+	if (bShutdownForDeath)
+	{
+		return;
+	}
+
+	bShutdownForDeath = true;
+	DeactivateTrace();
+	SetComponentTickEnabled(false);
+	DamageSpecHandle = FGameplayEffectSpecHandle();
+	ActiveMontageTag = FGameplayTag();
+	ActiveImpactSound = nullptr;
+	bAutoLockOnFromBasicAttackHitAllowed = false;
+	IgnoredActors.Empty();
+
+	UE_LOG(LogPanthelia, Log,
+		TEXT("[DEATH] Weapon Trace cerrado y limpiado para %s."),
+		*GetNameSafe(GetOwner()));
+}
+
 void UWeaponTraceComponent::TickComponent(float DeltaTime, ELevelTick TickType,
 	FActorComponentTickFunction* ThisTickFunction)
 {
 	Super::TickComponent(DeltaTime, TickType, ThisTickFunction);
 
 	// Solo trabajamos durante la ventana de daño abierta por el notify state.
-	if (!bIsTracing) return;
+	if (bShutdownForDeath || !bIsTracing) return;
 
 	PerformTrace();
 }
 
 void UWeaponTraceComponent::PerformTrace()
 {
+	if (bShutdownForDeath)
+	{
+		DeactivateTrace();
+		return;
+	}
+
 	// La fuente puede quedar inválida durante la ventana (arma destruida, cambio de
 	// owner, socket retirado). Fallamos cerrados y apagamos Tick inmediatamente.
 	if (!ResolveAndValidateTraceSource(true))

@@ -118,6 +118,132 @@ namespace
         bInOutTruncated |= Count < Source.Num();
     }
 
+    int32 CountModifiedSemanticRecordsForAutomation(
+        const FPDSSemanticDiff& SemanticDiff)
+    {
+        TSet<FString> ModifiedRecordKeys;
+        for (const FPDSSemanticFieldChange& Change : SemanticDiff.ChangedFields)
+        {
+            ModifiedRecordKeys.Add(
+                Change.DomainId + TEXT("\n") + Change.RecordId);
+        }
+        return ModifiedRecordKeys.Num();
+    }
+
+    FPDSAutomationSemanticChange ConvertAddedSemanticRecord(
+        const FPDSSemanticRecordChange& Change)
+    {
+        FPDSAutomationSemanticChange Result;
+        Result.DomainId = Change.DomainId;
+        Result.RecordId = Change.RecordId;
+        Result.DisplayName = Change.DisplayName;
+        Result.SourceAssetPath = Change.SourceAssetPath;
+        Result.ChangeKind = TEXT("AddedRecord");
+        return Result;
+    }
+
+    FPDSAutomationSemanticChange ConvertRemovedSemanticRecord(
+        const FPDSSemanticRecordChange& Change)
+    {
+        FPDSAutomationSemanticChange Result;
+        Result.DomainId = Change.DomainId;
+        Result.RecordId = Change.RecordId;
+        Result.DisplayName = Change.DisplayName;
+        Result.SourceAssetPath = Change.SourceAssetPath;
+        Result.ChangeKind = TEXT("RemovedRecord");
+        return Result;
+    }
+
+    FPDSAutomationSemanticChange ConvertSemanticFieldChange(
+        const FPDSSemanticFieldChange& Change)
+    {
+        FPDSAutomationSemanticChange Result;
+        Result.DomainId = Change.DomainId;
+        Result.RecordId = Change.RecordId;
+        Result.DisplayName = Change.DisplayName;
+        Result.SourceAssetPath = Change.SourceAssetPath;
+        Result.ChangeKind = TEXT("ModifiedField");
+        Result.FieldName = Change.FieldName;
+        Result.PreviousValue = Change.PreviousValue;
+        Result.CurrentValue = Change.CurrentValue;
+        return Result;
+    }
+
+    void ProjectSemanticDiff(
+        const FPDSSemanticDiff& SemanticDiff,
+        const int32 AppliedEntryLimit,
+        FPDSAutomationDiffResult& OutResult)
+    {
+        OutResult.PreviousSemanticRecordCount =
+            SemanticDiff.PreviousRecordCount;
+        OutResult.CurrentSemanticRecordCount =
+            SemanticDiff.CurrentRecordCount;
+        OutResult.AddedSemanticRecordCount =
+            SemanticDiff.AddedRecords.Num();
+        OutResult.RemovedSemanticRecordCount =
+            SemanticDiff.RemovedRecords.Num();
+        OutResult.ModifiedSemanticRecordCount =
+            CountModifiedSemanticRecordsForAutomation(SemanticDiff);
+        OutResult.ChangedSemanticFieldCount =
+            SemanticDiff.ChangedFields.Num();
+        OutResult.SemanticDomainNotComparableCount =
+            SemanticDiff.NonComparableDomains.Num();
+        OutResult.TotalSemanticChangeCount =
+            SemanticDiff.AddedRecords.Num()
+            + SemanticDiff.RemovedRecords.Num()
+            + SemanticDiff.ChangedFields.Num();
+
+        TArray<FPDSAutomationSemanticChange> Unified;
+        Unified.Reserve(OutResult.TotalSemanticChangeCount);
+
+        for (const FPDSSemanticRecordChange& Change : SemanticDiff.AddedRecords)
+        {
+            Unified.Add(ConvertAddedSemanticRecord(Change));
+        }
+        for (const FPDSSemanticRecordChange& Change : SemanticDiff.RemovedRecords)
+        {
+            Unified.Add(ConvertRemovedSemanticRecord(Change));
+        }
+        for (const FPDSSemanticFieldChange& Change : SemanticDiff.ChangedFields)
+        {
+            Unified.Add(ConvertSemanticFieldChange(Change));
+        }
+
+        Unified.Sort([](
+            const FPDSAutomationSemanticChange& A,
+            const FPDSAutomationSemanticChange& B)
+        {
+            if (A.DomainId != B.DomainId)
+            {
+                return A.DomainId < B.DomainId;
+            }
+            if (A.RecordId != B.RecordId)
+            {
+                return A.RecordId < B.RecordId;
+            }
+            if (A.ChangeKind != B.ChangeKind)
+            {
+                return A.ChangeKind < B.ChangeKind;
+            }
+            return A.FieldName < B.FieldName;
+        });
+
+        const int32 ReturnCount =
+            FMath::Min(Unified.Num(), AppliedEntryLimit);
+        OutResult.SemanticChanges.Reset(ReturnCount);
+        for (int32 Index = 0; Index < ReturnCount; ++Index)
+        {
+            OutResult.SemanticChanges.Add(MoveTemp(Unified[Index]));
+        }
+
+        OutResult.ReturnedSemanticChangeCount =
+            OutResult.SemanticChanges.Num();
+        OutResult.bSemanticChangesTruncated =
+            ReturnCount < Unified.Num();
+        OutResult.bEntriesTruncated |=
+            OutResult.bSemanticChangesTruncated;
+    }
+
     FPDSAutomationSnapshotDescriptor ConvertSnapshotDescriptor(
         const FPDSSnapshotFileDescriptor& Source)
     {
@@ -257,7 +383,7 @@ namespace
 
 FString FPDSAutomationService::GetAutomationApiVersion()
 {
-    return TEXT("0.5.0-alpha1");
+    return TEXT("0.5.0-alpha2");
 }
 
 FPDSAutomationStatusResult FPDSAutomationService::GetStatus() const
@@ -566,6 +692,19 @@ namespace PDSAutomation
         Result.AssetCount = Document.AssetsByObjectPath.Num();
         Result.GameplayTagCount = Document.GameplayTags.Num();
         Result.MontageCount = Document.MontagesByPath.Num();
+        Result.SemanticDomainCount =
+            Document.SemanticDomainsById.Num();
+
+        for (const TPair<FString, FPDSSemanticDomainSnapshot>& Pair
+             : Document.SemanticDomainsById)
+        {
+            Result.SemanticRecordCount += Pair.Value.Records.Num();
+            if (Pair.Key == TEXT("spells"))
+            {
+                Result.SpellCount = Pair.Value.Records.Num();
+            }
+        }
+
         Result.bValid = true;
         return Result;
     }
@@ -806,6 +945,11 @@ namespace PDSAutomation
             SafeEntryLimit,
             Result.ModifiedMontages,
             Result.bEntriesTruncated);
+
+        ProjectSemanticDiff(
+            Diff.SemanticDiff,
+            SafeEntryLimit,
+            Result);
 
         CopyIssuesLimited(
             PersistResult.Issues,

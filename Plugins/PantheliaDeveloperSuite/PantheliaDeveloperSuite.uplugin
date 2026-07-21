@@ -1,7 +1,7 @@
 {
   "FileVersion": 3,
-  "Version": 13,
-  "VersionName": "0.5.0-alpha1",
+  "Version": 14,
+  "VersionName": "0.5.0-alpha2",
   "FriendlyName": "Panthelia Developer Suite",
   "Description": "Read-only Unreal Engine 5.8 diagnostics with structured Toolset Registry automation for Unreal MCP, validation profiles, origin-aware snapshots, deterministic diffs and an actionable Snapshot Diff Browser for Panthelia.",
   "Category": "Panthelia",
@@ -14,6 +14,11 @@
       "Name": "PantheliaDeveloperSuite",
       "Type": "Editor",
       "LoadingPhase": "PostEngineInit"
+    },
+    {
+      "Name": "PantheliaDeveloperSuitePanthelia",
+      "Type": "Editor",
+      "LoadingPhase": "PostEngineInit"
     }
   ],
   "Plugins": [
@@ -23,6 +28,14 @@
     },
     {
       "Name": "ToolsetRegistry",
+      "Enabled": true
+    },
+    {
+      "Name": "DataRegistry",
+      "Enabled": true
+    },
+    {
+      "Name": "GameplayAbilities",
       "Enabled": true
     }
   ]

@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "PDSDeveloperTypes.h"
+#include "PDSSemanticDiffTypes.h"
 
 /** Registro mínimo y estable de un asset dentro de un snapshot. */
 struct FPDSSnapshotAssetRecord
@@ -42,6 +43,7 @@ struct FPDSSnapshotDocument
     TMap<FString, FPDSSnapshotAssetRecord> AssetsByObjectPath;
     TSet<FString> GameplayTags;
     TMap<FString, FPDSSnapshotMontageRecord> MontagesByPath;
+    TMap<FString, FPDSSemanticDomainSnapshot> SemanticDomainsById;
     FPDSSnapshotValidationRecord Validation;
 };
 
@@ -92,6 +94,7 @@ struct FPDSSnapshotDiff
     int32 PreviousWarningCount = 0;
     int32 CurrentWarningCount = 0;
 
+    FPDSSemanticDiff SemanticDiff;
     TArray<FPDSIssue> Issues;
 
     bool HasChanges() const;

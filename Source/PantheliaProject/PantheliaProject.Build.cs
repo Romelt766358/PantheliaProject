@@ -25,7 +25,8 @@ public class PantheliaProject : ModuleRules
 
         PrivateDependencyModuleNames.AddRange(new string[] {
         "AIModule",         // Requerido para APantheliaAIController, UBehaviorTreeComponent, UBlackboardComponent
-        "GameplayStateTreeModule"
+		"GameplayStateTreeModule",
+		"HairStrandsCore"     // Requerido para controlar la simulacion de los grooms durante ragdoll
 		});
 
         // Uncomment if you are using Slate UI

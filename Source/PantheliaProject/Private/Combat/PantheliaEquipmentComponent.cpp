@@ -6,6 +6,8 @@
 #include "Combat/PantheliaWeaponDefinition.h"
 #include "Combat/WeaponTraceComponent.h"
 #include "Components/MeshComponent.h"
+#include "Components/PrimitiveComponent.h"
+#include "Components/SceneComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
@@ -47,6 +49,14 @@ void UPantheliaEquipmentComponent::EquipWeapon(
 bool UPantheliaEquipmentComponent::TryEquipWeapon(
 	TSubclassOf<APantheliaWeapon> WeaponClass, UPantheliaWeaponDefinition* Definition)
 {
+	if (bPreparedForDeath)
+	{
+		UE_LOG(LogPanthelia, Warning,
+			TEXT("[DEATH] Equip ignorado en %s: Equipment ya fue preparado para muerte."),
+			*GetNameSafe(GetOwner()));
+		return false;
+	}
+
 	if (!WeaponClass || !IsValid(Definition))
 	{
 		UE_LOG(LogPanthelia, Error,
@@ -164,6 +174,88 @@ UPantheliaWeaponDefinition* UPantheliaEquipmentComponent::GetEquippedWeaponDefin
 	return Weapon && IsValid(Weapon->WeaponDefinition)
 		? Weapon->WeaponDefinition.Get()
 		: nullptr;
+}
+
+FPantheliaEquippedWeaponDeathHandoff
+UPantheliaEquipmentComponent::PrepareEquippedWeaponForDeath()
+{
+	if (bPreparedForDeath)
+	{
+		return CachedDeathHandoff;
+	}
+
+	bPreparedForDeath = true;
+	CachedDeathHandoff.Reset();
+
+	// El trace debe quedar cerrado antes de cambiar attachment o exponer meshes.
+	if (AActor* OwnerActor = GetOwner())
+	{
+		if (UWeaponTraceComponent* TraceComponent =
+			OwnerActor->FindComponentByClass<UWeaponTraceComponent>())
+		{
+			TraceComponent->ShutdownForDeath();
+		}
+	}
+
+	APantheliaWeapon* Weapon = GetEquippedWeapon();
+	if (!IsValid(Weapon))
+	{
+		UE_LOG(LogPanthelia, Log,
+			TEXT("[DEATH] Handoff de arma en %s completado sin arma equipada."),
+			*GetNameSafe(GetOwner()));
+		return CachedDeathHandoff;
+	}
+
+	CachedDeathHandoff.WeaponActor = Weapon;
+	TArray<UPrimitiveComponent*> VisualParts;
+	GetEquippedWeaponVisualParts(VisualParts);
+	for (UPrimitiveComponent* VisualPart : VisualParts)
+	{
+		CachedDeathHandoff.VisualParts.Add(VisualPart);
+	}
+
+	const USceneComponent* RootComponent = Weapon->GetRootComponent();
+	const bool bWasAttached = RootComponent && RootComponent->GetAttachParent();
+	if (bWasAttached)
+	{
+		Weapon->DetachFromActor(FDetachmentTransformRules::KeepWorldTransform);
+	}
+	CachedDeathHandoff.bWasDetached = bWasAttached;
+
+	UE_LOG(LogPanthelia, Log,
+		TEXT("[DEATH] Handoff de arma: Owner=%s Weapon=%s Parts=%d Detached=%s. Equipment conserva ownership."),
+		*GetNameSafe(GetOwner()),
+		*GetNameSafe(Weapon),
+		CachedDeathHandoff.VisualParts.Num(),
+		bWasAttached ? TEXT("true") : TEXT("false"));
+
+	return CachedDeathHandoff;
+}
+
+void UPantheliaEquipmentComponent::GetEquippedWeaponVisualParts(
+	TArray<UPrimitiveComponent*>& OutVisualParts) const
+{
+	OutVisualParts.Reset();
+	APantheliaWeapon* Weapon = GetEquippedWeapon();
+	if (!IsValid(Weapon))
+	{
+		return;
+	}
+
+	if (UMeshComponent* ActiveMesh = Weapon->GetActiveMeshComponent())
+	{
+		OutVisualParts.Add(ActiveMesh);
+	}
+
+	TArray<UMeshComponent*> MeshComponents;
+	Weapon->GetComponents<UMeshComponent>(MeshComponents);
+	for (UMeshComponent* MeshComponent : MeshComponents)
+	{
+		if (IsValid(MeshComponent) && MeshComponent->IsVisible())
+		{
+			OutVisualParts.AddUnique(MeshComponent);
+		}
+	}
 }
 
 bool UPantheliaEquipmentComponent::ResolveOwnerAndHandSocket(

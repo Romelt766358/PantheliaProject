@@ -2,6 +2,7 @@
 
 #include "Dom/JsonObject.h"
 #include "Dom/JsonValue.h"
+#include "PDSSemanticSnapshotJson.h"
 #include "Serialization/JsonReader.h"
 #include "Serialization/JsonSerializer.h"
 
@@ -174,6 +175,17 @@ namespace
                 Values.Num() - SafeLimit);
         }
     }
+
+    int32 CountModifiedSemanticRecords(const FPDSSemanticDiff& SemanticDiff)
+    {
+        TSet<FString> ModifiedRecordKeys;
+        for (const FPDSSemanticFieldChange& Change : SemanticDiff.ChangedFields)
+        {
+            ModifiedRecordKeys.Add(
+                Change.DomainId + TEXT("\n") + Change.RecordId);
+        }
+        return ModifiedRecordKeys.Num();
+    }
 }
 
 bool FPDSSnapshotDiff::HasChanges() const
@@ -186,6 +198,7 @@ bool FPDSSnapshotDiff::HasChanges() const
         || !AddedMontages.IsEmpty()
         || !RemovedMontages.IsEmpty()
         || !ChangedMontages.IsEmpty()
+        || SemanticDiff.HasChanges()
         || PreviousInvalidCount != CurrentInvalidCount
         || PreviousWarningCount != CurrentWarningCount;
 }
@@ -216,6 +229,15 @@ FString FPDSSnapshotDiff::ToDashboardText(const int32 MaxEntriesPerCategory) con
         AddedMontages.Num(),
         RemovedMontages.Num(),
         ChangedMontages.Num());
+    Output += FString::Printf(
+        TEXT("\nSemantic records: %d → %d (añadidos %d, eliminados %d, modificados %d; fields %d; dominios no comparables %d)"),
+        SemanticDiff.PreviousRecordCount,
+        SemanticDiff.CurrentRecordCount,
+        SemanticDiff.AddedRecords.Num(),
+        SemanticDiff.RemovedRecords.Num(),
+        CountModifiedSemanticRecords(SemanticDiff),
+        SemanticDiff.ChangedFields.Num(),
+        SemanticDiff.NonComparableDomains.Num());
 
     if (bPreviousValidationIncluded || bCurrentValidationIncluded)
     {
@@ -258,6 +280,45 @@ FString FPDSSnapshotDiff::ToDashboardText(const int32 MaxEntriesPerCategory) con
     AppendStringPreview(Output, TEXT("Montages añadidos"), AddedMontages, MaxEntriesPerCategory);
     AppendStringPreview(Output, TEXT("Montages eliminados"), RemovedMontages, MaxEntriesPerCategory);
     AppendStringPreview(Output, TEXT("Montages modificados"), ChangedMontages, MaxEntriesPerCategory);
+
+    TArray<FString> AddedSemanticRecords;
+    for (const FPDSSemanticRecordChange& Change : SemanticDiff.AddedRecords)
+    {
+        AddedSemanticRecords.Add(Change.DomainId + TEXT("/") + Change.RecordId);
+    }
+    TArray<FString> RemovedSemanticRecords;
+    for (const FPDSSemanticRecordChange& Change : SemanticDiff.RemovedRecords)
+    {
+        RemovedSemanticRecords.Add(Change.DomainId + TEXT("/") + Change.RecordId);
+    }
+    TArray<FString> ChangedSemanticFields;
+    for (const FPDSSemanticFieldChange& Change : SemanticDiff.ChangedFields)
+    {
+        ChangedSemanticFields.Add(
+            Change.DomainId + TEXT("/") + Change.RecordId
+            + TEXT(" :: ") + Change.FieldName);
+    }
+
+    AppendStringPreview(
+        Output,
+        TEXT("Semantic records añadidos"),
+        AddedSemanticRecords,
+        MaxEntriesPerCategory);
+    AppendStringPreview(
+        Output,
+        TEXT("Semantic records eliminados"),
+        RemovedSemanticRecords,
+        MaxEntriesPerCategory);
+    AppendStringPreview(
+        Output,
+        TEXT("Semantic fields modificados"),
+        ChangedSemanticFields,
+        MaxEntriesPerCategory);
+    AppendStringPreview(
+        Output,
+        TEXT("Semantic domains no comparables"),
+        SemanticDiff.NonComparableDomains,
+        MaxEntriesPerCategory);
 
     // Los issues se muestran una sola vez mediante FPDSOperationResult::ToMultilineText().
     return Output;
@@ -364,6 +425,14 @@ bool PDSSnapshotDiff::ParseSnapshotJson(
         }
     }
 
+    if (!PDSSemanticSnapshotJson::ParseDomainsJson(
+            RootObject,
+            OutDocument.SemanticDomainsById,
+            OutIssues))
+    {
+        return false;
+    }
+
     const TSharedPtr<FJsonObject> ValidationObject =
         GetOptionalObject(RootObject, TEXT("validation"));
     if (ValidationObject.IsValid())
@@ -405,6 +474,10 @@ FPDSSnapshotDiff PDSSnapshotDiff::Compare(
     Diff.CurrentGameplayTagCount = Current.GameplayTags.Num();
     Diff.PreviousMontageCount = Previous.MontagesByPath.Num();
     Diff.CurrentMontageCount = Current.MontagesByPath.Num();
+    Diff.SemanticDiff = PDSSemanticDiff::Compare(
+        Previous.SemanticDomainsById,
+        Current.SemanticDomainsById);
+    Diff.Issues.Append(Diff.SemanticDiff.Issues);
 
     for (const TPair<FString, FPDSSnapshotAssetRecord>& Pair : Current.AssetsByObjectPath)
     {

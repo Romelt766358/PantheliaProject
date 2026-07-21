@@ -7,6 +7,33 @@
 #include "Engine/World.h"
 #include "TimerManager.h"
 
+#if WITH_EDITOR
+#include "AbilitySystem/Abilities/PantheliaSpellValidation.h"
+#include "Misc/DataValidation.h"
+#endif
+
+#if WITH_EDITOR
+EDataValidationResult UPantheliaMultiProjectileSpell::IsDataValid(
+	FDataValidationContext& Context) const
+{
+	if (GetClass()->HasAnyClassFlags(CLASS_Abstract))
+	{
+		return EDataValidationResult::NotValidated;
+	}
+
+	const EDataValidationResult SuperResult = Super::IsDataValid(Context);
+	const EDataValidationResult MultiResult =
+		PantheliaSpellValidation::ValidateMultiProjectileSpell(
+			*this,
+			Context);
+
+	return SuperResult == EDataValidationResult::Invalid
+		|| MultiResult == EDataValidationResult::Invalid
+		? EDataValidationResult::Invalid
+		: EDataValidationResult::Valid;
+}
+#endif
+
 UPantheliaMultiProjectileSpell::UPantheliaMultiProjectileSpell()
 {
 	// La secuencia guarda índices y timers entre frames. InstancedPerActor garantiza

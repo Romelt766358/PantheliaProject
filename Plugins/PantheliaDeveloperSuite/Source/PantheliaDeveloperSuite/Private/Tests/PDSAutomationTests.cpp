@@ -44,6 +44,21 @@ bool FPDSAutomationToolsetSchemaTest::RunTest(const FString& Parameters)
     TestTrue(
         TEXT("Schema exposes explicit JSON report paths"),
         Schema.Contains(TEXT("jsonReportPath")));
+    TestTrue(
+        TEXT("Schema exposes semantic domain counts"),
+        Schema.Contains(TEXT("semanticDomainCount")));
+    TestTrue(
+        TEXT("Schema exposes semantic record counts"),
+        Schema.Contains(TEXT("semanticRecordCount")));
+    TestTrue(
+        TEXT("Schema exposes spell counts"),
+        Schema.Contains(TEXT("spellCount")));
+    TestTrue(
+        TEXT("Schema exposes bounded semantic changes"),
+        Schema.Contains(TEXT("semanticChanges")));
+    TestTrue(
+        TEXT("Schema exposes semantic truncation"),
+        Schema.Contains(TEXT("bSemanticChangesTruncated")));
     TestFalse(
         TEXT("v0.5 schema removes the ambiguous outputPath alias"),
         Schema.Contains(TEXT("\"outputPath\"")));
@@ -59,7 +74,7 @@ bool FPDSAutomationToolsetSchemaTest::RunTest(const FString& Parameters)
         TestEqual(
             TEXT("Toolset version matches Automation API"),
             ToolsetCDO->GetToolsetVersion(),
-            FString(TEXT("0.5.0-alpha1")));
+            FString(TEXT("0.5.0-alpha2")));
     }
     return true;
 }
@@ -213,6 +228,20 @@ bool FPDSAutomationDiffResponseBoundsTest::RunTest(
         TEXT("/Game/M3.M3")
     };
 
+    for (int32 Index = 0; Index < 3; ++Index)
+    {
+        FPDSSemanticFieldChange Change;
+        Change.DomainId = TEXT("spells");
+        Change.RecordId =
+            FString::Printf(TEXT("/Game/Spell%d.Spell%d_C"), Index, Index);
+        Change.DisplayName =
+            FString::Printf(TEXT("Spell%d"), Index);
+        Change.FieldName = TEXT("projectile.count");
+        Change.PreviousValue = TEXT("3");
+        Change.CurrentValue = TEXT("5");
+        Diff.SemanticDiff.ChangedFields.Add(MoveTemp(Change));
+    }
+
     FPDSOperationResult PersistResult;
     PersistResult.bSuccess = true;
     PersistResult.Summary = TEXT("Synthetic diff");
@@ -229,6 +258,14 @@ bool FPDSAutomationDiffResponseBoundsTest::RunTest(
     TestTrue(TEXT("Asset truncation is reported"), Result.bAssetChangesTruncated);
     TestEqual(TEXT("Tags are bounded"), Result.AddedGameplayTags.Num(), 2);
     TestEqual(TEXT("Montages are bounded"), Result.AddedMontages.Num(), 2);
+    TestEqual(TEXT("Semantic changes are bounded"), Result.SemanticChanges.Num(), 2);
+    TestTrue(
+        TEXT("Semantic truncation is reported"),
+        Result.bSemanticChangesTruncated);
+    TestEqual(
+        TEXT("Semantic total remains complete"),
+        Result.TotalSemanticChangeCount,
+        3);
     TestTrue(TEXT("Any truncation is reported"), Result.bEntriesTruncated);
     return true;
 }
@@ -305,7 +342,7 @@ bool FPDSAutomationStatusContractTest::RunTest(const FString& Parameters)
     TestEqual(
         TEXT("Automation API version"),
         Result.AutomationApiVersion,
-        FString(TEXT("0.5.0-alpha1")));
+        FString(TEXT("0.5.0-alpha2")));
     TestFalse(
         TEXT("GetStatus does not claim snapshot validity was inspected"),
         Result.bSnapshotValidityKnown);
@@ -371,6 +408,16 @@ bool FPDSAutomationSnapshotMetadataProjectionTest::RunTest(
     Montage.Path = TEXT("/Game/Montage.Montage");
     Document.MontagesByPath.Add(Montage.Path, Montage);
 
+    FPDSSemanticDomainSnapshot SpellDomain;
+    SpellDomain.DomainId = TEXT("spells");
+    SpellDomain.SchemaVersion = TEXT("1.0.0");
+    FPDSSemanticRecord SpellRecord;
+    SpellRecord.RecordId = TEXT("/Game/Spells/GA_Test.GA_Test_C");
+    SpellDomain.Records.Add(MoveTemp(SpellRecord));
+    Document.SemanticDomainsById.Add(
+        SpellDomain.DomainId,
+        MoveTemp(SpellDomain));
+
     const FPDSAutomationSnapshotMetadata Result =
         PDSAutomation::BuildSnapshotMetadata(
             Document,
@@ -380,6 +427,9 @@ bool FPDSAutomationSnapshotMetadataProjectionTest::RunTest(
     TestEqual(TEXT("Asset count"), Result.AssetCount, 1);
     TestEqual(TEXT("Gameplay Tag count"), Result.GameplayTagCount, 1);
     TestEqual(TEXT("Montage count"), Result.MontageCount, 1);
+    TestEqual(TEXT("Semantic domain count"), Result.SemanticDomainCount, 1);
+    TestEqual(TEXT("Semantic record count"), Result.SemanticRecordCount, 1);
+    TestEqual(TEXT("Spell count"), Result.SpellCount, 1);
     TestEqual(
         TEXT("Path is preserved"),
         Result.FilePath,

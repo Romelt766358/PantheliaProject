@@ -153,6 +153,35 @@ class PANTHELIAPROJECT_API UPantheliaGameplayAbility : public UGameplayAbility
 	GENERATED_BODY()
 
 public:
+#if WITH_EDITOR
+	bool IsPantheliaResourceCostEnabledForEditor() const
+	{
+		return bUsePantheliaResourceCost;
+	}
+
+	EPantheliaResourceCostType GetResourceCostTypeForEditor() const
+	{
+		return ResourceCostType;
+	}
+
+	const FScalableFloat& GetBaseResourceCostForEditor() const
+	{
+		return BaseResourceCost;
+	}
+
+	const TArray<FPantheliaAdditionalResourceCost>&
+	GetAdditionalResourceCostsForEditor() const
+	{
+		return AdditionalResourceCosts;
+	}
+
+	EPantheliaAbilityInputActivationPolicy
+	GetInputActivationPolicyForEditor() const
+	{
+		return InputActivationPolicy;
+	}
+#endif
+
 	/**
 	 * Resuelve un coste base usando los modificadores GAS activos del recurso.
 	 *

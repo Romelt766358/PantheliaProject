@@ -85,6 +85,8 @@ public:
 
 protected:
 	virtual void BeginPlay() override;
+	virtual void OnDeathGameplayShutdown() override;
+	virtual void HandleDeathPresentationFinished(AActor* DeadActor) override;
 	virtual void InitAbilityActorInfo() override;
 	virtual void InitializeDefaultAttributes() const override;
 
@@ -193,4 +195,6 @@ private:
 	// Fuente única para bloquear/restaurar locomoción tras HitReact o Stagger.
 	// Evita que el final de un estado restaure BaseWalkSpeed mientras el otro sigue activo.
 	void RefreshMovementLockState();
+
+	bool bDeathCleanupStarted = false;
 };

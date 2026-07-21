@@ -1,0 +1,125 @@
+{
+  "png_count": 9,
+  "files": [
+    {
+      "path": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v001\\source_armor_textured_front.png",
+      "bytes": 657822,
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "sampled_unique_colors": 3785,
+      "not_black": true,
+      "not_transparent": true,
+      "armor_in_frame": true,
+      "not_completely_gray": true
+    },
+    {
+      "path": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v001\\aligned_front.png",
+      "bytes": 693695,
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "sampled_unique_colors": 4105,
+      "not_black": true,
+      "not_transparent": true,
+      "armor_in_frame": true,
+      "not_completely_gray": null
+    },
+    {
+      "path": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v001\\aligned_back.png",
+      "bytes": 623218,
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "sampled_unique_colors": 1167,
+      "not_black": true,
+      "not_transparent": true,
+      "armor_in_frame": true,
+      "not_completely_gray": null
+    },
+    {
+      "path": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v001\\aligned_left.png",
+      "bytes": 580572,
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "sampled_unique_colors": 1942,
+      "not_black": true,
+      "not_transparent": true,
+      "armor_in_frame": true,
+      "not_completely_gray": null
+    },
+    {
+      "path": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v001\\aligned_right.png",
+      "bytes": 567960,
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "sampled_unique_colors": 1797,
+      "not_black": true,
+      "not_transparent": true,
+      "armor_in_frame": true,
+      "not_completely_gray": null
+    },
+    {
+      "path": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v001\\aligned_perspective.png",
+      "bytes": 620334,
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "sampled_unique_colors": 2760,
+      "not_black": true,
+      "not_transparent": true,
+      "armor_in_frame": true,
+      "not_completely_gray": null
+    },
+    {
+      "path": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v001\\aligned_chest_closeup.png",
+      "bytes": 797802,
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "sampled_unique_colors": 5478,
+      "not_black": true,
+      "not_transparent": true,
+      "armor_in_frame": true,
+      "not_completely_gray": null
+    },
+    {
+      "path": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v001\\aligned_legs_closeup.png",
+      "bytes": 689887,
+      "dimensions": [
+        1024,
+        1024
+      ],
+      "sampled_unique_colors": 3465,
+      "not_black": true,
+      "not_transparent": true,
+      "armor_in_frame": true,
+      "not_completely_gray": null
+    },
+    {
+      "path": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v001\\contact_sheet.png",
+      "bytes": 903784,
+      "dimensions": [
+        1536,
+        1024
+      ],
+      "sampled_unique_colors": 3598,
+      "not_black": true,
+      "not_transparent": true,
+      "armor_in_frame": true,
+      "not_completely_gray": null
+    }
+  ],
+  "geometry_modified": false,
+  "skinning_performed": false,
+  "awaiting_human_visual_approval": true
+}

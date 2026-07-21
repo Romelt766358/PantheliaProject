@@ -1,0 +1,517 @@
+{
+  "texture_directory": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Original\\Extracted\\textures",
+  "png_count": 25,
+  "rigid_alignment": {
+    "root": "WORK_Armor_RigidRoot",
+    "location": [
+      0.0,
+      -8.22,
+      85.35
+    ],
+    "rotation_degrees": [
+      0.0,
+      0.0,
+      0.0
+    ],
+    "scale": [
+      0.689,
+      0.689,
+      0.689
+    ],
+    "transforms_applied": false
+  },
+  "geometry_verification": {
+    "WORK_Armor": {
+      "source": "Armor",
+      "vertex_count": 4156,
+      "triangle_count": 8172,
+      "uv_layer_count": 1,
+      "local_coordinates_exact": true,
+      "triangles_exact": true,
+      "uvs_exact": true
+    },
+    "WORK_Cuirass": {
+      "source": "cuirass",
+      "vertex_count": 1656,
+      "triangle_count": 3312,
+      "uv_layer_count": 1,
+      "local_coordinates_exact": true,
+      "triangles_exact": true,
+      "uvs_exact": true
+    },
+    "WORK_ArmArmor": {
+      "source": "Arm Armor",
+      "vertex_count": 4072,
+      "triangle_count": 8112,
+      "uv_layer_count": 1,
+      "local_coordinates_exact": true,
+      "triangles_exact": true,
+      "uvs_exact": true
+    },
+    "WORK_LegArmor": {
+      "source": "leg armor",
+      "vertex_count": 2608,
+      "triangle_count": 5216,
+      "uv_layer_count": 1,
+      "local_coordinates_exact": true,
+      "triangles_exact": true,
+      "uvs_exact": true
+    },
+    "WORK_Sock": {
+      "source": "sock",
+      "vertex_count": 756,
+      "triangle_count": 1516,
+      "uv_layer_count": 1,
+      "local_coordinates_exact": true,
+      "triangles_exact": true,
+      "uvs_exact": true
+    }
+  },
+  "materials": [
+    {
+      "object": "WORK_Armor",
+      "material": "MAT_GildedKnight_Armor",
+      "textures": {
+        "BaseColor": {
+          "found": true,
+          "path": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Original\\Extracted\\textures\\Armor_Base_color.png",
+          "resolution": [
+            4096,
+            4096
+          ],
+          "color_space": "sRGB",
+          "connected": true,
+          "destination_nodes": [
+            "Principled BSDF.Base Color"
+          ]
+        },
+        "Metallic": {
+          "found": true,
+          "path": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Original\\Extracted\\textures\\Armor_Metallic.png",
+          "resolution": [
+            4096,
+            4096
+          ],
+          "color_space": "Non-Color",
+          "connected": true,
+          "destination_nodes": [
+            "Principled BSDF.Metallic"
+          ]
+        },
+        "Roughness": {
+          "found": true,
+          "path": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Original\\Extracted\\textures\\Armor_Roughness.png",
+          "resolution": [
+            4096,
+            4096
+          ],
+          "color_space": "Non-Color",
+          "connected": true,
+          "destination_nodes": [
+            "Principled BSDF.Roughness"
+          ]
+        },
+        "Normal_DirectX": {
+          "found": true,
+          "path": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Original\\Extracted\\textures\\Armor_Normal_DirectX.png",
+          "resolution": [
+            4096,
+            4096
+          ],
+          "color_space": "Non-Color",
+          "connected": true,
+          "destination_nodes": [
+            "Separate_Normal_RGB",
+            "Invert_DirectX_Green",
+            "Combine_OpenGL_Normal",
+            "Normal Map.Color",
+            "Principled BSDF.Normal"
+          ]
+        },
+        "Mixed_AO": {
+          "found": false,
+          "path": null,
+          "resolution": null,
+          "color_space": null,
+          "connected": false,
+          "destination_nodes": []
+        },
+        "Translucency": {
+          "found": true,
+          "path": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Original\\Extracted\\textures\\Armor_Translucency.png",
+          "resolution": [
+            4096,
+            4096
+          ],
+          "color_space": "Non-Color",
+          "connected": false,
+          "destination_nodes": [],
+          "note": "Loaded for documentation; intentionally unconnected because its application is ambiguous."
+        }
+      },
+      "missing_textures": [
+        "Mixed_AO"
+      ]
+    },
+    {
+      "object": "WORK_Cuirass",
+      "material": "MAT_GildedKnight_Cuirass",
+      "textures": {
+        "BaseColor": {
+          "found": true,
+          "path": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Original\\Extracted\\textures\\cuirass_Base_color.png",
+          "resolution": [
+            4096,
+            4096
+          ],
+          "color_space": "sRGB",
+          "connected": true,
+          "destination_nodes": [
+            "Multiply_BaseColor_AO.Color1",
+            "Principled BSDF.Base Color"
+          ]
+        },
+        "Metallic": {
+          "found": true,
+          "path": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Original\\Extracted\\textures\\cuirass_Metallic.png",
+          "resolution": [
+            4096,
+            4096
+          ],
+          "color_space": "Non-Color",
+          "connected": true,
+          "destination_nodes": [
+            "Principled BSDF.Metallic"
+          ]
+        },
+        "Roughness": {
+          "found": true,
+          "path": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Original\\Extracted\\textures\\cuirass_Roughness.png",
+          "resolution": [
+            4096,
+            4096
+          ],
+          "color_space": "Non-Color",
+          "connected": true,
+          "destination_nodes": [
+            "Principled BSDF.Roughness"
+          ]
+        },
+        "Normal_DirectX": {
+          "found": true,
+          "path": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Original\\Extracted\\textures\\cuirass_Normal_DirectX.png",
+          "resolution": [
+            4096,
+            4096
+          ],
+          "color_space": "Non-Color",
+          "connected": true,
+          "destination_nodes": [
+            "Separate_Normal_RGB",
+            "Invert_DirectX_Green",
+            "Combine_OpenGL_Normal",
+            "Normal Map.Color",
+            "Principled BSDF.Normal"
+          ]
+        },
+        "Mixed_AO": {
+          "found": true,
+          "path": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Original\\Extracted\\textures\\cuirass_Mixed_AO.png",
+          "resolution": [
+            4096,
+            4096
+          ],
+          "color_space": "Non-Color",
+          "connected": true,
+          "destination_nodes": [
+            "Multiply_BaseColor_AO.Color2",
+            "Principled BSDF.Base Color"
+          ]
+        },
+        "Translucency": {
+          "found": false,
+          "path": null,
+          "resolution": null,
+          "color_space": null,
+          "connected": false,
+          "destination_nodes": []
+        }
+      },
+      "missing_textures": [
+        "Translucency"
+      ]
+    },
+    {
+      "object": "WORK_ArmArmor",
+      "material": "MAT_GildedKnight_ArmArmor",
+      "textures": {
+        "BaseColor": {
+          "found": true,
+          "path": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Original\\Extracted\\textures\\Arm_Armor_Base_color.png",
+          "resolution": [
+            4096,
+            4096
+          ],
+          "color_space": "sRGB",
+          "connected": true,
+          "destination_nodes": [
+            "Multiply_BaseColor_AO.Color1",
+            "Principled BSDF.Base Color"
+          ]
+        },
+        "Metallic": {
+          "found": true,
+          "path": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Original\\Extracted\\textures\\Arm_Armor_Metallic.png",
+          "resolution": [
+            4096,
+            4096
+          ],
+          "color_space": "Non-Color",
+          "connected": true,
+          "destination_nodes": [
+            "Principled BSDF.Metallic"
+          ]
+        },
+        "Roughness": {
+          "found": true,
+          "path": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Original\\Extracted\\textures\\Arm_Armor_Roughness.png",
+          "resolution": [
+            4096,
+            4096
+          ],
+          "color_space": "Non-Color",
+          "connected": true,
+          "destination_nodes": [
+            "Principled BSDF.Roughness"
+          ]
+        },
+        "Normal_DirectX": {
+          "found": true,
+          "path": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Original\\Extracted\\textures\\Arm_Armor_Normal_DirectX.png",
+          "resolution": [
+            4096,
+            4096
+          ],
+          "color_space": "Non-Color",
+          "connected": true,
+          "destination_nodes": [
+            "Separate_Normal_RGB",
+            "Invert_DirectX_Green",
+            "Combine_OpenGL_Normal",
+            "Normal Map.Color",
+            "Principled BSDF.Normal"
+          ]
+        },
+        "Mixed_AO": {
+          "found": true,
+          "path": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Original\\Extracted\\textures\\Arm_Armor_Mixed_AO.png",
+          "resolution": [
+            4096,
+            4096
+          ],
+          "color_space": "Non-Color",
+          "connected": true,
+          "destination_nodes": [
+            "Multiply_BaseColor_AO.Color2",
+            "Principled BSDF.Base Color"
+          ]
+        },
+        "Translucency": {
+          "found": false,
+          "path": null,
+          "resolution": null,
+          "color_space": null,
+          "connected": false,
+          "destination_nodes": []
+        }
+      },
+      "missing_textures": [
+        "Translucency"
+      ]
+    },
+    {
+      "object": "WORK_LegArmor",
+      "material": "MAT_GildedKnight_LegArmor",
+      "textures": {
+        "BaseColor": {
+          "found": true,
+          "path": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Original\\Extracted\\textures\\leg_armor_Base_color.png",
+          "resolution": [
+            4096,
+            4096
+          ],
+          "color_space": "sRGB",
+          "connected": true,
+          "destination_nodes": [
+            "Multiply_BaseColor_AO.Color1",
+            "Principled BSDF.Base Color"
+          ]
+        },
+        "Metallic": {
+          "found": true,
+          "path": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Original\\Extracted\\textures\\leg_armor_Metallic.png",
+          "resolution": [
+            4096,
+            4096
+          ],
+          "color_space": "Non-Color",
+          "connected": true,
+          "destination_nodes": [
+            "Principled BSDF.Metallic"
+          ]
+        },
+        "Roughness": {
+          "found": true,
+          "path": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Original\\Extracted\\textures\\leg_armor_Roughness.png",
+          "resolution": [
+            4096,
+            4096
+          ],
+          "color_space": "Non-Color",
+          "connected": true,
+          "destination_nodes": [
+            "Principled BSDF.Roughness"
+          ]
+        },
+        "Normal_DirectX": {
+          "found": true,
+          "path": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Original\\Extracted\\textures\\leg_armor_Normal_DirectX.png",
+          "resolution": [
+            4096,
+            4096
+          ],
+          "color_space": "Non-Color",
+          "connected": true,
+          "destination_nodes": [
+            "Separate_Normal_RGB",
+            "Invert_DirectX_Green",
+            "Combine_OpenGL_Normal",
+            "Normal Map.Color",
+            "Principled BSDF.Normal"
+          ]
+        },
+        "Mixed_AO": {
+          "found": true,
+          "path": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Original\\Extracted\\textures\\leg_armor_Mixed_AO.png",
+          "resolution": [
+            4096,
+            4096
+          ],
+          "color_space": "Non-Color",
+          "connected": true,
+          "destination_nodes": [
+            "Multiply_BaseColor_AO.Color2",
+            "Principled BSDF.Base Color"
+          ]
+        },
+        "Translucency": {
+          "found": false,
+          "path": null,
+          "resolution": null,
+          "color_space": null,
+          "connected": false,
+          "destination_nodes": []
+        }
+      },
+      "missing_textures": [
+        "Translucency"
+      ]
+    },
+    {
+      "object": "WORK_Sock",
+      "material": "MAT_GildedKnight_Sock",
+      "textures": {
+        "BaseColor": {
+          "found": true,
+          "path": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Original\\Extracted\\textures\\sock_Base_color.png",
+          "resolution": [
+            4096,
+            4096
+          ],
+          "color_space": "sRGB",
+          "connected": true,
+          "destination_nodes": [
+            "Multiply_BaseColor_AO.Color1",
+            "Principled BSDF.Base Color"
+          ]
+        },
+        "Metallic": {
+          "found": true,
+          "path": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Original\\Extracted\\textures\\sock_Metallic.png",
+          "resolution": [
+            4096,
+            4096
+          ],
+          "color_space": "Non-Color",
+          "connected": true,
+          "destination_nodes": [
+            "Principled BSDF.Metallic"
+          ]
+        },
+        "Roughness": {
+          "found": true,
+          "path": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Original\\Extracted\\textures\\sock_Roughness.png",
+          "resolution": [
+            4096,
+            4096
+          ],
+          "color_space": "Non-Color",
+          "connected": true,
+          "destination_nodes": [
+            "Principled BSDF.Roughness"
+          ]
+        },
+        "Normal_DirectX": {
+          "found": true,
+          "path": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Original\\Extracted\\textures\\sock_Normal_DirectX.png",
+          "resolution": [
+            4096,
+            4096
+          ],
+          "color_space": "Non-Color",
+          "connected": true,
+          "destination_nodes": [
+            "Separate_Normal_RGB",
+            "Invert_DirectX_Green",
+            "Combine_OpenGL_Normal",
+            "Normal Map.Color",
+            "Principled BSDF.Normal"
+          ]
+        },
+        "Mixed_AO": {
+          "found": true,
+          "path": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Original\\Extracted\\textures\\sock_Mixed_AO.png",
+          "resolution": [
+            4096,
+            4096
+          ],
+          "color_space": "Non-Color",
+          "connected": true,
+          "destination_nodes": [
+            "Multiply_BaseColor_AO.Color2",
+            "Principled BSDF.Base Color"
+          ]
+        },
+        "Translucency": {
+          "found": false,
+          "path": null,
+          "resolution": null,
+          "color_space": null,
+          "connected": false,
+          "destination_nodes": []
+        }
+      },
+      "missing_textures": [
+        "Translucency"
+      ]
+    }
+  ],
+  "connected_texture_count": 24,
+  "created_materials": [
+    "MAT_GildedKnight_Armor",
+    "MAT_GildedKnight_Cuirass",
+    "MAT_GildedKnight_ArmArmor",
+    "MAT_GildedKnight_LegArmor",
+    "MAT_GildedKnight_Sock"
+  ]
+}

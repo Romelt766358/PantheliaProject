@@ -15,6 +15,7 @@
 #include "BehaviorTree/BehaviorTree.h"
 #include "BehaviorTree/BlackboardComponent.h"
 #include "Components/SceneComponent.h"
+#include "PantheliaLogChannels.h"
 
 APantheliaEnemy::APantheliaEnemy()
 {
@@ -71,10 +72,17 @@ int32 APantheliaEnemy::GetPlayerLevel_Implementation() const
 
 void APantheliaEnemy::Die(const FVector& DeathImpulse)
 {
-	// Detener primero toda lógica de navegación/decisión. Los enemigos normales usan
-	// el BrainComponent del AIController; un boss también puede tener un componente de
-	// IA basado en UBrainComponent directamente sobre el pawn. Cubrimos ambos caminos
-	// sin acoplar esta clase a un Behavior Tree o StateTree concreto.
+	// Toda la guarda y el orden bDead/State.Dead -> shutdown -> presentación viven en
+	// CharacterBase. El trabajo propio de IA se ejecuta desde el hook idempotente.
+	Super::Die(DeathImpulse);
+}
+
+void APantheliaEnemy::OnDeathGameplayShutdown()
+{
+	Super::OnDeathGameplayShutdown();
+
+	// Los enemigos normales usan el BrainComponent del AIController; un boss también
+	// puede tener un UBrainComponent sobre el pawn. No se acopla a BT ni StateTree.
 	if (AAIController* AIController = Cast<AAIController>(GetController()))
 	{
 		AIController->StopMovement();
@@ -88,12 +96,6 @@ void APantheliaEnemy::Die(const FVector& DeathImpulse)
 	if (UBrainComponent* PawnBrain = FindComponentByClass<UBrainComponent>())
 	{
 		PawnBrain->StopLogic(TEXT("Owner died"));
-	}
-
-	if (UCharacterMovementComponent* MovementComponent = GetCharacterMovement())
-	{
-		MovementComponent->StopMovementImmediately();
-		MovementComponent->DisableMovement();
 	}
 
 	// Notificar también al Blackboard legacy. El decorator "Am I Alive?" comprueba
@@ -121,8 +123,22 @@ void APantheliaEnemy::Die(const FVector& DeathImpulse)
 		}
 	}
 
+}
+
+void APantheliaEnemy::HandleDeathPresentationFinished(AActor* DeadActor)
+{
+	if (DeadActor != this || bDeathCleanupStarted)
+	{
+		return;
+	}
+
+	bDeathCleanupStarted = true;
 	SetLifeSpan(Lifespan);
-	Super::Die(DeathImpulse);
+	UE_LOG(LogPanthelia, Log,
+		TEXT("[DEATH] Enemigo inicia lifespan posterior a presentacion: %s (%.2f s)."),
+		*GetNameSafe(this), Lifespan);
+
+	Super::HandleDeathPresentationFinished(DeadActor);
 }
 
 void APantheliaEnemy::BeginPlay()

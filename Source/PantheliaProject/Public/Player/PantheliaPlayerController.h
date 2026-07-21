@@ -92,6 +92,7 @@ private:
 	// Devuelve el ASC del Pawn controlado, casteado a UPantheliaAbilitySystemComponent.
 	// Castea solo la primera vez. Puede retornar nullptr si se llama muy temprano.
 	UPantheliaAbilitySystemComponent* GetASC();
+	bool IsGameplayInputBlockedByDeath();
 
 	// --- INTERACTION TRACE ---
 

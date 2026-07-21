@@ -5,6 +5,11 @@
 #include "CoreMinimal.h"
 #include "AbilitySystem/Abilities/PantheliaProjectileSpell.h"
 #include "Actor/PantheliaProjectile.h"
+
+#if WITH_EDITOR
+#include "Misc/DataValidation.h"
+#endif
+
 #include "PantheliaMultiProjectileSpell.generated.h"
 
 /**
@@ -38,6 +43,66 @@ class PANTHELIAPROJECT_API UPantheliaMultiProjectileSpell : public UPantheliaPro
 
 public:
 	UPantheliaMultiProjectileSpell();
+
+#if WITH_EDITOR
+	virtual EDataValidationResult IsDataValid(
+		FDataValidationContext& Context) const override;
+
+	const FScalableFloat& GetProjectileCountForEditor() const
+	{
+		return ProjectileCountByAbilityLevel;
+	}
+
+	int32 GetMaxProjectileCountForEditor() const
+	{
+		return MaxProjectileCount;
+	}
+
+	const FScalableFloat& GetProjectileSpreadForEditor() const
+	{
+		return ProjectileSpreadDegrees;
+	}
+
+	const FScalableFloat& GetProjectileSpawnIntervalForEditor() const
+	{
+		return ProjectileSpawnInterval;
+	}
+
+	const FScalableFloat& GetLaunchPitchForEditor() const
+	{
+		return LaunchPitchDegrees;
+	}
+
+	const FScalableFloat& GetProjectileSpeedOverrideForEditor() const
+	{
+		return ProjectileSpeedOverride;
+	}
+
+	bool IsSoftHomingEnabledForEditor() const
+	{
+		return bEnableSoftHoming;
+	}
+
+	const FScalableFloat& GetHomingStartDelayForEditor() const
+	{
+		return HomingStartDelay;
+	}
+
+	const FScalableFloat& GetHomingDurationForEditor() const
+	{
+		return HomingDuration;
+	}
+
+	const FScalableFloat& GetHomingAccelerationForEditor() const
+	{
+		return HomingAccelerationMagnitude;
+	}
+
+	const FScalableFloat& GetMaxHomingCorrectionAngleForEditor() const
+	{
+		return MaxHomingCorrectionAngleDegrees;
+	}
+#endif
 
 	virtual void ActivateAbility(
 		const FGameplayAbilitySpecHandle Handle,

@@ -1,0 +1,55 @@
+{
+  "success": true,
+  "source": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Panthelia_GildedKnight_Fit_v008_ExecutableSkinned.blend",
+  "output": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Panthelia_GildedKnight_Fit_v009_LegArmorRealFix.blend",
+  "object": "WORK_LegArmor",
+  "vertex_count": 2608,
+  "component_count": 2,
+  "transform_type": "longitudinal_affine_remap_anchored_between_knee_and_ankle",
+  "results": [
+    {
+      "bone": "calf_r",
+      "before_min": 15.642962753772736,
+      "before_max": 33.047946728765965,
+      "before_length": 17.40498397499323,
+      "target_min": 3.0,
+      "target_max": 19.491106442610434,
+      "target_length": 16.491106442610434,
+      "longitudinal_scale": 0.9474933424991475,
+      "bottom_lift_cm": -12.642962753772736,
+      "top_shift_cm": -13.55684028615553
+    },
+    {
+      "bone": "calf_l",
+      "before_min": -6.848134569823742,
+      "before_max": 10.556848481297493,
+      "before_length": 17.404983051121235,
+      "target_min": 3.0,
+      "target_max": 19.491112718147814,
+      "target_length": 16.491112718147814,
+      "longitudinal_scale": 0.9474937533527475,
+      "bottom_lift_cm": 9.848134569823742,
+      "top_shift_cm": 8.934264236850321
+    }
+  ],
+  "evaluated_mesh_validation": [
+    {
+      "bone": "calf_r",
+      "final_min": 2.9999967217445374,
+      "final_max": 19.491107046604156,
+      "distance_above_ankle_cm": 2.9999967217445374,
+      "distance_below_knee_cm": 2.9999993960062774
+    },
+    {
+      "bone": "calf_l",
+      "final_min": 2.999998241662979,
+      "final_max": 19.491112291812897,
+      "distance_above_ankle_cm": 2.999998241662979,
+      "distance_below_knee_cm": 3.0000004263349176
+    }
+  ],
+  "armature_modifier_preserved": true,
+  "weights_preserved": true,
+  "topology_modified": false,
+  "rest_pose_modified": false
+}

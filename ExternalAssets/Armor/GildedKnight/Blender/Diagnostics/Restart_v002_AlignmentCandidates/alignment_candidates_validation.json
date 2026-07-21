@@ -1,0 +1,198 @@
+{
+  "source_blend": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Restart\\Panthelia_GildedKnight_RESTART_v001_TexturedRigid.blend",
+  "geometry_modified": false,
+  "materials_modified": false,
+  "skinning_performed": false,
+  "awaiting_human_visual_approval": true,
+  "variants": {
+    "A": {
+      "blend": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Restart\\AlignmentCandidates\\Panthelia_GildedKnight_RESTART_v002_A_Chest5_Legs3.blend",
+      "requested_world_z_cm": {
+        "WORK_Cuirass": 5.0,
+        "WORK_LegArmor": 3.0
+      },
+      "actual_world_z_cm": {
+        "WORK_Cuirass": 5.0,
+        "WORK_LegArmor": 3.0
+      },
+      "renders": {
+        "front": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\A_front.png",
+        "perspective": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\A_perspective.png",
+        "chest": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\A_chest.png",
+        "legs": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\A_legs.png"
+      },
+      "visible_differences": {
+        "front": {
+          "original": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\Original_front.png",
+          "variant": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\A_front.png",
+          "changed_pixel_fraction": 0.02648448944091797,
+          "mean_absolute_rgb_difference": 0.0018816905794665217,
+          "maximum_rgb_difference": 0.9333333969116211,
+          "visible_difference_confirmed": true,
+          "aesthetic_quality_assessed": false
+        },
+        "perspective": {
+          "original": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\Original_perspective.png",
+          "variant": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\A_perspective.png",
+          "changed_pixel_fraction": 0.014284133911132812,
+          "mean_absolute_rgb_difference": 0.0007826437358744442,
+          "maximum_rgb_difference": 0.9019608497619629,
+          "visible_difference_confirmed": true,
+          "aesthetic_quality_assessed": false
+        },
+        "chest": {
+          "original": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\Original_chest.png",
+          "variant": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\A_chest.png",
+          "changed_pixel_fraction": 0.03560161590576172,
+          "mean_absolute_rgb_difference": 0.002795993583276868,
+          "maximum_rgb_difference": 0.9372549653053284,
+          "visible_difference_confirmed": true,
+          "aesthetic_quality_assessed": false
+        },
+        "legs": {
+          "original": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\Original_legs.png",
+          "variant": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\A_legs.png",
+          "changed_pixel_fraction": 0.029254913330078125,
+          "mean_absolute_rgb_difference": 0.0019151425221934915,
+          "maximum_rgb_difference": 0.8627451658248901,
+          "visible_difference_confirmed": true,
+          "aesthetic_quality_assessed": false
+        }
+      },
+      "local_mesh_coordinates_unchanged": true,
+      "vertex_triangle_counts_unchanged": true,
+      "uvs_unchanged": true,
+      "materials_unchanged": true,
+      "armature_modifier_count": 0,
+      "vertex_group_count": 0,
+      "root_unchanged": true,
+      "body_unchanged": true
+    },
+    "B": {
+      "blend": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Restart\\AlignmentCandidates\\Panthelia_GildedKnight_RESTART_v002_B_Chest8_Legs5.blend",
+      "requested_world_z_cm": {
+        "WORK_Cuirass": 8.0,
+        "WORK_LegArmor": 5.0
+      },
+      "actual_world_z_cm": {
+        "WORK_Cuirass": 8.000007629394531,
+        "WORK_LegArmor": 5.0
+      },
+      "renders": {
+        "front": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\B_front.png",
+        "perspective": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\B_perspective.png",
+        "chest": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\B_chest.png",
+        "legs": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\B_legs.png"
+      },
+      "visible_differences": {
+        "front": {
+          "original": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\Original_front.png",
+          "variant": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\B_front.png",
+          "changed_pixel_fraction": 0.02962970733642578,
+          "mean_absolute_rgb_difference": 0.001984032802283764,
+          "maximum_rgb_difference": 0.917647123336792,
+          "visible_difference_confirmed": true,
+          "aesthetic_quality_assessed": false
+        },
+        "perspective": {
+          "original": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\Original_perspective.png",
+          "variant": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\B_perspective.png",
+          "changed_pixel_fraction": 0.01598644256591797,
+          "mean_absolute_rgb_difference": 0.0008459141827188432,
+          "maximum_rgb_difference": 0.8980392813682556,
+          "visible_difference_confirmed": true,
+          "aesthetic_quality_assessed": false
+        },
+        "chest": {
+          "original": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\Original_chest.png",
+          "variant": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\B_chest.png",
+          "changed_pixel_fraction": 0.03920269012451172,
+          "mean_absolute_rgb_difference": 0.002947384724393487,
+          "maximum_rgb_difference": 0.9215686917304993,
+          "visible_difference_confirmed": true,
+          "aesthetic_quality_assessed": false
+        },
+        "legs": {
+          "original": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\Original_legs.png",
+          "variant": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\B_legs.png",
+          "changed_pixel_fraction": 0.032540321350097656,
+          "mean_absolute_rgb_difference": 0.0019269670592620969,
+          "maximum_rgb_difference": 0.917647123336792,
+          "visible_difference_confirmed": true,
+          "aesthetic_quality_assessed": false
+        }
+      },
+      "local_mesh_coordinates_unchanged": true,
+      "vertex_triangle_counts_unchanged": true,
+      "uvs_unchanged": true,
+      "materials_unchanged": true,
+      "armature_modifier_count": 0,
+      "vertex_group_count": 0,
+      "root_unchanged": true,
+      "body_unchanged": true
+    },
+    "C": {
+      "blend": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Restart\\AlignmentCandidates\\Panthelia_GildedKnight_RESTART_v002_C_Chest11_Legs7.blend",
+      "requested_world_z_cm": {
+        "WORK_Cuirass": 11.0,
+        "WORK_LegArmor": 7.0
+      },
+      "actual_world_z_cm": {
+        "WORK_Cuirass": 11.0,
+        "WORK_LegArmor": 7.0
+      },
+      "renders": {
+        "front": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\C_front.png",
+        "perspective": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\C_perspective.png",
+        "chest": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\C_chest.png",
+        "legs": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\C_legs.png"
+      },
+      "visible_differences": {
+        "front": {
+          "original": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\Original_front.png",
+          "variant": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\C_front.png",
+          "changed_pixel_fraction": 0.03323078155517578,
+          "mean_absolute_rgb_difference": 0.002138553187251091,
+          "maximum_rgb_difference": 0.9215686917304993,
+          "visible_difference_confirmed": true,
+          "aesthetic_quality_assessed": false
+        },
+        "perspective": {
+          "original": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\Original_perspective.png",
+          "variant": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\C_perspective.png",
+          "changed_pixel_fraction": 0.01787853240966797,
+          "mean_absolute_rgb_difference": 0.0009246926638297737,
+          "maximum_rgb_difference": 0.8862745761871338,
+          "visible_difference_confirmed": true,
+          "aesthetic_quality_assessed": false
+        },
+        "chest": {
+          "original": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\Original_chest.png",
+          "variant": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\C_chest.png",
+          "changed_pixel_fraction": 0.043537139892578125,
+          "mean_absolute_rgb_difference": 0.0030939094722270966,
+          "maximum_rgb_difference": 0.9333333969116211,
+          "visible_difference_confirmed": true,
+          "aesthetic_quality_assessed": false
+        },
+        "legs": {
+          "original": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\Original_legs.png",
+          "variant": "C:\\Panthelia Project\\PantheliaProject\\ExternalAssets\\Armor\\GildedKnight\\Blender\\Diagnostics\\Restart_v002_AlignmentCandidates\\C_legs.png",
+          "changed_pixel_fraction": 0.03648948669433594,
+          "mean_absolute_rgb_difference": 0.001960050081834197,
+          "maximum_rgb_difference": 0.8078432083129883,
+          "visible_difference_confirmed": true,
+          "aesthetic_quality_assessed": false
+        }
+      },
+      "local_mesh_coordinates_unchanged": true,
+      "vertex_triangle_counts_unchanged": true,
+      "uvs_unchanged": true,
+      "materials_unchanged": true,
+      "armature_modifier_count": 0,
+      "vertex_group_count": 0,
+      "root_unchanged": true,
+      "body_unchanged": true
+    }
+  }
+}

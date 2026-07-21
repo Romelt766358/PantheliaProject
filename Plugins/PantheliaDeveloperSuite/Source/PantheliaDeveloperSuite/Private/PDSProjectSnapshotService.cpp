@@ -10,6 +10,8 @@
 #include "Misc/ScopedSlowTask.h"
 #include "PDSAssetUtilities.h"
 #include "PDSMontageInspectorService.h"
+#include "PDSSemanticSnapshotJson.h"
+#include "PDSSemanticSnapshotTypes.h"
 #include "PDSDeveloperSettings.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
@@ -131,9 +133,11 @@ namespace
         return ValidationJson;
     }
 
-    void CollectMontagesLoadedBySnapshot(const int32 NewlyLoadedMontageCount)
+    void CollectAssetsLoadedBySnapshot(const int32 NewlyLoadedAssetCount)
     {
-        if (NewlyLoadedMontageCount > 0)
+        // PDS-76: el exportador conserva un único punto de decisión para GC.
+        // Contributors reportan si cargaron assets, pero nunca ejecutan GC por su cuenta.
+        if (NewlyLoadedAssetCount > 0)
         {
             CollectGarbage(GARBAGE_COLLECTION_KEEPFLAGS);
         }
@@ -154,7 +158,7 @@ FPDSOperationResult FPDSProjectSnapshotService::ExportProjectSnapshot(
     const UPDSDeveloperSettings* DeveloperSettings = GetDefault<UPDSDeveloperSettings>();
 
     TSharedRef<FJsonObject> RootJson = MakeShared<FJsonObject>();
-    RootJson->SetStringField(TEXT("schemaVersion"), TEXT("0.3.0-alpha3"));
+    RootJson->SetStringField(TEXT("schemaVersion"), TEXT("0.4.0-alpha1"));
     RootJson->SetStringField(
         TEXT("generatedAtUtc"),
         FDateTime::UtcNow().ToIso8601());
@@ -268,7 +272,7 @@ FPDSOperationResult FPDSProjectSnapshotService::ExportProjectSnapshot(
                 FString(),
                 TEXT("La operación fue cancelada por el usuario antes de completar el inventario.")
             });
-            CollectMontagesLoadedBySnapshot(NewlyLoadedMontageCount);
+            CollectAssetsLoadedBySnapshot(NewlyLoadedMontageCount);
             return Result;
         }
 
@@ -319,10 +323,42 @@ FPDSOperationResult FPDSProjectSnapshotService::ExportProjectSnapshot(
         TEXT("validation"),
         BuildValidationJson(OptionalValidationSummary));
 
+    TArray<FPDSIssue> SemanticIssues;
+    TArray<FPDSSemanticDomainSnapshot> SemanticDomains =
+        FPDSSnapshotDomainRegistry::Get().GatherAllDomains(SemanticIssues);
+    Result.Issues.Append(SemanticIssues);
+
+    RootJson->SetObjectField(
+        TEXT("semanticDomains"),
+        PDSSemanticSnapshotJson::BuildDomainsJson(SemanticDomains));
+
+    int32 SemanticRecordCount = 0;
+    int32 SpellCount = 0;
+    int32 NewlyLoadedSemanticAssetCount = 0;
+    for (const FPDSSemanticDomainSnapshot& Domain : SemanticDomains)
+    {
+        SemanticRecordCount += Domain.Records.Num();
+        NewlyLoadedSemanticAssetCount += Domain.NewlyLoadedAssetCount;
+        if (Domain.DomainId == TEXT("spells"))
+        {
+            SpellCount = Domain.Records.Num();
+        }
+    }
+
+    const int32 TotalNewlyLoadedAssetCount =
+        NewlyLoadedMontageCount + NewlyLoadedSemanticAssetCount;
+
     TSharedRef<FJsonObject> SummaryJson = MakeShared<FJsonObject>();
     SummaryJson->SetNumberField(TEXT("assetCount"), Assets.Num());
     SummaryJson->SetNumberField(TEXT("gameplayTagCount"), SortedTags.Num());
     SummaryJson->SetNumberField(TEXT("montageCount"), MontageCount);
+    SummaryJson->SetNumberField(
+        TEXT("semanticDomainCount"),
+        SemanticDomains.Num());
+    SummaryJson->SetNumberField(
+        TEXT("semanticRecordCount"),
+        SemanticRecordCount);
+    SummaryJson->SetNumberField(TEXT("spellCount"), SpellCount);
     SummaryJson->SetNumberField(
         TEXT("excludedExternalObjectPackages"),
         ExcludedExternalObjectCount);
@@ -343,7 +379,7 @@ FPDSOperationResult FPDSProjectSnapshotService::ExportProjectSnapshot(
             FString(),
             Result.Summary
         });
-        CollectMontagesLoadedBySnapshot(NewlyLoadedMontageCount);
+        CollectAssetsLoadedBySnapshot(TotalNewlyLoadedAssetCount);
         return Result;
     }
 
@@ -369,10 +405,11 @@ FPDSOperationResult FPDSProjectSnapshotService::ExportProjectSnapshot(
     Result.bSuccess = bSavedTimestamped && bSavedLatest;
     Result.OutputPath = TimestampedPath;
     Result.Summary = FString::Printf(
-        TEXT("Snapshot: %d assets, %d tags, %d montages; %d paquetes externos excluidos. Guardado: %s"),
+        TEXT("Snapshot: %d assets, %d tags, %d montages, %d spells; %d paquetes externos excluidos. Guardado: %s"),
         Assets.Num(),
         SortedTags.Num(),
         MontageCount,
+        SpellCount,
         ExcludedExternalObjectCount,
         Result.bSuccess ? TEXT("Sí") : TEXT("No"));
 
@@ -386,6 +423,6 @@ FPDSOperationResult FPDSProjectSnapshotService::ExportProjectSnapshot(
         });
     }
 
-    CollectMontagesLoadedBySnapshot(NewlyLoadedMontageCount);
+    CollectAssetsLoadedBySnapshot(TotalNewlyLoadedAssetCount);
     return Result;
 }

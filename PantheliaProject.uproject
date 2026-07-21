@@ -27,9 +27,9 @@
 			"Name": "AndroidDeviceProfileSelector",
 			"Enabled": false
 		},
-		{ 	
-			"Name": "StateTree", 
-			"Enabled": true 
+		{
+			"Name": "StateTree",
+			"Enabled": true
 		},
 		{
 			"Name": "AndroidMedia",
@@ -125,6 +125,14 @@
 		},
 		{
 			"Name": "NiagaraToolsets",
+			"Enabled": true
+		},
+		{
+			"Name": "HairStrands",
+			"Enabled": true
+		},
+		{
+			"Name": "FunctionalTestingEditor",
 			"Enabled": true
 		}
 	]

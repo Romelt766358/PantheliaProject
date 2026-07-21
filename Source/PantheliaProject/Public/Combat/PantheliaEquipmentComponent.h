@@ -4,6 +4,7 @@
 
 #include "CoreMinimal.h"
 #include "Components/ActorComponent.h"
+#include "Characters/Components/PantheliaDeathPresentationTypes.h"
 #include "PantheliaEquipmentComponent.generated.h"
 
 class ACharacter;
@@ -11,6 +12,7 @@ class APantheliaWeapon;
 class UPantheliaWeaponDefinition;
 class UMeshComponent;
 class USkeletalMeshComponent;
+class UPrimitiveComponent;
 
 // Delegate para avisar cuándo cambia el arma equipada (UI, animaciones, etc.).
 // Pasa el arma nueva (puede ser null si se desequipó).
@@ -69,6 +71,14 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "Equipment")
 	UPantheliaWeaponDefinition* GetEquippedWeaponDefinition() const;
 
+	// Cierra primero el Weapon Trace, desprende una sola vez el Actor logico del arma
+	// y devuelve referencias debiles para presentacion. Equipment conserva ownership.
+	FPantheliaEquippedWeaponDeathHandoff PrepareEquippedWeaponForDeath();
+
+	// Enumera partes visuales sin asumir un unico StaticMeshComponent. El mesh activo
+	// actual se devuelve primero; armas duales futuras pueden aportar varios meshes.
+	void GetEquippedWeaponVisualParts(TArray<UPrimitiveComponent*>& OutVisualParts) const;
+
 	// Se dispara cada vez que cambia el arma equipada (equip o unequip).
 	UPROPERTY(BlueprintAssignable, Category = "Equipment")
 	FOnWeaponEquipped OnWeaponEquipped;
@@ -94,6 +104,9 @@ private:
 	// El arma equipada actualmente (un solo slot en esta fase). Null si no hay.
 	UPROPERTY()
 	TObjectPtr<APantheliaWeapon> EquippedWeapon;
+
+	bool bPreparedForDeath = false;
+	FPantheliaEquippedWeaponDeathHandoff CachedDeathHandoff;
 
 	bool ResolveOwnerAndHandSocket(ACharacter*& OutOwnerCharacter, USkeletalMeshComponent*& OutOwnerMesh) const;
 	bool ValidateCandidateWeapon(APantheliaWeapon* CandidateWeapon,

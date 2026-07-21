@@ -73,9 +73,12 @@ UPantheliaAttributeSet::UPantheliaAttributeSet()
 	// Primarios
 	InitHardness(10.f); InitResonance(10.f); InitResilience(10.f); InitEndurance(10.f); InitSpirit(10.f);
 
-	// Secundarios
-	InitMaxHealth(100.f); InitArmor(0.f); InitMaxMana(50.f); InitMagicResistance(0.f);
-	InitMaxStamina(100.f); InitMaxPoise(50.f); InitTenacity(0.f);
+	// Secundarios. MaxHealth/MaxMana/MaxStamina/MaxPoise son derivados:
+	// GE_SecondaryAttributes calcula su valor completo y su base C++ debe ser 0.f
+	// para permitir Add desde equipo/árbol/buffs sin duplicación. GE_VitalAttributes
+	// llena los vitales después.
+	InitMaxHealth(0.f); InitArmor(0.f); InitMaxMana(0.f); InitMagicResistance(0.f);
+	InitMaxStamina(0.f); InitMaxPoise(0.f); InitTenacity(0.f);
 	InitPhysicalDamage(0.f); InitMagicDamage(0.f);
 	InitArmorPenetration(0.f); InitMagicPenetration(0.f);
 	InitCritChance(0.f); InitCritDamage(0.f);
