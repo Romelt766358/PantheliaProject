@@ -9,17 +9,17 @@
 
 namespace
 {
-    void AddError(FDataValidationContext& Context, const FString& Message)
+    void AddSpellValidationError(FDataValidationContext& Context, const FString& Message)
     {
         Context.AddError(FText::FromString(Message));
     }
 
-    void AddWarning(FDataValidationContext& Context, const FString& Message)
+    void AddSpellValidationWarning(FDataValidationContext& Context, const FString& Message)
     {
         Context.AddWarning(FText::FromString(Message));
     }
 
-    bool ValidateScalableFloat(
+    bool ValidateSpellScalableFloat(
         FDataValidationContext& Context,
         const FString& FieldName,
         const FScalableFloat& Value,
@@ -30,7 +30,7 @@ namespace
 
         if (!Value.IsValid())
         {
-            AddError(
+            AddSpellValidationError(
                 Context,
                 FString::Printf(
                     TEXT("%s contiene una referencia de curva inválida."),
@@ -43,7 +43,7 @@ namespace
         const float LevelOneValue = Value.GetValueAtLevel(1.f);
         if (!FMath::IsFinite(LevelOneValue))
         {
-            AddError(
+            AddSpellValidationError(
                 Context,
                 FString::Printf(
                     TEXT("%s produce un valor no finito en nivel 1."),
@@ -53,7 +53,7 @@ namespace
 
         if (LevelOneValue < Minimum)
         {
-            AddError(
+            AddSpellValidationError(
                 Context,
                 FString::Printf(
                     TEXT("%s debe ser >= %.3f; valor nivel 1: %.3f."),
@@ -65,7 +65,7 @@ namespace
 
         if (Maximum.IsSet() && LevelOneValue > Maximum.GetValue())
         {
-            AddError(
+            AddSpellValidationError(
                 Context,
                 FString::Printf(
                     TEXT("%s debe ser <= %.3f; valor nivel 1: %.3f."),
@@ -78,7 +78,7 @@ namespace
         return bValid;
     }
 
-    EDataValidationResult ResultFromErrorDelta(
+    EDataValidationResult GetSpellValidationResultFromErrorDelta(
         const FDataValidationContext& Context,
         const uint32 ErrorsBefore)
     {
@@ -99,19 +99,19 @@ EDataValidationResult PantheliaSpellValidation::ValidateProjectileSpell(
         if (Spell.GetResourceCostTypeForEditor()
             == EPantheliaResourceCostType::None)
         {
-            AddError(
+            AddSpellValidationError(
                 Context,
                 TEXT("Cost|Panthelia está activo, pero ResourceCostType es None."));
         }
 
         if (!IsValid(Spell.GetCostGameplayEffect()))
         {
-            AddError(
+            AddSpellValidationError(
                 Context,
                 TEXT("Cost|Panthelia está activo, pero falta Cost Gameplay Effect."));
         }
 
-        ValidateScalableFloat(
+        ValidateSpellScalableFloat(
             Context,
             TEXT("BaseResourceCost"),
             Spell.GetBaseResourceCostForEditor(),
@@ -129,7 +129,7 @@ EDataValidationResult PantheliaSpellValidation::ValidateProjectileSpell(
 
             if (Cost.ResourceType == EPantheliaResourceCostType::None)
             {
-                AddError(
+                AddSpellValidationError(
                     Context,
                     FString::Printf(
                         TEXT("AdditionalResourceCosts[%d] usa None."),
@@ -138,7 +138,7 @@ EDataValidationResult PantheliaSpellValidation::ValidateProjectileSpell(
 
             if (SeenResources.Contains(Cost.ResourceType))
             {
-                AddError(
+                AddSpellValidationError(
                     Context,
                     FString::Printf(
                         TEXT("AdditionalResourceCosts[%d] duplica un recurso ya configurado."),
@@ -148,14 +148,14 @@ EDataValidationResult PantheliaSpellValidation::ValidateProjectileSpell(
 
             if (!Cost.CostGameplayEffectClass)
             {
-                AddError(
+                AddSpellValidationError(
                     Context,
                     FString::Printf(
                         TEXT("AdditionalResourceCosts[%d] no tiene GameplayEffect."),
                         Index));
             }
 
-            ValidateScalableFloat(
+            ValidateSpellScalableFloat(
                 Context,
                 FString::Printf(
                     TEXT("AdditionalResourceCosts[%d].BaseCost"),
@@ -167,23 +167,23 @@ EDataValidationResult PantheliaSpellValidation::ValidateProjectileSpell(
 
     if (!Spell.GetDamageEffectClassForEditor())
     {
-        AddError(Context, TEXT("DamageEffectClass no está asignado."));
+        AddSpellValidationError(Context, TEXT("DamageEffectClass no está asignado."));
     }
 
     if (Spell.DamageTypes.IsEmpty())
     {
-        AddError(Context, TEXT("DamageTypes no contiene entradas."));
+        AddSpellValidationError(Context, TEXT("DamageTypes no contiene entradas."));
     }
 
     for (const TPair<FGameplayTag, FScalableFloat>& Pair : Spell.DamageTypes)
     {
         if (!Pair.Key.IsValid())
         {
-            AddError(Context, TEXT("DamageTypes contiene un tag inválido."));
+            AddSpellValidationError(Context, TEXT("DamageTypes contiene un tag inválido."));
             continue;
         }
 
-        ValidateScalableFloat(
+        ValidateSpellScalableFloat(
             Context,
             TEXT("DamageTypes.") + Pair.Key.ToString(),
             Pair.Value,
@@ -192,7 +192,7 @@ EDataValidationResult PantheliaSpellValidation::ValidateProjectileSpell(
 
     if (Spell.AttributeScalings.Num() > 2)
     {
-        AddError(
+        AddSpellValidationError(
             Context,
             FString::Printf(
                 TEXT("AttributeScalings tiene %d entradas; el máximo de diseño es 2."),
@@ -207,7 +207,7 @@ EDataValidationResult PantheliaSpellValidation::ValidateProjectileSpell(
 
         if (!Scaling.AttributeTag.IsValid())
         {
-            AddError(
+            AddSpellValidationError(
                 Context,
                 FString::Printf(
                     TEXT("AttributeScalings[%d].AttributeTag es inválido."),
@@ -215,7 +215,7 @@ EDataValidationResult PantheliaSpellValidation::ValidateProjectileSpell(
         }
         else if (ScalingTags.Contains(Scaling.AttributeTag))
         {
-            AddError(
+            AddSpellValidationError(
                 Context,
                 FString::Printf(
                     TEXT("AttributeScalings repite el tag %s."),
@@ -225,7 +225,7 @@ EDataValidationResult PantheliaSpellValidation::ValidateProjectileSpell(
 
         if (!FMath::IsFinite(Scaling.Ratio) || Scaling.Ratio < 0.f)
         {
-            AddError(
+            AddSpellValidationError(
                 Context,
                 FString::Printf(
                     TEXT("AttributeScalings[%d].Ratio debe ser finito y >= 0."),
@@ -237,20 +237,20 @@ EDataValidationResult PantheliaSpellValidation::ValidateProjectileSpell(
     {
         if (!Pair.Key.IsValid())
         {
-            AddError(Context, TEXT("BuildupAmounts contiene un tag inválido."));
+            AddSpellValidationError(Context, TEXT("BuildupAmounts contiene un tag inválido."));
             continue;
         }
 
         if (!Spell.DamageTypes.Contains(Pair.Key))
         {
-            AddError(
+            AddSpellValidationError(
                 Context,
                 FString::Printf(
                     TEXT("BuildupAmounts.%s no tiene DamageTypes correspondiente."),
                     *Pair.Key.ToString()));
         }
 
-        ValidateScalableFloat(
+        ValidateSpellScalableFloat(
             Context,
             TEXT("BuildupAmounts.") + Pair.Key.ToString(),
             Pair.Value,
@@ -259,7 +259,7 @@ EDataValidationResult PantheliaSpellValidation::ValidateProjectileSpell(
         const float LevelOneValue = Pair.Value.GetValueAtLevel(1.f);
         if (FMath::IsFinite(LevelOneValue) && LevelOneValue > 100.f)
         {
-            AddWarning(
+            AddSpellValidationWarning(
                 Context,
                 FString::Printf(
                     TEXT("BuildupAmounts.%s supera 100 en nivel 1 (%.3f). Es válido, pero llena más de una barra base por impacto."),
@@ -268,45 +268,45 @@ EDataValidationResult PantheliaSpellValidation::ValidateProjectileSpell(
         }
     }
 
-    ValidateScalableFloat(
+    ValidateSpellScalableFloat(
         Context,
         TEXT("PoiseDamage"),
         Spell.PoiseDamage,
         0.f);
-    ValidateScalableFloat(
+    ValidateSpellScalableFloat(
         Context,
         TEXT("GrievousWoundsPercent"),
         Spell.GrievousWoundsPercent,
         0.f,
         100.f);
-    ValidateScalableFloat(
+    ValidateSpellScalableFloat(
         Context,
         TEXT("GrievousWoundsDuration"),
         Spell.GrievousWoundsDuration,
         0.f);
-    ValidateScalableFloat(
+    ValidateSpellScalableFloat(
         Context,
         TEXT("KnockbackChance"),
         Spell.KnockbackChance,
         0.f,
         100.f);
-    ValidateScalableFloat(
+    ValidateSpellScalableFloat(
         Context,
         TEXT("KnockbackForceMagnitude"),
         Spell.KnockbackForceMagnitude,
         0.f);
-    ValidateScalableFloat(
+    ValidateSpellScalableFloat(
         Context,
         TEXT("LaunchChance"),
         Spell.LaunchChance,
         0.f,
         100.f);
-    ValidateScalableFloat(
+    ValidateSpellScalableFloat(
         Context,
         TEXT("LaunchForceMagnitude"),
         Spell.LaunchForceMagnitude,
         0.f);
-    ValidateScalableFloat(
+    ValidateSpellScalableFloat(
         Context,
         TEXT("LaunchPitchOverride"),
         Spell.LaunchPitchOverride,
@@ -315,24 +315,24 @@ EDataValidationResult PantheliaSpellValidation::ValidateProjectileSpell(
 
     if (!Spell.GetProjectileClassForEditor())
     {
-        AddError(Context, TEXT("ProjectileClass no está asignado."));
+        AddSpellValidationError(Context, TEXT("ProjectileClass no está asignado."));
     }
     if (!IsValid(Spell.GetCastMontageForEditor()))
     {
-        AddError(Context, TEXT("CastMontage no está asignado."));
+        AddSpellValidationError(Context, TEXT("CastMontage no está asignado."));
     }
     if (!Spell.GetSocketTagForEditor().IsValid())
     {
-        AddError(Context, TEXT("SocketTag no es válido."));
+        AddSpellValidationError(Context, TEXT("SocketTag no es válido."));
     }
     if (!Spell.GetProjectileSpawnEventTagForEditor().IsValid())
     {
-        AddError(Context, TEXT("ProjectileSpawnEventTag no es válido."));
+        AddSpellValidationError(Context, TEXT("ProjectileSpawnEventTag no es válido."));
     }
 
     // El contrato cross-asset montage/tag lo verifica el validator del módulo adaptador,
     // porque el runtime module no debe depender del tipo Blueprint de Anim Notify.
-    return ResultFromErrorDelta(Context, ErrorsBefore);
+    return GetSpellValidationResultFromErrorDelta(Context, ErrorsBefore);
 }
 
 EDataValidationResult PantheliaSpellValidation::ValidateMultiProjectileSpell(
@@ -344,10 +344,10 @@ EDataValidationResult PantheliaSpellValidation::ValidateMultiProjectileSpell(
     if (Spell.GetMaxProjectileCountForEditor() < 1
         || Spell.GetMaxProjectileCountForEditor() > 64)
     {
-        AddError(Context, TEXT("MaxProjectileCount debe estar entre 1 y 64."));
+        AddSpellValidationError(Context, TEXT("MaxProjectileCount debe estar entre 1 y 64."));
     }
 
-    ValidateScalableFloat(
+    ValidateSpellScalableFloat(
         Context,
         TEXT("ProjectileCountByAbilityLevel"),
         Spell.GetProjectileCountForEditor(),
@@ -355,44 +355,44 @@ EDataValidationResult PantheliaSpellValidation::ValidateMultiProjectileSpell(
         static_cast<float>(
             FMath::Max(1, Spell.GetMaxProjectileCountForEditor())));
 
-    ValidateScalableFloat(
+    ValidateSpellScalableFloat(
         Context,
         TEXT("ProjectileSpreadDegrees"),
         Spell.GetProjectileSpreadForEditor(),
         0.f,
         360.f);
-    ValidateScalableFloat(
+    ValidateSpellScalableFloat(
         Context,
         TEXT("ProjectileSpawnInterval"),
         Spell.GetProjectileSpawnIntervalForEditor(),
         0.f);
-    ValidateScalableFloat(
+    ValidateSpellScalableFloat(
         Context,
         TEXT("LaunchPitchDegrees"),
         Spell.GetLaunchPitchForEditor(),
         -89.f,
         89.f);
-    ValidateScalableFloat(
+    ValidateSpellScalableFloat(
         Context,
         TEXT("ProjectileSpeedOverride"),
         Spell.GetProjectileSpeedOverrideForEditor(),
         0.f);
-    ValidateScalableFloat(
+    ValidateSpellScalableFloat(
         Context,
         TEXT("HomingStartDelay"),
         Spell.GetHomingStartDelayForEditor(),
         0.f);
-    ValidateScalableFloat(
+    ValidateSpellScalableFloat(
         Context,
         TEXT("HomingDuration"),
         Spell.GetHomingDurationForEditor(),
         0.f);
-    ValidateScalableFloat(
+    ValidateSpellScalableFloat(
         Context,
         TEXT("HomingAccelerationMagnitude"),
         Spell.GetHomingAccelerationForEditor(),
         0.f);
-    ValidateScalableFloat(
+    ValidateSpellScalableFloat(
         Context,
         TEXT("MaxHomingCorrectionAngleDegrees"),
         Spell.GetMaxHomingCorrectionAngleForEditor(),
@@ -404,20 +404,20 @@ EDataValidationResult PantheliaSpellValidation::ValidateMultiProjectileSpell(
         if (Spell.GetHomingDurationForEditor().GetValueAtLevel(1.f)
             <= 0.f)
         {
-            AddError(
+            AddSpellValidationError(
                 Context,
                 TEXT("Soft homing está activo, pero HomingDuration es 0."));
         }
         if (Spell.GetHomingAccelerationForEditor().GetValueAtLevel(1.f)
             <= 0.f)
         {
-            AddError(
+            AddSpellValidationError(
                 Context,
                 TEXT("Soft homing está activo, pero HomingAccelerationMagnitude es 0."));
         }
     }
 
-    return ResultFromErrorDelta(Context, ErrorsBefore);
+    return GetSpellValidationResultFromErrorDelta(Context, ErrorsBefore);
 }
 
 #endif
