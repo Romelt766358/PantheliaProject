@@ -283,7 +283,7 @@ void UPantheliaMultiProjectileSpell::NotifyCastMontageFinished()
 		// Un notify ausente no debe dejar la ability activa para siempre. Se registra
 		// el problema y se permite terminar limpiamente sin inventar un disparo tardío.
 		UE_LOG(LogTemp, Warning,
-			TEXT("PantheliaMultiProjectileSpell::NotifyCastMontageFinished — el montage terminó sin iniciar SpawnProjectiles en %s. Revisa AN_MontageEvent y SocketTag."),
+			TEXT("PantheliaMultiProjectileSpell::NotifyCastMontageFinished — el montage terminó sin iniciar SpawnProjectiles en %s. Revisa AN_MontageEvent y ProjectileSpawnEventTag."),
 			*GetName());
 		bProjectileSequenceFinished = true;
 	}

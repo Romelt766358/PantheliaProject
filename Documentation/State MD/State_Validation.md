@@ -65,3 +65,28 @@ UnrealBuildTool ExitCode=0 · UnrealEditor-Cmd ExitCode=0 · AutomationTool Exit
 **Smoke cocinado final (PASS):** mapa, MetaHuman, Body/Face/grooms, movimiento/cámara, ataque/daño, dodge, guardia/parry, muerte multipart.
 
 > **Desviación documentada:** no hubo PIE separado durante 4H/4I. Justificación del cierre: cero assets productivos modificados, solo dos eliminaciones legacy, package completo y smoke cocinado exitoso. Las fases funcionales previas sí se validaron en PIE.
+
+---
+
+## 6. Project Doctor (PDS) — validación desde el editor
+
+El plugin **Panthelia Developer Suite** (ver `State_DeveloperTools.md`) añade una capa de validación ejecutable desde el editor o por MCP, que **complementa** los `IsDataValid` de la sección 1: ejecuta Unreal Data Validation + los `IsDataValid` del proyecto + validadores propios de PDS, clasifica los issues por origen y genera reportes completos JSON y Markdown.
+
+**Perfiles:** `PantheliaCore` · `GameContent` · `ExternalContent` · `EntireProject`.
+
+**Garantías read-only:** PDS no corrige ni guarda `.uasset`; verifica que la operación no ensucie packages (`bReadOnlyVerificationPassed`, *newly dirtied packages = 0*) y escribe solo bajo `Saved/PantheliaDeveloperSuite`.
+
+> **Interpretación (importante):** `bValidationCompleted = true` + `bInfrastructureFailure = false` + `bSuccess = false` **no es un fallo de la herramienta** — significa que la infraestructura funcionó y se detectaron errores reales de contenido.
+
+### 6.1 Estado final de Alpha 2 (perfil `EntireProject`)
+
+```
+numRequested 3798 · numChecked 3798 · numValid 3794 · numInvalid 4 · numWithWarnings 8
+numNotValidated 0 · numSkipped 0 · executionState Completed · bCancelled false
+bValidationCompleted true · bInfrastructureFailure false · bSuccess false
+bReadOnlyVerificationPassed true · newly dirtied packages 0 · issues truncated false
+```
+
+**Los 4 errores son de contenido externo, no de Panthelia ni de PDS:** los Control Rigs `ARPG_Warrior`, `ARPG_Samurai`, `ARPG_Dual_Wield` y `ARPG_Halberd` referencian `/Game/Characters/Mannequins/Meshes/SKM_Quinn` (regla `AssetValidator_AssetReferenceRestrictions`, origen *External Content*). **No fueron corregidos en Alpha 2 y siguen abiertos.**
+
+**Warnings no bloqueantes, también abiertos** (no declararlos resueltos): `DA_AbilityInfo` con Firebolt sin `BackgroundMaterial`; tres Data Assets de armas con `WeaponName` vacío; PoseAssets out-of-date; warning `USDClasses` en `OA_KhaosMDF492`.

@@ -2,6 +2,8 @@
 
 > **Propósito:** Estado actual del backbone GAS del proyecto. Cubre AttributeSet, ASC custom, MMCs, Gameplay Tags Singleton, AssetManager y EffectActors. Lee `State_Overview.md` primero para contexto general.
 
+> **Herramienta disponible:** el plugin **PDS** puede exportar snapshots y comparar Gameplay Tags, assets y records semánticos de hechizos entre sesiones, además de ejecutar la validación por perfiles. Útil para evidenciar qué cambió en GAS tras una fase sin inspección manual. Ver `State_DeveloperTools.md`.
+
 ---
 
 ## 1. Sistema de Atributos — ✅ Funcional

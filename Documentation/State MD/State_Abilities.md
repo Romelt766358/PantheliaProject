@@ -97,7 +97,10 @@ Hereda de `UPantheliaDamageGameplayAbility`. Base para hechizos que disparan pro
 **Variables propias:**
 - `ProjectileClass` (TSubclassOf<APantheliaProjectile>) — la clase de proyectil a spawnear
 - `CastMontage` (TObjectPtr<UAnimMontage>, EditDefaultsOnly) — montage de lanzamiento del hechizo, **separado** del array `AttackMontages`. **CRÍTICO:** no añadir `CastMontage` a `AttackMontages`, porque `GA_MeleeAttack` elige de ese array al azar y reproduciría animaciones de casting en ataques melee.
-- `SocketTag` (FGameplayTag, EditDefaultsOnly) — desde qué socket spawna el proyectil (`Weapon` / `RightHand` / `LeftHand`), con fallback a `Weapon` si es inválido (compatibilidad con el ability del jugador). El graph del ability también lee `SocketTag` para el `EventTag` del `WaitGameplayEvent`, de modo que los Blueprints hijos configuran un único valor.
+- `SocketTag` (FGameplayTag, EditDefaultsOnly) — **solo** el socket físico desde el que aparece el proyectil (`Weapon` / `RightHand` / `LeftHand` / `RightFoot` / `LeftFoot` / `Mouth`), con fallback a `Weapon` si es inválido. Se entrega a `GetCombatSocketLocation(SocketTag)` dentro de `SpawnProjectile`.
+- `ProjectileSpawnEventTag` (FGameplayTag, EditDefaultsOnly) — el **Gameplay Event** que espera `WaitGameplayEvent`. Debe coincidir con el `eventTag` del `AN_MontageEvent` dentro de `CastMontage`.
+
+> **Contrato de proyectiles (obligatorio al crear o modificar hechizos).** `UPantheliaProjectileSpell` **separa el socket físico del evento de animación**: `SocketTag` es *espacio*, `ProjectileSpawnEventTag` es *sincronización temporal*. Son **fields independientes por contrato** — pueden coincidir en un Blueprint concreto, pero eso debe ser una coincidencia explícita de datos, **nunca** una dependencia implícita. **No volver a usar `SocketTag` para validar o alimentar el evento del montage.** Campos semánticos que expone PDS: `projectile.socketTag`, `projectile.spawnEventTag`, `projectile.castMontage`, `projectile.montageEventPresent` (este último se calcula con `CastMontage` + `ProjectileSpawnEventTag`, nunca con `SocketTag`). Ver `State_DeveloperTools.md`.
 - (el `DamageEffectClass` ahora vive en la clase padre)
 
 **`SpawnProjectile()` (BlueprintCallable):**
@@ -377,8 +380,12 @@ Los enemigos pueden atacar cuerpo a cuerpo, a distancia, o ambos (híbrido). En 
 
 **`GA_RangedAttack`** (Blueprint, hereda de `UPantheliaProjectileSpell`, en `AbilitySystem/Enemy/Abilities/`):
 - AbilityTag: `Abilities.Attack.Ranged`
-- Graph: `ActivateAbility` → Cast `CombatInterface` → `GetCombatTarget` → `GetActorLocation` → `UpdateFacingTarget` → `PlayMontageAndWait(CastMontage)` → `WaitGameplayEvent(EventTag = SocketTag, OnlyMatchExact = true, OnlyTriggerOnce = true)` → `EventReceived` → `SpawnProjectile`. `OnCompleted/Interrupted/Cancelled` → `EndAbility`.
-- Usa **Blueprints hijos por enemigo** para variar `CastMontage` y `SocketTag` (p. ej. el hijo del TestBoss usa `LeftHand`).
+- Graph: `ActivateAbility` → Cast `CombatInterface` → `GetCombatTarget` → `GetActorLocation` → `UpdateFacingTarget` → `PlayMontageAndWait(CastMontage)` → `WaitGameplayEvent(EventTag = **ProjectileSpawnEventTag**, OnlyMatchExact = true, OnlyTriggerOnce = true)` → `EventReceived` → `SpawnProjectile`. `OnCompleted/Interrupted/Cancelled` → `EndAbility`. *(El `EventTag` **ya no** se toma de `SocketTag` — ver el contrato de proyectiles arriba.)*
+- Usa **Blueprints hijos por enemigo** para variar `CastMontage`, `SocketTag` y `ProjectileSpawnEventTag`.
+
+> **Plantillas abstractas vs. hechizos concretos** (relevante para PDS y para no configurar una plantilla por error). Una ability se considera plantilla por `CLASS_Abstract` en su clase generada — **no** por nombre, sufijo `_Base`, ruta ni lista hardcodeada. Las abstractas se excluyen del catálogo semántico y devuelven `NotValidated` en vez de exigir campos productivos.
+> - **Plantillas abstractas:** `GA_RangedAttack`, `GA_MultiProjectile_Base` (no aparecen en `semanticDomains.spells`).
+> - **Concretos:** `GA_RangedAttack_Shaman` y `GA_RangedAttack_TestBoss` (`SocketTag = Montage.Attack.LeftHand`, `ProjectileSpawnEventTag = Montage.Attack.LeftHand`); `GA_Firebolt` (`SocketTag = Montage.Attack.LeftHand`, `ProjectileSpawnEventTag = Event.Montage.SpawnProjectile`) — el caso de Firebolt muestra por qué los dos tags **no** pueden ser el mismo campo.
 - Daño configurado: `Damage.Magical.Fire`, curva `Abilities.Enemy.Ranged` en `CT_Damage` (nivel 1 = 7.5, nivel 40 = 35).
 
 **Socket de lanzamiento:** lo resuelve `GetCombatSocketLocation(MontageTag)`, ahora **centralizado en C++** (ver sección 5). El `GA_RangedAttack` pasa su `SocketTag` y la función devuelve el socket correspondiente del mesh. Ya **no** se implementa por Blueprint en cada enemigo; si un boss antiguo (p. ej. `BP_Boss`) tenía una implementación Blueprint de esta función, hay que borrarla para que use la de C++. Históricamente, un enemigo sin la función implementada devolvía 0,0,0 y el proyectil spawneaba en el origen del mundo — el fallback en C++ ahora evita ese síntoma.

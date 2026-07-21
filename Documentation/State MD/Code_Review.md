@@ -361,3 +361,17 @@ Logs/audits: ...\Phase4I_Final_Retry\run_phase4i_retry.log · CodexTemp\phase4h_
 | `RTG_Manny_To_Diosa` | No entra al cook productivo | Mantener según rollback |
 | `SKM_Manny` (Heroes ausente) | Metadata/soft residual | No reparar a ciegas |
 | `SKM_Quinn` (ausente) | Metadata/soft residual | No reparar a ciegas |
+
+---
+
+## 19. Lecciones del Panthelia Developer Suite (PDS v0.5-alpha2)
+
+Reutilizables más allá del plugin (detalle en `State_DeveloperTools.md`):
+
+- **Separar conceptos aunque hoy coincidan en valor.** `SocketTag` (espacio físico) y `ProjectileSpawnEventTag` (sincronización temporal) eran el mismo campo; que dos sistemas usen temporalmente el mismo Gameplay Tag no justifica reutilizar la variable. Coincidir debe ser una coincidencia **explícita de datos**, no una dependencia implícita.
+- **Declarar "plantilla" por semántica de clase, no por convención.** Se detectan con `GeneratedClass->HasAnyClassFlags(CLASS_Abstract)`, **no** por nombre, sufijo `_Base`, ruta ni lista hardcodeada. Las abstractas se excluyen del catálogo y devuelven `NotValidated` antes de exigir campos productivos (defensivo en validator y contributor).
+- **Validación semántica cross-asset > comprobar no-nulos.** Que las referencias de una ability no sean nulas no significa que esté bien configurada: hay que verificar **relaciones** (que `CastMontage` contenga realmente el `ProjectileSpawnEventTag` esperado).
+- **Seguridad frente a Unity Build:** no depender de includes que llegan por otra unidad de traducción; incluir explícitamente lo que se usa (mismo patrón que los fixes de compilación de `OverlayWidgetController`/`PantheliaHUD`).
+- **Tests aislados y parsing estructural de JSON:** validar los contratos parseando la estructura, no comparando texto; los tests del adaptador viven en su módulo, separados del core genérico.
+- **Separar el core reutilizable del adaptador del juego:** el módulo base de PDS no conoce GAS ni las clases de Panthelia; el conocimiento específico vive en `PantheliaDeveloperSuitePanthelia`. Mismo principio que se aplica al resto del proyecto (datos vs. código, sección 2.9 de `State_Overview.md`).
+- **Un schema MCP cacheado produce diagnósticos falsos:** tras tocar tipos reflejados hay que cerrar Unreal, recompilar, `ModelContextProtocol.RefreshTools` y abrir sesión MCP nueva antes de creerse un error.
