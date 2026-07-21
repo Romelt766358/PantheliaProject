@@ -28,7 +28,7 @@ struct FPantheliaProjectileHomingSettings;
  * Flujo de uso en el Event Graph del Blueprint hijo de proyectil único:
  *   1. ActivateAbility → CommitAbility (una sola vez)
  *   2. Si CommitAbility devuelve true: UpdateFacingTarget → PlayMontageAndWait
- *   3. WaitGameplayEvent (SocketTag) → SpawnProjectile()
+ *   3. WaitGameplayEvent (ProjectileSpawnEventTag) → SpawnProjectile()
  *   4. OnCompleted / OnInterrupted / OnCancelled → EndAbility
  *
  * COSTES DEL JUGADOR:
@@ -68,6 +68,11 @@ public:
 		return SocketTag;
 	}
 
+	FGameplayTag GetProjectileSpawnEventTagForEditor() const
+	{
+		return ProjectileSpawnEventTag;
+	}
+
 	TSubclassOf<APantheliaProjectile>
 	GetProjectileClassForEditor() const
 	{
@@ -84,7 +89,7 @@ public:
 protected:
 	// Montage de lanzamiento de hechizo para este ability.
 	// Se reproduce al activar la ability. El notify AN_MontageEvent en el montage
-	// (con tag igual a SocketTag) dispara SpawnProjectile() en el momento correcto.
+	// (con tag igual a ProjectileSpawnEventTag) dispara SpawnProjectile() en el momento correcto.
 	//
 	// Asignar en el Blueprint del ability (GA_RangedAttack, GA_Firebolt, etc.).
 	// NO añadir este montage al array AttackMontages del enemigo — ese array es
@@ -99,10 +104,14 @@ protected:
 	//   Montage.Attack.LeftHand  → mano izquierda del mesh
 	// Por defecto: tag inválido → fallback automático a Weapon en SpawnProjectile().
 	//
-	// Este tag debe coincidir con el tag del notify AN_MontageEvent en CastMontage
-	// para que WaitGameplayEvent lo reciba correctamente.
+	// Este tag solo representa el socket físico usado por GetCombatSocketLocation.
 	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile")
 	FGameplayTag SocketTag;
+
+	// Gameplay Event que espera WaitGameplayEvent para disparar SpawnProjectile().
+	// Debe coincidir con el tag del notify AN_MontageEvent en CastMontage.
+	UPROPERTY(EditDefaultsOnly, BlueprintReadOnly, Category = "Projectile")
+	FGameplayTag ProjectileSpawnEventTag;
 
 	// Clase del proyectil a spawnear. Asignar en el Blueprint del ability.
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Projectile")

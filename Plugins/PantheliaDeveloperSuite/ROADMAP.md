@@ -4,14 +4,21 @@
 
 Versión de referencia:
 
-- PDS v0.5 Alpha 1.
-- Implementación completada y validada en UE 5.8.
-- Release preparado para publicación mediante un commit aislado.
-- La publicación efectiva debe comprobarse en el historial Git.
-- Suite PDS: 22/22.
-- Schema MCP v0.5 validado tras build con Unreal cerrado, `RefreshTools` y una sesión MCP nueva.
-- Smoke funcional: 7/7 tools.
+- PDS v0.5 Alpha 2 implementada y validada en UE 5.8.
+- Automation API: `0.5.0-alpha2`.
+- Dominio semántico: `spells@1.0.0`.
+- Suite de Automation Tests: 42/42.
+- Superficie MCP funcional: 7/7 tools.
+- Catálogo final: 3 hechizos concretos.
+- Plantillas abstractas excluidas mediante `CLASS_Abstract`.
+- Contrato de spawn separado entre `SocketTag` y `ProjectileSpawnEventTag`.
+- Snapshot y baseline definitivos validados sin cambios entre latest y baseline.
+- Contrato: [PDS v0.5 Alpha 2 MCP and Spell Semantics](PDS_v0.5-alpha2_MCP_AND_SPELL_SEMANTICS_CONTRACT.md).
+- Informe: [PDS v0.5 Alpha 2 Validation Report](PDS_v0.5-alpha2_VALIDATION_REPORT.md).
 - PDS-58 comprobado manualmente como no interactivo: sin ventana de progreso, Message Log automático, diálogo ni prompt.
+
+Los cambios de assets no están cubiertos por el repositorio Git actual porque
+`Content/` permanece ignorado. La política no se modifica en esta fase.
 
 Histórico conservado: PDS v0.4 Alpha 3 tuvo como último commit publicado `21507b1901d857145c0e40e7cee134e9377498c7`.
 
@@ -151,7 +158,12 @@ Registro:
 
 ## Prioridad actual
 
-No quedan bloqueantes confirmados para PDS v0.5 Alpha 1.
+Alpha 2 queda técnicamente validada para código, contrato MCP y semántica de
+hechizos.
+
+Los cuatro errores de validación pertenecientes a contenido externo de
+`ARPG_Pack`, los warnings existentes y la política de `Content/` ignorado no se
+marcan como resueltos por esta fase.
 
 Tras su publicación, cualquier trabajo nuevo debe recibir un identificador nuevo.
 

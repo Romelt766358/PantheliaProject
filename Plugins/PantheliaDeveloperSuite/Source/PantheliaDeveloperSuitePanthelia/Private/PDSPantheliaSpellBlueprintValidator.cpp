@@ -64,10 +64,10 @@ UPDSPantheliaSpellBlueprintValidator::ValidateLoadedAsset_Implementation(
     const bool bMontageContractValid =
         PDSPantheliaMontageEventInspector::ContainsGameplayTagEvent(
             SpellCDO->GetCastMontageForEditor(),
-            SpellCDO->GetSocketTagForEditor());
+            SpellCDO->GetProjectileSpawnEventTagForEditor());
 
     if (IsValid(SpellCDO->GetCastMontageForEditor())
-        && SpellCDO->GetSocketTagForEditor().IsValid()
+        && SpellCDO->GetProjectileSpawnEventTagForEditor().IsValid()
         && !bMontageContractValid)
     {
         Context.AddError(FText::Format(
@@ -76,7 +76,7 @@ UPDSPantheliaSpellBlueprintValidator::ValidateLoadedAsset_Implementation(
                 "SpellMontageEventMissing",
                 "CastMontage no contiene un Notify o Notify State con el Gameplay Tag requerido: {0}."),
             FText::FromString(
-                SpellCDO->GetSocketTagForEditor().ToString())));
+                SpellCDO->GetProjectileSpawnEventTagForEditor().ToString())));
     }
 
     if (Result == EDataValidationResult::Invalid

@@ -8,7 +8,7 @@
 
 namespace
 {
-    FString GetOptionalString(
+    FString GetSnapshotDiffOptionalString(
         const TSharedPtr<FJsonObject>& Object,
         const TCHAR* FieldName)
     {
@@ -101,7 +101,7 @@ namespace
                     ? Value->AsObject()
                     : nullptr;
                 Fingerprint += TEXT("|section:")
-                    + GetOptionalString(Section, TEXT("name"))
+                    + GetSnapshotDiffOptionalString(Section, TEXT("name"))
                     + TEXT("@")
                     + StableFloat(
                         Section.IsValid()
@@ -122,7 +122,7 @@ namespace
                 Fingerprint += FString::Printf(
                     TEXT("|notify:%d:%s@%s+%s"),
                     GetOptionalInt(Notify, TEXT("trackIndex")),
-                    *GetOptionalString(Notify, TEXT("classOrName")),
+                    *GetSnapshotDiffOptionalString(Notify, TEXT("classOrName")),
                     *StableFloat(
                         Notify.IsValid()
                         && Notify->HasTypedField<EJson::Number>(TEXT("triggerTimeSeconds"))
@@ -176,7 +176,7 @@ namespace
         }
     }
 
-    int32 CountModifiedSemanticRecords(const FPDSSemanticDiff& SemanticDiff)
+    int32 CountSnapshotDiffModifiedSemanticRecords(const FPDSSemanticDiff& SemanticDiff)
     {
         TSet<FString> ModifiedRecordKeys;
         for (const FPDSSemanticFieldChange& Change : SemanticDiff.ChangedFields)
@@ -235,7 +235,7 @@ FString FPDSSnapshotDiff::ToDashboardText(const int32 MaxEntriesPerCategory) con
         SemanticDiff.CurrentRecordCount,
         SemanticDiff.AddedRecords.Num(),
         SemanticDiff.RemovedRecords.Num(),
-        CountModifiedSemanticRecords(SemanticDiff),
+        CountSnapshotDiffModifiedSemanticRecords(SemanticDiff),
         SemanticDiff.ChangedFields.Num(),
         SemanticDiff.NonComparableDomains.Num());
 
@@ -346,13 +346,13 @@ bool PDSSnapshotDiff::ParseSnapshotJson(
         return false;
     }
 
-    OutDocument.SchemaVersion = GetOptionalString(RootObject, TEXT("schemaVersion"));
-    OutDocument.GeneratedAtUtc = GetOptionalString(RootObject, TEXT("generatedAtUtc"));
+    OutDocument.SchemaVersion = GetSnapshotDiffOptionalString(RootObject, TEXT("schemaVersion"));
+    OutDocument.GeneratedAtUtc = GetSnapshotDiffOptionalString(RootObject, TEXT("generatedAtUtc"));
 
     const TSharedPtr<FJsonObject> ProjectObject =
         GetOptionalObject(RootObject, TEXT("project"));
-    OutDocument.ProjectName = GetOptionalString(ProjectObject, TEXT("name"));
-    OutDocument.EngineVersion = GetOptionalString(ProjectObject, TEXT("engineVersion"));
+    OutDocument.ProjectName = GetSnapshotDiffOptionalString(ProjectObject, TEXT("name"));
+    OutDocument.EngineVersion = GetSnapshotDiffOptionalString(ProjectObject, TEXT("engineVersion"));
 
     const TArray<TSharedPtr<FJsonValue>>* Inventory =
         GetOptionalArray(RootObject, TEXT("assetInventory"));
@@ -378,11 +378,11 @@ bool PDSSnapshotDiff::ParseSnapshotJson(
         }
 
         FPDSSnapshotAssetRecord Record;
-        Record.ObjectPath = GetOptionalString(AssetObject, TEXT("objectPath"));
-        Record.PackageName = GetOptionalString(AssetObject, TEXT("packageName"));
-        Record.PackagePath = GetOptionalString(AssetObject, TEXT("packagePath"));
-        Record.ClassPath = GetOptionalString(AssetObject, TEXT("classPath"));
-        Record.Origin = ParseOrigin(GetOptionalString(AssetObject, TEXT("origin")));
+        Record.ObjectPath = GetSnapshotDiffOptionalString(AssetObject, TEXT("objectPath"));
+        Record.PackageName = GetSnapshotDiffOptionalString(AssetObject, TEXT("packageName"));
+        Record.PackagePath = GetSnapshotDiffOptionalString(AssetObject, TEXT("packagePath"));
+        Record.ClassPath = GetSnapshotDiffOptionalString(AssetObject, TEXT("classPath"));
+        Record.Origin = ParseOrigin(GetSnapshotDiffOptionalString(AssetObject, TEXT("origin")));
 
         if (Record.ObjectPath.IsEmpty())
         {
@@ -415,7 +415,7 @@ bool PDSSnapshotDiff::ParseSnapshotJson(
             const TSharedPtr<FJsonObject> MontageObject = Value.IsValid()
                 ? Value->AsObject()
                 : nullptr;
-            const FString Path = GetOptionalString(MontageObject, TEXT("path"));
+            const FString Path = GetSnapshotDiffOptionalString(MontageObject, TEXT("path"));
             if (!Path.IsEmpty())
             {
                 OutDocument.MontagesByPath.Add(
@@ -441,7 +441,7 @@ bool PDSSnapshotDiff::ParseSnapshotJson(
             ValidationObject->HasTypedField<EJson::Boolean>(TEXT("included"))
             && ValidationObject->GetBoolField(TEXT("included"));
         OutDocument.Validation.ScopeId =
-            GetOptionalString(ValidationObject, TEXT("scopeId"));
+            GetSnapshotDiffOptionalString(ValidationObject, TEXT("scopeId"));
         OutDocument.Validation.NumValid =
             GetOptionalInt(ValidationObject, TEXT("numValid"));
         OutDocument.Validation.NumInvalid =

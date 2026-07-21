@@ -425,6 +425,8 @@ bool FPDSPantheliaSpellSnapshotContributor::BuildRecord(
         Spell.GetCastMontageForEditor();
     const FGameplayTag SocketTag =
         Spell.GetSocketTagForEditor();
+    const FGameplayTag ProjectileSpawnEventTag =
+        Spell.GetProjectileSpawnEventTagForEditor();
 
     OutRecord.Fields.Add(
         TEXT("projectile.class"),
@@ -436,11 +438,14 @@ bool FPDSPantheliaSpellSnapshotContributor::BuildRecord(
         TEXT("projectile.socketTag"),
         SocketTag.ToString());
     OutRecord.Fields.Add(
+        TEXT("projectile.spawnEventTag"),
+        ProjectileSpawnEventTag.ToString());
+    OutRecord.Fields.Add(
         TEXT("projectile.montageEventPresent"),
         BoolString(
             PDSPantheliaMontageEventInspector::ContainsGameplayTagEvent(
                 CastMontage,
-                SocketTag)));
+                ProjectileSpawnEventTag)));
 
     if (const UPantheliaMultiProjectileSpell* Multi =
             Cast<UPantheliaMultiProjectileSpell>(&Spell))

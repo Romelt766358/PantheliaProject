@@ -325,6 +325,10 @@ EDataValidationResult PantheliaSpellValidation::ValidateProjectileSpell(
     {
         AddError(Context, TEXT("SocketTag no es válido."));
     }
+    if (!Spell.GetProjectileSpawnEventTagForEditor().IsValid())
+    {
+        AddError(Context, TEXT("ProjectileSpawnEventTag no es válido."));
+    }
 
     // El contrato cross-asset montage/tag lo verifica el validator del módulo adaptador,
     // porque el runtime module no debe depender del tipo Blueprint de Anim Notify.
