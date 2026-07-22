@@ -9,24 +9,42 @@
 
 FGameplayEffectSpecHandle UPantheliaDamageGameplayAbility::MakeDamageSpec()
 {
+	return MakeDamageSpecWithMultipliers(
+		/*DamageMultiplier=*/1.f,
+		/*PoiseDamageMultiplier=*/1.f,
+		/*BuildupMultiplier=*/1.f);
+}
+
+FGameplayEffectSpecHandle
+UPantheliaDamageGameplayAbility::MakeDamageSpecWithMultipliers(
+	const float DamageMultiplier,
+	const float PoiseDamageMultiplier,
+	const float BuildupMultiplier) const
+{
 	// ASC del caster (owner de la ability). Necesario para crear el spec y para
 	// leer sus atributos durante el escalado.
 	UAbilitySystemComponent* SourceASC = GetAbilitySystemComponentFromActorInfo();
-	if (!SourceASC) return FGameplayEffectSpecHandle();
+	if (!SourceASC || !DamageEffectClass)
+	{
+		return FGameplayEffectSpecHandle();
+	}
 
-	// Crear el spec de GE desde DamageEffectClass al nivel actual de la ability.
-	// Añadimos el SourceObject al contexto para que el escalado y el ExecCalc
-	// puedan identificar al caster si lo necesitan.
+	// Cada payload obtiene su propio EffectContext desde el origen. El proyectil de
+	// área vuelve a duplicarlo por target al detonar para conservar independencia total.
 	FGameplayEffectContextHandle EffectContextHandle = SourceASC->MakeEffectContext();
 	EffectContextHandle.AddSourceObject(GetAvatarActorFromActorInfo());
 
 	FGameplayEffectSpecHandle DamageSpecHandle = SourceASC->MakeOutgoingSpec(
-		DamageEffectClass, GetAbilityLevel(), EffectContextHandle);
+		DamageEffectClass,
+		GetAbilityLevel(),
+		EffectContextHandle);
 
-	// Aplicar TODO el escalado de daño (base + atributos + postura) al spec.
-	// Misma lógica que usan los proyectiles — centralizada en la clase base
-	// para que melee, proyectiles y weapon trace sean consistentes (hallazgo D1).
-	ApplyDamageScalingToSpec(DamageSpecHandle, SourceASC);
+	ApplyDamageScalingToSpec(
+		DamageSpecHandle,
+		SourceASC,
+		DamageMultiplier,
+		PoiseDamageMultiplier,
+		BuildupMultiplier);
 
 	return DamageSpecHandle;
 }

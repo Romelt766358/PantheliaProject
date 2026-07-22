@@ -271,6 +271,7 @@ public:
 	FGameplayTag Abilities_Spell;                        // padre global de hechizos del jugador
 	FGameplayTag Abilities_Spell_Fire;                   // hechizos de fuego
 	FGameplayTag Abilities_Spell_Fire_Firebolt;          // Firebolt de un solo proyectil
+	FGameplayTag Abilities_Spell_Fire_Fireburst;         // Fireburst explosivo en área
 	FGameplayTag Abilities_Spell_Fire_FireVolley;        // Fire Volley de múltiples proyectiles
 	FGameplayTag Abilities_Spell_Water;                  // hechizos de agua (futuro — Corazón de Agua)
 	FGameplayTag Abilities_Spell_Storm;                  // hechizos de tormenta (futuro — Corazón de Tormenta)
@@ -588,6 +589,7 @@ public:
 	FGameplayTag Cooldown_Spell;                  // todos los hechizos
 	FGameplayTag Cooldown_Spell_Fire;             // hechizos de fuego
 	FGameplayTag Cooldown_Spell_Fire_Firebolt;    // Firebolt concreto
+	FGameplayTag Cooldown_Spell_Fire_Fireburst;   // Fireburst concreto
 	FGameplayTag Cooldown_Spell_Fire_FireVolley;  // Fire Volley concreto
 	// Padres de los demás elementos (las hojas se añadirán con cada nuevo hechizo).
 	FGameplayTag Cooldown_Spell_Water;           // hechizos de agua (futuro)

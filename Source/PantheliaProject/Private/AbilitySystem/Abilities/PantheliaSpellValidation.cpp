@@ -2,7 +2,9 @@
 
 #if WITH_EDITOR
 
+#include "AbilitySystem/Abilities/PantheliaAreaImpactProjectileSpell.h"
 #include "AbilitySystem/Abilities/PantheliaMultiProjectileSpell.h"
+#include "Actor/PantheliaAreaImpactProjectile.h"
 #include "AbilitySystem/Abilities/PantheliaProjectileSpell.h"
 #include "GameplayEffect.h"
 #include "Misc/DataValidation.h"
@@ -464,6 +466,190 @@ EDataValidationResult PantheliaSpellValidation::ValidateMultiProjectileSpell(
         }
         if (Spell.GetHomingAccelerationForEditor().GetValueAtLevel(1.f)
             <= 0.f)
+        {
+            AddSpellValidationError(
+                Context,
+                TEXT("Soft homing está activo, pero HomingAccelerationMagnitude es 0."));
+        }
+    }
+
+    return GetSpellValidationResultFromErrorDelta(Context, ErrorsBefore);
+}
+
+
+EDataValidationResult PantheliaSpellValidation::ValidateAreaImpactProjectileSpell(
+    const UPantheliaAreaImpactProjectileSpell& Spell,
+    FDataValidationContext& Context)
+{
+    const uint32 ErrorsBefore = Context.GetNumErrors();
+
+    if (!Spell.GetProjectileClassForEditor()
+        || !Spell.GetProjectileClassForEditor()->IsChildOf(
+            APantheliaAreaImpactProjectile::StaticClass()))
+    {
+        AddSpellValidationError(
+            Context,
+            TEXT("ProjectileClass debe heredar de APantheliaAreaImpactProjectile."));
+    }
+
+    ValidateSpellScalableFloat(
+        Context,
+        TEXT("ExplosionRadius"),
+        Spell.GetExplosionRadiusForEditor(),
+        0.f);
+
+    const bool bUsesExplosionPayload =
+        Spell.GetAreaDamagePolicyForEditor()
+            != EPantheliaAreaImpactDamagePolicy::DirectOnly;
+    const bool bUsesDirectPayload =
+        Spell.GetAreaDamagePolicyForEditor()
+            != EPantheliaAreaImpactDamagePolicy::ExplosionOnly;
+
+    if (bUsesExplosionPayload
+        && Spell.GetExplosionRadiusForEditor().GetValueAtLevel(1.f)
+            <= KINDA_SMALL_NUMBER)
+    {
+        AddSpellValidationError(
+            Context,
+            TEXT("La política seleccionada usa explosión, pero ExplosionRadius es 0 en nivel 1."));
+    }
+
+    if (Spell.GetMaxAffectedTargetsForEditor() < 1
+        || Spell.GetMaxAffectedTargetsForEditor() > 128)
+    {
+        AddSpellValidationError(
+            Context,
+            TEXT("MaxAffectedTargets debe estar entre 1 y 128."));
+    }
+
+    if (Spell.GetAreaElementForEditor() == EPantheliaElement::None)
+    {
+        AddSpellValidationWarning(
+            Context,
+            TEXT("AreaElement es None. Es válido para explosiones neutrales, pero Fireburst debería declarar Fire."));
+    }
+
+    if (!Spell.GetSourceAbilityTagForEditor().IsValid())
+    {
+        AddSpellValidationWarning(
+            Context,
+            TEXT("SourceAbilityTag no está asignado; listeners futuros de área no podrán identificar la ability fuente."));
+    }
+
+    if (bUsesExplosionPayload)
+    {
+        ValidateSpellScalableFloat(
+            Context,
+            TEXT("ExplosionDamageMultiplier"),
+            Spell.GetExplosionDamageMultiplierForEditor(),
+            0.f);
+        ValidateSpellScalableFloat(
+            Context,
+            TEXT("ExplosionPoiseMultiplier"),
+            Spell.GetExplosionPoiseMultiplierForEditor(),
+            0.f);
+        ValidateSpellScalableFloat(
+            Context,
+            TEXT("ExplosionBuildupMultiplier"),
+            Spell.GetExplosionBuildupMultiplierForEditor(),
+            0.f);
+    }
+
+    if (bUsesDirectPayload)
+    {
+        ValidateSpellScalableFloat(
+            Context,
+            TEXT("DirectImpactDamageMultiplier"),
+            Spell.GetDirectDamageMultiplierForEditor(),
+            0.f);
+        ValidateSpellScalableFloat(
+            Context,
+            TEXT("DirectImpactPoiseMultiplier"),
+            Spell.GetDirectPoiseMultiplierForEditor(),
+            0.f);
+        ValidateSpellScalableFloat(
+            Context,
+            TEXT("DirectImpactBuildupMultiplier"),
+            Spell.GetDirectBuildupMultiplierForEditor(),
+            0.f);
+
+        const bool bDirectPayloadIsEmptyAtLevelOne =
+            Spell.GetDirectDamageMultiplierForEditor().GetValueAtLevel(1.f)
+                <= KINDA_SMALL_NUMBER
+            && Spell.GetDirectPoiseMultiplierForEditor().GetValueAtLevel(1.f)
+                <= KINDA_SMALL_NUMBER
+            && Spell.GetDirectBuildupMultiplierForEditor().GetValueAtLevel(1.f)
+                <= KINDA_SMALL_NUMBER;
+        if (bDirectPayloadIsEmptyAtLevelOne)
+        {
+            AddSpellValidationError(
+                Context,
+                TEXT("La política seleccionada usa impacto directo, pero daño, poise y buildup directos son 0 en nivel 1."));
+        }
+    }
+
+    if (Spell.DoesExplosionRequireLineOfSightForEditor()
+        && Spell.GetExplosionLineOfSightTraceChannelForEditor() != ECC_Visibility)
+    {
+        AddSpellValidationWarning(
+            Context,
+            TEXT("ExplosionRequiresLineOfSight usa un canal distinto de Visibility; confirma que la desviación es deliberada."));
+    }
+
+    ValidateSpellScalableFloat(
+        Context,
+        TEXT("ProjectileSpeedOverride"),
+        Spell.GetProjectileSpeedOverrideForEditor(),
+        0.f);
+    ValidateSpellScalableFloat(
+        Context,
+        TEXT("GroundTraceUpDistance"),
+        Spell.GetGroundTraceUpDistanceForEditor(),
+        0.f);
+    ValidateSpellScalableFloat(
+        Context,
+        TEXT("GroundTraceDownDistance"),
+        Spell.GetGroundTraceDownDistanceForEditor(),
+        0.f);
+    ValidateSpellScalableFloat(
+        Context,
+        TEXT("GroundSurfaceOffset"),
+        Spell.GetGroundSurfaceOffsetForEditor(),
+        0.f,
+        50.f);
+
+    ValidateSpellScalableFloat(
+        Context,
+        TEXT("HomingStartDelay"),
+        Spell.GetHomingStartDelayForEditor(),
+        0.f);
+    ValidateSpellScalableFloat(
+        Context,
+        TEXT("HomingDuration"),
+        Spell.GetHomingDurationForEditor(),
+        0.f);
+    ValidateSpellScalableFloat(
+        Context,
+        TEXT("HomingAccelerationMagnitude"),
+        Spell.GetHomingAccelerationForEditor(),
+        0.f);
+    ValidateSpellScalableFloat(
+        Context,
+        TEXT("MaxHomingCorrectionAngleDegrees"),
+        Spell.GetMaxHomingCorrectionAngleForEditor(),
+        0.f,
+        180.f);
+
+    if (Spell.IsSoftHomingEnabledForEditor())
+    {
+        if (Spell.GetHomingDurationForEditor().GetValueAtLevel(1.f) <= 0.f)
+        {
+            AddSpellValidationError(
+                Context,
+                TEXT("Soft homing está activo, pero HomingDuration es 0."));
+        }
+
+        if (Spell.GetHomingAccelerationForEditor().GetValueAtLevel(1.f) <= 0.f)
         {
             AddSpellValidationError(
                 Context,

@@ -7,6 +7,7 @@
 #include "Components/SceneComponent.h"
 #include "Interfaces/CombatInterface.h"
 #include "PantheliaGameplayTags.h"
+#include "PantheliaLogChannels.h"
 
 #if WITH_EDITOR
 #include "AbilitySystem/Abilities/PantheliaSpellValidation.h"
@@ -121,7 +122,7 @@ FVector UPantheliaProjectileSpell::GetProjectileSocketLocation() const
 
 	if (!AvatarActor->GetClass()->ImplementsInterface(UCombatInterface::StaticClass()))
 	{
-		UE_LOG(LogTemp, Warning,
+		UE_LOG(LogPanthelia, Warning,
 			TEXT("PantheliaProjectileSpell::GetProjectileSocketLocation — %s no implementa CombatInterface."),
 			*GetNameSafe(AvatarActor));
 		return AvatarActor->GetActorLocation();
@@ -178,7 +179,7 @@ void UPantheliaProjectileSpell::SpawnProjectile()
 
 	if (Direction.IsNearlyZero())
 	{
-		UE_LOG(LogTemp, Warning,
+		UE_LOG(LogPanthelia, Warning,
 			TEXT("PantheliaProjectileSpell::SpawnProjectile — dirección inválida en %s."),
 			*GetName());
 		return;
@@ -189,6 +190,26 @@ void UPantheliaProjectileSpell::SpawnProjectile()
 	ProjectileRotation.Roll = 0.f;
 
 	SpawnProjectileWithRotation(ProjectileRotation);
+}
+
+
+bool UPantheliaProjectileSpell::ConfigureProjectileBeforeFinishSpawning(
+	APantheliaProjectile* Projectile)
+{
+	if (!IsValid(Projectile))
+	{
+		return false;
+	}
+
+	if (DamageEffectClass)
+	{
+		// Un spec nuevo por proyectil. APantheliaProjectile escribe dirección de muerte,
+		// knockback y launch en su EffectContext al impactar; compartir el mismo spec entre
+		// hermanos permitiría que dos impactos simultáneos contaminaran ese contexto.
+		Projectile->DamageEffectSpecHandle = MakeDamageSpec();
+	}
+
+	return !DamageEffectClass || Projectile->DamageEffectSpecHandle.IsValid();
 }
 
 APantheliaProjectile* UPantheliaProjectileSpell::SpawnProjectileWithRotation(
@@ -227,7 +248,7 @@ APantheliaProjectile* UPantheliaProjectileSpell::SpawnProjectileAtTransform(
 	// Sin este guard, SpawnActorDeferred devuelve null y FinishSpawning crashea.
 	if (!ProjectileClass)
 	{
-		UE_LOG(LogTemp, Warning,
+		UE_LOG(LogPanthelia, Warning,
 			TEXT("PantheliaProjectileSpell::SpawnProjectileAtTransform — ProjectileClass no asignado en %s"),
 			*GetName());
 		return nullptr;
@@ -244,18 +265,20 @@ APantheliaProjectile* UPantheliaProjectileSpell::SpawnProjectileAtTransform(
 	// conflicto de colisión irrecuperable. Siempre verificar antes de usar.
 	if (!Projectile)
 	{
-		UE_LOG(LogTemp, Warning,
+		UE_LOG(LogPanthelia, Warning,
 			TEXT("PantheliaProjectileSpell::SpawnProjectileAtTransform — SpawnActorDeferred devolvió null para %s"),
 			*ProjectileClass->GetName());
 		return nullptr;
 	}
 
-	if (DamageEffectClass)
+	if (!ConfigureProjectileBeforeFinishSpawning(Projectile))
 	{
-		// Un spec nuevo por proyectil. APantheliaProjectile escribe dirección de muerte,
-		// knockback y launch en su EffectContext al impactar; compartir el mismo spec entre
-		// hermanos permitiría que dos impactos simultáneos contaminaran ese contexto.
-		Projectile->DamageEffectSpecHandle = MakeDamageSpec();
+		UE_LOG(LogPanthelia, Warning,
+			TEXT("PantheliaProjectileSpell::SpawnProjectileAtTransform — configuración pre-spawn falló para %s en %s."),
+			*GetNameSafe(Projectile),
+			*GetName());
+		Projectile->Destroy();
+		return nullptr;
 	}
 
 	if (bPrepareForDelayedLaunch)

@@ -15,7 +15,7 @@
 // en el contexto del spec antes de aplicarlo (clase 313).
 #include "PantheliaGameplayTags.h"
 #include "AbilitySystem/PantheliaAbilitySystemLibrary.h"
-#include "Interfaces/Enemy.h"
+#include "AbilitySystem/PantheliaProjectileTargeting.h"
 #include "TimerManager.h"
 
 namespace
@@ -413,22 +413,23 @@ void APantheliaProjectile::UpdateSoftHomingTarget()
 FVector APantheliaProjectile::ResolveSoftHomingTargetLocation() const
 {
 	AActor* TargetActor = SoftHomingTargetActor.Get();
-	if (!IsValid(TargetActor))
+	FVector TargetLocation = FVector::ZeroVector;
+
+	if (PantheliaProjectileTargeting::TryResolveTargetPoint(
+		this,
+		GetInstigator(),
+		TargetActor,
+		SoftHomingSettings.TargetPointMode,
+		SoftHomingSettings.GroundTraceUpDistance,
+		SoftHomingSettings.GroundTraceDownDistance,
+		SoftHomingSettings.GroundTraceChannel,
+		SoftHomingSettings.GroundSurfaceOffset,
+		TargetLocation))
 	{
-		return GetActorLocation() + GetActorForwardVector() * 1000.f;
+		return TargetLocation;
 	}
 
-	if (TargetActor->GetClass()->ImplementsInterface(UEnemy::StaticClass()))
-	{
-		return IEnemy::Execute_GetLockonLocation(TargetActor);
-	}
-
-	if (const USceneComponent* TargetRoot = TargetActor->GetRootComponent())
-	{
-		return TargetRoot->GetComponentLocation();
-	}
-
-	return TargetActor->GetActorLocation();
+	return GetActorLocation() + GetActorForwardVector() * 1000.f;
 }
 
 bool APantheliaProjectile::IsSoftHomingTargetInsideCorrectionCone(
@@ -455,32 +456,116 @@ bool APantheliaProjectile::IsSoftHomingTargetInsideCorrectionCone(
 	return AngleDegrees <= SoftHomingSettings.MaxCorrectionAngleDegrees;
 }
 
-void APantheliaProjectile::OnSphereOverlap(UPrimitiveComponent* OverlappedComponent, AActor* OtherActor,
-	UPrimitiveComponent* OtherComp, int32 OtherBodyIndex,
-	bool bFromSweep, const FHitResult& SweepResult)
+void APantheliaProjectile::OnSphereOverlap(
+	UPrimitiveComponent* OverlappedComponent,
+	AActor* OtherActor,
+	UPrimitiveComponent* OtherComp,
+	int32 OtherBodyIndex,
+	bool bFromSweep,
+	const FHitResult& SweepResult)
 {
-	// FIX 1: Ignorar si el spec no está inicializado o el overlap no aporta actor.
-	// En cliente (sin autoridad) el spec nunca se setea — evita crash al hacer .Get().
-	if (!DamageEffectSpecHandle.Data.IsValid() || !IsValid(OtherActor)) return;
-	if (bHit) return;
+	// FIX 1: Ignorar si el overlap no aporta actor. El spec directo se valida en
+	// HandleActorImpact para que una subclase de área pueda usar sus propios payloads.
+	if (!IsValid(OtherActor) || bHit || ShouldIgnoreImpactActor(OtherActor))
+	{
+		return;
+	}
 
-	const TWeakObjectPtr<AActor> OtherActorKey(OtherActor);
-	if (IgnoredActors.Contains(OtherActorKey)) return;
+	FHitResult ImpactResult = SweepResult;
+	if (!bFromSweep)
+	{
+		const FVector ImpactLocation = GetActorLocation();
+		const FVector ImpactNormal = -GetActorForwardVector().GetSafeNormal();
+		ImpactResult = FHitResult(
+			OtherActor,
+			OtherComp,
+			ImpactLocation,
+			ImpactNormal.IsNearlyZero() ? FVector::UpVector : ImpactNormal);
+	}
 
-	const FGameplayEffectContextHandle EffectContext =
-		DamageEffectSpecHandle.Data.Get()->GetContext();
+	HandleActorImpact(OtherActor, ImpactResult);
+}
+
+void APantheliaProjectile::OnProjectileStopped(const FHitResult& ImpactResult)
+{
+	// Materializar una formación detiene el movement component de forma intencional.
+	// Ese estado nunca debe interpretarse como un impacto contra geometría.
+	if (bPreparedForDelayedLaunch || bHit)
+	{
+		return;
+	}
+
+	HandleWorldImpact(ImpactResult);
+}
+
+void APantheliaProjectile::HandleActorImpact(
+	AActor* OtherActor,
+	const FHitResult& ImpactResult)
+{
+	// La clase base conserva el contrato del Firebolt lineal: un spec directo por
+	// proyectil, atraviesa i-frames y se consume ante hit aceptado/block/parry.
+	if (!DamageEffectSpecHandle.IsValid())
+	{
+		return;
+	}
+
+	FPantheliaProjectileDamageApplicationResult ApplicationResult =
+		ApplyDamageSpecToTarget(
+			OtherActor,
+			DamageEffectSpecHandle,
+			GetActorForwardVector());
+
+	if (!ApplicationResult.bShouldConsumeProjectile)
+	{
+		IgnoredActors.Add(TWeakObjectPtr<AActor>(OtherActor));
+		return;
+	}
+
+	FVector ImpactLocation = GetActorLocation();
+	if (!ImpactResult.ImpactPoint.IsNearlyZero())
+	{
+		ImpactLocation = ImpactResult.ImpactPoint;
+	}
+
+	ConsumeProjectile(
+		ApplicationResult.bShouldPlayImpactFeedback,
+		ImpactLocation);
+}
+
+void APantheliaProjectile::HandleWorldImpact(const FHitResult& ImpactResult)
+{
+	FVector ImpactLocation = GetActorLocation();
+	if (ImpactResult.bBlockingHit)
+	{
+		ImpactLocation = ImpactResult.ImpactPoint;
+	}
+
+	ConsumeProjectile(/*bPlayImpactFeedback=*/true, ImpactLocation);
+}
+
+bool APantheliaProjectile::ShouldIgnoreImpactActor(AActor* OtherActor)
+{
+	if (!IsValid(OtherActor) || OtherActor == this)
+	{
+		return true;
+	}
+
+	if (IgnoredActors.Contains(TWeakObjectPtr<AActor>(OtherActor)))
+	{
+		return true;
+	}
 
 	// FIX 2: Ignorar si el actor golpeado es el propio lanzador del proyectil.
 	// El EffectCauser en el context es normalmente el AvatarActor (el personaje), no
-	// el proyectil. Instigator queda como fallback por si una fuente construye el spec
-	// con un context distinto. También protegemos el caso teórico de overlap propio.
-	AActor* SourceActor = EffectContext.GetEffectCauser();
-	if (!IsValid(SourceActor))
-	{
-		SourceActor = GetInstigator();
-	}
+	// el proyectil. Las familias que limpian el spec directo pueden congelar la fuente
+	// explícitamente; Instigator y Owner permanecen como fallbacks defensivos.
+	AActor* SourceActor = ResolveImpactSourceActor();
 
-	if (OtherActor == this || OtherActor == SourceActor || OtherActor == GetInstigator()) return;
+	if (OtherActor == SourceActor || OtherActor == GetInstigator()
+		|| OtherActor == GetOwner())
+	{
+		return true;
+	}
 
 	// FIX COMBAT-07: los aliados no reciben GE, no generan feedback ofensivo y no
 	// consumen el proyectil. Solo aplicamos la comparación de equipos cuando ambos
@@ -488,215 +573,227 @@ void APantheliaProjectile::OnSphereOverlap(UPrimitiveComponent* OverlappedCompon
 	// consumiendo el proyectil normalmente.
 	AActor* SourceTeamActor = ResolveCombatTeamActor(SourceActor);
 	AActor* TargetTeamActor = ResolveCombatTeamActor(OtherActor);
-	if (SourceTeamActor && TargetTeamActor
-		&& !UPantheliaAbilitySystemLibrary::IsNotFriend(SourceTeamActor, TargetTeamActor))
+	const bool bIsFriendly = SourceTeamActor && TargetTeamActor
+		&& !UPantheliaAbilitySystemLibrary::IsNotFriend(
+			SourceTeamActor,
+			TargetTeamActor);
+
+	if (bIsFriendly)
 	{
-		IgnoredActors.Add(OtherActorKey);
-		return;
+		IgnoredActors.Add(TWeakObjectPtr<AActor>(OtherActor));
 	}
 
-	// FIX 3: La geometría y los objetivos hostiles consumen el proyectil. Los aliados
-	// y los objetivos que niegan el golpe mediante i-frames se registran en IgnoredActors
-	// y el proyectil continúa. bHit solo se activa al final, cuando el consumo es real.
-	bool bShouldConsumeProjectile = true;
+	return bIsFriendly;
+}
 
-	// La geometría sin ASC conserva feedback de impacto. Contra un objetivo con ASC,
-	// el ExecCalc decide si el golpe fue realmente aceptado o si lo negó una defensa.
-	bool bShouldPlayImpactFeedback = true;
+void APantheliaProjectile::SetResolvedImpactSourceActor(AActor* InSourceActor)
+{
+	ResolvedImpactSourceActor = InSourceActor;
+}
+
+AActor* APantheliaProjectile::ResolveImpactSourceActor() const
+{
+	if (ResolvedImpactSourceActor.IsValid())
+	{
+		return ResolvedImpactSourceActor.Get();
+	}
+
+	if (DamageEffectSpecHandle.IsValid())
+	{
+		const FGameplayEffectContextHandle EffectContext =
+			DamageEffectSpecHandle.Data->GetContext();
+		if (IsValid(EffectContext.GetEffectCauser()))
+		{
+			return EffectContext.GetEffectCauser();
+		}
+	}
+
+	if (IsValid(GetInstigator()))
+	{
+		return GetInstigator();
+	}
+
+	return IsValid(GetOwner()) ? GetOwner() : nullptr;
+}
+
+FPantheliaProjectileDamageApplicationResult
+APantheliaProjectile::ApplyDamageSpecToTarget(
+	AActor* TargetActor,
+	FGameplayEffectSpecHandle& SpecHandle,
+	const FVector& ImpactDirection)
+{
+	FPantheliaProjectileDamageApplicationResult Result;
+
+	if (!SpecHandle.IsValid() || !IsValid(TargetActor) || !HasAuthority())
+	{
+		return Result;
+	}
+
+	const FVector SafeImpactDirection = ImpactDirection.IsNearlyZero()
+		? GetActorForwardVector().GetSafeNormal()
+		: ImpactDirection.GetSafeNormal();
+
+	const FPantheliaGameplayTags& GameplayTags = FPantheliaGameplayTags::Get();
 
 	// Aplicamos el daño solo en el servidor/singleplayer.
 	// El atributo Health está replicado — el cliente verá el cambio automáticamente.
-	if (HasAuthority())
+
+	// --- IMPULSO DE MUERTE (clase 313) ---
+	// Aquí, y solo aquí, conocemos la DIRECCIÓN del impacto. La ability que creó este
+	// spec solo conocía la MAGNITUD. En el proyectil lineal usamos su forward actual;
+	// en una explosión, la subclase entrega la dirección radial concreta por target.
+	// El vector debe escribirse antes de ApplyGameplayEffectSpecToSelf o
+	// HandleIncomingDamage llegaría demasiado tarde y encontraría cero.
+	const float DeathImpulseMagnitude = SpecHandle.Data->GetSetByCallerMagnitude(
+		GameplayTags.CombatTricks_DeathImpulseMagnitude,
+		false,
+		0.f);
+
 	{
-		// --- IMPULSO DE MUERTE (clase 313) ---
-		// Aquí, y solo aquí, conocemos la DIRECCIÓN del impacto (hacia donde viajaba el
-		// proyectil) — la ability que creó este spec (allá en ApplyDamageScalingToSpec)
-		// solo conocía la MAGNITUD (DeathImpulseMagnitude), porque en ese punto del
-		// pipeline el proyectil ni siquiera había volado todavía. Por eso: leemos la
-		// magnitud de vuelta desde el SetByCaller que la ability ya dejó en el spec,
-		// la combinamos con la dirección (GetActorForwardVector — válido incluso para
-		// un proyectil con trayectoria curva, porque ForwardVector siempre apunta hacia
-		// donde se está moviendo AHORA, en el instante del impacto, no hacia donde
-		// apuntaba al spawnear), y escribimos el vector resultante DIRECTO en el context
-		// del spec — DEBE ser antes de ApplyGameplayEffectSpecToSelf más abajo, o
-		// HandleIncomingDamage (que lee esto en la clase siguiente) llegaría demasiado
-		// tarde y encontraría el vector todavía en cero.
-		const FPantheliaGameplayTags& GameplayTags = FPantheliaGameplayTags::Get();
-		const float DeathImpulseMagnitude = DamageEffectSpecHandle.Data->GetSetByCallerMagnitude(
-			GameplayTags.CombatTricks_DeathImpulseMagnitude, false, 0.f);
+		// GetContext() devuelve el handle por valor, pero comparte el mismo objeto
+		// subyacente. Escribir en esta copia modifica el context real del spec.
+		FGameplayEffectContextHandle ContextHandle = SpecHandle.Data->GetContext();
+		UPantheliaAbilitySystemLibrary::SetDeathImpulse(
+			ContextHandle,
+			DeathImpulseMagnitude > 0.f
+				? SafeImpactDirection * DeathImpulseMagnitude
+				: FVector::ZeroVector);
+	}
 
-		if (DeathImpulseMagnitude > 0.f)
+	// --- KNOCKBACK (clase 315) + LAUNCH (Nivel 3) — patrón "escribir siempre" ---
+	//
+	// FIX DE CONTAMINACIÓN DE CONTEXTO: cada aplicación escribe SIEMPRE el vector
+	// real de este impacto o ZeroVector/false. Esto es obligatorio para explosiones,
+	// porque un template se clona y aplica a múltiples objetivos. Knockback conserva
+	// su dado independiente: primero comprobamos magnitud y después tiramos chance.
+	FVector KnockbackForce = FVector::ZeroVector;
+	bool bKnockbackIsHeavyThisHit = false;
+
+	const float KnockbackForceMagnitude = SpecHandle.Data->GetSetByCallerMagnitude(
+		GameplayTags.CombatTricks_KnockbackForceMagnitude,
+		false,
+		0.f);
+
+	if (KnockbackForceMagnitude > 0.f)
+	{
+		const float KnockbackChance = SpecHandle.Data->GetSetByCallerMagnitude(
+			GameplayTags.CombatTricks_KnockbackChance,
+			false,
+			0.f);
+
+		if (FMath::RandRange(1, 100) <= KnockbackChance)
 		{
-			const FVector DeathImpulse = GetActorForwardVector() * DeathImpulseMagnitude;
-
-			// GetContext() devuelve el handle POR VALOR, pero internamente comparte el
-			// mismo objeto de contexto subyacente (ref-counting) que ya vive dentro del
-			// spec — escribir en esta copia local del handle SÍ modifica el context real
-			// que luego lee HandleIncomingDamage (mismo patrón ya usado en
-			// ExecCalc_Damage::DetermineDebuff, clase 309).
-			FGameplayEffectContextHandle ContextHandle = DamageEffectSpecHandle.Data->GetContext();
-			UPantheliaAbilitySystemLibrary::SetDeathImpulse(ContextHandle, DeathImpulse);
-		}
-
-		// --- KNOCKBACK (clase 315) + LAUNCH (Nivel 3) — patrón "escribir siempre" ---
-		//
-		// FIX DE CONTAMINACIÓN DE CONTEXTO (auditoría post-315): la versión anterior
-		// escribía KnockbackForce/LaunchForce/KnockbackIsHeavy en el contexto SOLO en
-		// caso de éxito del dado. Hoy este proyectil impacta a un único objetivo y se
-		// destruye, así que aquí el bug no se manifestaba — pero el mismo patrón en
-		// WeaponTraceComponent (multi-objetivo, contexto compartido) sí contaminaba a
-		// objetivos posteriores, y el fix se aplica en AMBOS sitios por consistencia y
-		// para que un futuro proyectil perforante no reintroduzca el bug: cada golpe
-		// escribe SIEMPRE sus tres resultados (vector real si ganó la tirada,
-		// ZeroVector/false si no), igual que ya hacía el crítico en ExecCalc_Damage.
-		//
-		// El knockback tiene una PROBABILIDAD de activarse (KnockbackChance), no se
-		// aplica siempre que la magnitud sea > 0. Por eso primero comprobamos que haya
-		// magnitud configurada (evita tirar el dado para abilities que ni siquiera
-		// tienen knockback), y luego tiramos el dado de 100 caras — mismo patrón que
-		// DetermineDebuff en ExecCalc_Damage.
-		FVector KnockbackForce = FVector::ZeroVector;
-		bool bKnockbackIsHeavyThisHit = false;
-
-		const float KnockbackForceMagnitude = DamageEffectSpecHandle.Data->GetSetByCallerMagnitude(
-			GameplayTags.CombatTricks_KnockbackForceMagnitude, false, 0.f);
-
-		if (KnockbackForceMagnitude > 0.f)
-		{
-			const float KnockbackChance = DamageEffectSpecHandle.Data->GetSetByCallerMagnitude(
-				GameplayTags.CombatTricks_KnockbackChance, false, 0.f);
-
-			const bool bKnockback = FMath::RandRange(1, 100) <= KnockbackChance;
-			if (bKnockback)
-			{
-				// Pitch override de 45°: un knockback perfectamente horizontal se ve raro
-				// (el objetivo "resbala" en vez de "salir volando"). Lanzarlo con un ángulo
-				// hacia arriba consistente, sin importar hacia dónde viajaba el proyectil,
-				// es lo que de verdad vende la sensación de "salió disparado por el aire".
-				const FVector KnockbackDirection = UPantheliaAbilitySystemLibrary::GetDirectionWithPitchOverride(
-					GetActorForwardVector(), 45.f);
-				KnockbackForce = KnockbackDirection * KnockbackForceMagnitude;
-
-				// Nivel 2 (a petición) — ver la explicación completa en
-				// WeaponTraceComponent.cpp (mismo bloque, adaptado ahí también).
-				bKnockbackIsHeavyThisHit = DamageEffectSpecHandle.Data->GetSetByCallerMagnitude(
-					GameplayTags.CombatTricks_KnockbackIsHeavy, false, 0.f) > 0.5f;
-			}
-		}
-
-		// --- LAUNCH / NIVEL 3 (post-315, a petición) ---
-		// Mismo mecanismo que el Knockback de arriba (leer magnitud, tirar el dado si
-		// hay magnitud configurada, calcular vector con pitch override), pero como
-		// sistema COMPLETAMENTE INDEPENDIENTE — su propio tag de magnitud/chance, su
-		// propio campo de contexto (LaunchForce, no KnockbackForce), y su propio pitch
-		// override CONFIGURABLE por ability (no un 45° fijo como Knockback) — algunas
-		// fuentes de daño querrán un lanzamiento más o menos vertical.
-		FVector LaunchForce = FVector::ZeroVector;
-
-		const float LaunchForceMagnitude = DamageEffectSpecHandle.Data->GetSetByCallerMagnitude(
-			GameplayTags.CombatTricks_LaunchForceMagnitude, false, 0.f);
-
-		if (LaunchForceMagnitude > 0.f)
-		{
-			const float LaunchChance = DamageEffectSpecHandle.Data->GetSetByCallerMagnitude(
-				GameplayTags.CombatTricks_LaunchChance, false, 0.f);
-
-			const bool bLaunch = FMath::RandRange(1, 100) <= LaunchChance;
-			if (bLaunch)
-			{
-				const float LaunchPitchOverride = DamageEffectSpecHandle.Data->GetSetByCallerMagnitude(
-					GameplayTags.CombatTricks_LaunchPitchOverride, false, 65.f);
-
-				const FVector LaunchDirection = UPantheliaAbilitySystemLibrary::GetDirectionWithPitchOverride(
-					GetActorForwardVector(), LaunchPitchOverride);
-				LaunchForce = LaunchDirection * LaunchForceMagnitude;
-			}
-		}
-
-		// ESCRIBIR SIEMPRE (el corazón del fix): los tres resultados van al contexto
-		// con el valor real de ESTE impacto — éxito o cero/false.
-		{
-			FGameplayEffectContextHandle ContextHandle = DamageEffectSpecHandle.Data->GetContext();
-			UPantheliaAbilitySystemLibrary::SetKnockbackForce(ContextHandle, KnockbackForce);
-			UPantheliaAbilitySystemLibrary::SetLaunchForce(ContextHandle, LaunchForce);
-			UPantheliaAbilitySystemLibrary::SetKnockbackIsHeavy(ContextHandle, bKnockbackIsHeavyThisHit);
-		}
-
-		if (UAbilitySystemComponent* TargetASC = UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(OtherActor))
-		{
-			// El spec puede reutilizar su context durante toda la vida del proyectil.
-			// Reiniciamos explícitamente el resultado antes de aplicar para no depender
-			// de ningún valor previo escrito por otra ruta.
-			FGameplayEffectContextHandle ContextHandle =
-				DamageEffectSpecHandle.Data->GetContext();
-			UPantheliaAbilitySystemLibrary::SetHitOutcome(
-				ContextHandle, EPantheliaHitOutcome::Unresolved);
-
-			TargetASC->ApplyGameplayEffectSpecToSelf(*DamageEffectSpecHandle.Data.Get());
-
-			// ApplyGameplayEffectSpecToSelf ejecuta el ExecCalc de forma síncrona.
-			// Solo Accepted reproduce el impacto ofensivo normal. I-frames, parry
-			// perfecto y bloqueo conservan exclusivamente su feedback defensivo.
-			const EPantheliaHitOutcome HitOutcome =
-				UPantheliaAbilitySystemLibrary::GetHitOutcome(ContextHandle);
-			bShouldPlayImpactFeedback =
-				HitOutcome == EPantheliaHitOutcome::Accepted;
-
-			// Los i-frames representan que el proyectil no conectó físicamente con el
-			// personaje. No se destruye: atraviesa al objetivo y continúa su trayectoria.
-			// Parry perfecto y bloqueo sí consumen el proyectil porque hubo contacto
-			// defensivo, aunque su feedback normal quede suprimido.
-			if (HitOutcome == EPantheliaHitOutcome::NegatedInvulnerability)
-			{
-				IgnoredActors.Add(OtherActorKey);
-				bShouldConsumeProjectile = false;
-			}
+			// Pitch override de 45°: un knockback horizontal parece un deslizamiento.
+			const FVector KnockbackDirection =
+				UPantheliaAbilitySystemLibrary::GetDirectionWithPitchOverride(
+					SafeImpactDirection,
+					45.f);
+			KnockbackForce = KnockbackDirection * KnockbackForceMagnitude;
+			bKnockbackIsHeavyThisHit =
+				SpecHandle.Data->GetSetByCallerMagnitude(
+					GameplayTags.CombatTricks_KnockbackIsHeavy,
+					false,
+					0.f) > 0.5f;
 		}
 	}
 
-	if (!bShouldConsumeProjectile)
+	// --- LAUNCH / NIVEL 3 (post-315) ---
+	// Sistema completamente independiente de Knockback: tags, chance, vector de
+	// contexto y pitch configurable propios.
+	FVector LaunchForce = FVector::ZeroVector;
+	const float LaunchForceMagnitude = SpecHandle.Data->GetSetByCallerMagnitude(
+		GameplayTags.CombatTricks_LaunchForceMagnitude,
+		false,
+		0.f);
+
+	if (LaunchForceMagnitude > 0.f)
 	{
-		return;
+		const float LaunchChance = SpecHandle.Data->GetSetByCallerMagnitude(
+			GameplayTags.CombatTricks_LaunchChance,
+			false,
+			0.f);
+
+		if (FMath::RandRange(1, 100) <= LaunchChance)
+		{
+			const float LaunchPitchOverride = SpecHandle.Data->GetSetByCallerMagnitude(
+				GameplayTags.CombatTricks_LaunchPitchOverride,
+				false,
+				65.f);
+			const FVector LaunchDirection =
+				UPantheliaAbilitySystemLibrary::GetDirectionWithPitchOverride(
+					SafeImpactDirection,
+					LaunchPitchOverride);
+			LaunchForce = LaunchDirection * LaunchForceMagnitude;
+		}
 	}
 
-	// A partir de aquí el overlap consume el proyectil. Cualquier overlap adicional
-	// que llegue antes de que Destroy() se procese queda bloqueado por bHit.
-	ConsumeProjectile(bShouldPlayImpactFeedback, GetActorLocation());
+	// ESCRIBIR SIEMPRE (el corazón del fix): los tres resultados van al contexto
+	// con el valor real de ESTE impacto — éxito o cero/false.
+	FGameplayEffectContextHandle ContextHandle = SpecHandle.Data->GetContext();
+	UPantheliaAbilitySystemLibrary::SetKnockbackForce(
+		ContextHandle,
+		KnockbackForce);
+	UPantheliaAbilitySystemLibrary::SetLaunchForce(
+		ContextHandle,
+		LaunchForce);
+	UPantheliaAbilitySystemLibrary::SetKnockbackIsHeavy(
+		ContextHandle,
+		bKnockbackIsHeavyThisHit);
+	// El spec puede reutilizar su context durante toda la vida del proyectil.
+	// Reiniciamos explícitamente el resultado antes de aplicar para no depender
+	// de ningún valor previo escrito por otra ruta.
+	UPantheliaAbilitySystemLibrary::SetHitOutcome(
+		ContextHandle,
+		EPantheliaHitOutcome::Unresolved);
+
+	UAbilitySystemComponent* TargetASC =
+		UAbilitySystemBlueprintLibrary::GetAbilitySystemComponent(TargetActor);
+	if (!TargetASC)
+	{
+		return Result;
+	}
+
+	TargetASC->ApplyGameplayEffectSpecToSelf(*SpecHandle.Data.Get());
+
+	// ApplyGameplayEffectSpecToSelf ejecuta el ExecCalc de forma síncrona.
+	// Solo Accepted reproduce el feedback ofensivo normal.
+	Result.HitOutcome =
+		UPantheliaAbilitySystemLibrary::GetHitOutcome(ContextHandle);
+	Result.bDamageAccepted =
+		Result.HitOutcome == EPantheliaHitOutcome::Accepted;
+	Result.bShouldPlayImpactFeedback = Result.bDamageAccepted;
+	// Los i-frames representan que el proyectil no conectó físicamente y el
+	// Firebolt lineal debe atravesar. Una explosión no se deshace, pero cuenta ese
+	// target como no aceptado y sigue resolviendo al resto.
+	Result.bShouldConsumeProjectile =
+		Result.HitOutcome != EPantheliaHitOutcome::NegatedInvulnerability;
+
+	return Result;
 }
 
-void APantheliaProjectile::OnProjectileStopped(const FHitResult& ImpactResult)
+FGameplayEffectSpecHandle
+APantheliaProjectile::DuplicateDamageSpecWithIndependentContext(
+	const FGameplayEffectSpecHandle& TemplateSpec) const
 {
-	// Materializar una formación detiene el movement component de forma intencional.
-	// Ese estado nunca debe interpretarse como un impacto contra geometría.
-	if (bPreparedForDelayedLaunch)
+	if (!TemplateSpec.IsValid())
 	{
-		return;
+		return FGameplayEffectSpecHandle();
 	}
 
-	// Los personajes nunca deberían llegar por esta ruta: sus cápsulas ignoran el
-	// canal Projectile y sus meshes generan overlap. Esta callback queda reservada
-	// para paredes, suelo y props que bloquean el canal.
-	if (bHit)
-	{
-		return;
-	}
+	const FGameplayEffectContextHandle IndependentContext =
+		TemplateSpec.Data->GetContext().Duplicate();
+	FGameplayEffectSpec* DuplicatedSpec = new FGameplayEffectSpec(
+		*TemplateSpec.Data.Get(),
+		IndependentContext);
 
-	FVector ImpactLocation = GetActorLocation();
-	if (ImpactResult.bBlockingHit)
-	{
-		ImpactLocation = FVector(ImpactResult.ImpactPoint);
-	}
-
-	ConsumeProjectile(/*bPlayImpactFeedback=*/true, ImpactLocation);
+	return FGameplayEffectSpecHandle(DuplicatedSpec);
 }
 
-void APantheliaProjectile::ConsumeProjectile(
-	const bool bPlayImpactFeedback,
-	const FVector& ImpactLocation)
+bool APantheliaProjectile::BeginImpactResolution()
 {
 	if (bHit)
 	{
-		return;
+		return false;
 	}
 
 	bHit = true;
@@ -706,20 +803,57 @@ void APantheliaProjectile::ConsumeProjectile(
 		LoopingSoundComponent->Stop();
 	}
 
+	if (Sphere)
+	{
+		Sphere->SetGenerateOverlapEvents(false);
+		Sphere->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	}
+
+	if (ProjectileMovement)
+	{
+		ProjectileMovement->StopMovementImmediately();
+		ProjectileMovement->bSimulationEnabled = false;
+		ProjectileMovement->Deactivate();
+	}
+
+	return true;
+}
+
+void APantheliaProjectile::FinishImpactResolution(
+	const bool bPlayImpactFeedback,
+	const FVector& ImpactLocation)
+{
 	if (bPlayImpactFeedback)
 	{
 		if (IsValid(ImpactSound))
 		{
 			UGameplayStatics::PlaySoundAtLocation(
-				this, ImpactSound, ImpactLocation, FRotator::ZeroRotator);
+				this,
+				ImpactSound,
+				ImpactLocation,
+				FRotator::ZeroRotator);
 		}
 
 		if (IsValid(ImpactEffect))
 		{
 			UNiagaraFunctionLibrary::SpawnSystemAtLocation(
-				this, ImpactEffect, ImpactLocation);
+				this,
+				ImpactEffect,
+				ImpactLocation);
 		}
 	}
 
 	Destroy();
+}
+
+void APantheliaProjectile::ConsumeProjectile(
+	const bool bPlayImpactFeedback,
+	const FVector& ImpactLocation)
+{
+	if (!BeginImpactResolution())
+	{
+		return;
+	}
+
+	FinishImpactResolution(bPlayImpactFeedback, ImpactLocation);
 }

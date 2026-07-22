@@ -242,4 +242,12 @@ protected:
 		float DamageMultiplier = 1.0f,
 		float PoiseDamageMultiplier = 1.0f,
 		float BuildupMultiplier = 1.0f) const;
+
+	// Variante C++ para construir payloads independientes a partir de los mismos datos
+	// de la ability. La usa el proyectil de área para separar impacto directo, explosión,
+	// postura y buildup sin duplicar el pipeline de escalado.
+	FGameplayEffectSpecHandle MakeDamageSpecWithMultipliers(
+		float DamageMultiplier,
+		float PoiseDamageMultiplier,
+		float BuildupMultiplier) const;
 };

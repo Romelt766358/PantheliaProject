@@ -144,6 +144,12 @@ protected:
 	// proyectil. Devuelve false si el actor dejó de ser válido.
 	bool TryResolveTargetLocation(AActor* TargetActor, FVector& OutTargetLocation) const;
 
+	// Hook ejecutado durante SpawnActorDeferred y antes de FinishSpawning. La clase
+	// base asigna el spec directo actual; especializaciones como AreaImpact configuran
+	// payloads propios sin abrir una segunda ruta de spawn. false aborta y destruye.
+	virtual bool ConfigureProjectileBeforeFinishSpawning(
+		APantheliaProjectile* Projectile);
+
 	// Ruta base de spawn en un transform mundial explícito. Las formaciones suspendidas
 	// la usan para independizarse por completo del socket después del cast.
 	APantheliaProjectile* SpawnProjectileAtTransform(

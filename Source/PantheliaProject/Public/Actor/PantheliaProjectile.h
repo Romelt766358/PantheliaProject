@@ -5,6 +5,8 @@
 #include "CoreMinimal.h"
 #include "GameFramework/Actor.h"
 #include "GameplayEffectTypes.h"
+#include "AbilitySystem/PantheliaAbilityTypes.h"
+#include "AbilitySystem/PantheliaAreaImpactTypes.h"
 #include "PantheliaProjectile.generated.h"
 
 class USphereComponent;
@@ -12,6 +14,7 @@ class USceneComponent;
 class UProjectileMovementComponent;
 class UNiagaraSystem;
 class UAudioComponent;
+class USoundBase;
 
 /**
  * FPantheliaProjectileHomingSettings
@@ -44,6 +47,33 @@ struct FPantheliaProjectileHomingSettings
 	// Cono total permitido respecto a la dirección inicial. Evita giros de 180°.
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Homing", meta = (ClampMin = "0.0", ClampMax = "180.0"))
 	float MaxCorrectionAngleDegrees = 55.f;
+
+	// Punto lógico que el proxy de homing recalcula durante la ventana activa.
+	// El default conserva exactamente el comportamiento existente de Fire Volley.
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Homing|Target")
+	EPantheliaProjectileAimPointMode TargetPointMode =
+		EPantheliaProjectileAimPointMode::LockonLocation;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Homing|Target", meta = (ClampMin = "0.0"))
+	float GroundTraceUpDistance = 150.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Homing|Target", meta = (ClampMin = "0.0"))
+	float GroundTraceDownDistance = 500.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Homing|Target", meta = (ClampMin = "0.0"))
+	float GroundSurfaceOffset = 5.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Homing|Target")
+	TEnumAsByte<ECollisionChannel> GroundTraceChannel = ECC_Visibility;
+};
+
+/** Resultado de aplicar un spec de proyectil a un target concreto. */
+struct FPantheliaProjectileDamageApplicationResult
+{
+	EPantheliaHitOutcome HitOutcome = EPantheliaHitOutcome::Unresolved;
+	bool bDamageAccepted = false;
+	bool bShouldPlayImpactFeedback = true;
+	bool bShouldConsumeProjectile = true;
 };
 
 /**
@@ -130,9 +160,41 @@ protected:
 	UFUNCTION()
 	void OnProjectileStopped(const FHitResult& ImpactResult);
 
-private:
+	// Hooks de resolución. La clase base conserva el impacto directo actual; los
+	// proyectiles de área sobrescriben estos dos puntos sin duplicar delegates,
+	// filtros de bando ni lifecycle.
+	virtual void HandleActorImpact(AActor* OtherActor, const FHitResult& ImpactResult);
+	virtual void HandleWorldImpact(const FHitResult& ImpactResult);
+
+	// Filtro común para caster, owner, aliados y actores ya ignorados.
+	bool ShouldIgnoreImpactActor(AActor* OtherActor);
+
+	// Permite que una subclase con payloads propios congele la fuente canónica antes
+	// de limpiar o reemplazar DamageEffectSpecHandle. El orden de fallback es:
+	// fuente explícita -> EffectCauser del spec directo -> Instigator -> Owner.
+	void SetResolvedImpactSourceActor(AActor* InSourceActor);
+	AActor* ResolveImpactSourceActor() const;
+
+	// Aplica un spec ya construido escribiendo siempre impulso/knockback/launch y
+	// leyendo el HitOutcome síncrono. ImpactDirection debe representar la dirección
+	// física de este impacto concreto (forward del proyectil o radial de explosión).
+	FPantheliaProjectileDamageApplicationResult ApplyDamageSpecToTarget(
+		AActor* TargetActor,
+		FGameplayEffectSpecHandle& SpecHandle,
+		const FVector& ImpactDirection);
+
+	// Copia el spec y duplica su EffectContext para que cada objetivo de una explosión
+	// tenga resultados independientes. Nunca compartir context entre varios targets.
+	FGameplayEffectSpecHandle DuplicateDamageSpecWithIndependentContext(
+		const FGameplayEffectSpecHandle& TemplateSpec) const;
+
+	// Divide el consumo en begin/finish para que una detonación pueda desactivar
+	// movimiento y colisión antes de ejecutar la consulta radial, pero destruirse al final.
+	bool BeginImpactResolution();
+	void FinishImpactResolution(bool bPlayImpactFeedback, const FVector& ImpactLocation);
 	void ConsumeProjectile(bool bPlayImpactFeedback, const FVector& ImpactLocation);
 
+private:
 	void ApplyCanonicalCollisionPolicy();
 	void ApplyPreparedProjectileState();
 	void StartLoopingSound();
@@ -167,6 +229,10 @@ private:
 	// Actores que este proyectil ya atravesó sin consumirse. Evita que varios componentes
 	// del mismo personaje disparen repetidamente el ExecCalc o el evento de perfect dodge.
 	TSet<TWeakObjectPtr<AActor>> IgnoredActors;
+
+	// Fuente canónica congelada por familias que limpian DamageEffectSpecHandle antes
+	// del impacto. En proyectiles directos permanece vacía y se resuelve desde el spec.
+	TWeakObjectPtr<AActor> ResolvedImpactSourceActor;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Effects")
 	TObjectPtr<USoundBase> LoopingSound;
